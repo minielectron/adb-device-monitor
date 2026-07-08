@@ -88,6 +88,25 @@ internal val HOME_PAGE = """<!DOCTYPE html>
 
   <h2>1 &middot; Connected devices <span class="refresh" onclick="loadDevices()">&#8635; refresh</span></h2>
   <div class="devgrid" id="devices"><div class="empty">Scanning for adb devices&hellip;</div></div>
+  <div id="snapshot-box" style="margin:10px 0 2px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <button type="button" id="snapBtn" onclick="takeSnapshot()"
+      style="padding:9px 16px;border:1px solid #c7ccd6;border-radius:8px;background:#eef2ff;color:#3730a3;font-weight:600;cursor:pointer;font-size:13px">&#128247; Device Snapshot</button>
+    <button type="button" id="procBtn" onclick="takeProcrank()"
+      style="padding:9px 16px;border:1px solid #c7ccd6;border-radius:8px;background:#ecfeff;color:#0e7490;font-weight:600;cursor:pointer;font-size:13px">&#128202; Procrank Snapshot</button>
+    <span class="hint">one-shot STB capabilities &amp; memory footprint &rarr; interactive report</span>
+  </div>
+  <div id="snapProgWrap" style="display:none;margin:6px 0 2px;max-width:520px">
+    <div style="height:9px;background:#e5e7eb;border-radius:5px;overflow:hidden">
+      <div id="snapProg" style="height:100%;width:0;background:#4f46e5;transition:width .3s"></div>
+    </div>
+    <div id="snapMsg" style="font-size:12px;color:#6b7280;margin-top:5px"></div>
+  </div>
+  <div id="procProgWrap" style="display:none;margin:6px 0 2px;max-width:520px">
+    <div style="height:9px;background:#e5e7eb;border-radius:5px;overflow:hidden">
+      <div id="procProg" style="height:100%;width:0;background:#0891b2;transition:width .3s"></div>
+    </div>
+    <div id="procMsg" style="font-size:12px;color:#6b7280;margin-top:5px"></div>
+  </div>
 
   <h2>2 &middot; Configure the run</h2>
   <div class="panel">
@@ -139,19 +158,19 @@ internal val HOME_PAGE = """<!DOCTYPE html>
     <div id="metricsCfg" style="display:none">
       <div class="mgroup-title">System &middot; core <span class="mgroup-hint">essentially free — toggle to show/hide the chart</span></div>
       <div class="metrics-grid">
-        <div class="mcheck"><input type="checkbox" id="m_cpu" checked>
+        <div class="mcheck"><input type="checkbox" id="m_cpu">
           <span><span class="mcheck-label">CPU utilization %</span><span class="mcheck-cost">free · /proc/stat</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_cpuidle" checked>
+        <div class="mcheck"><input type="checkbox" id="m_cpuidle">
           <span><span class="mcheck-label">CPU idle %</span><span class="mcheck-cost">free · /proc/stat</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_percore" checked>
+        <div class="mcheck"><input type="checkbox" id="m_percore">
           <span><span class="mcheck-label">Per-core CPU %</span><span class="mcheck-cost">free · /proc/stat cpuN</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_mem" checked>
+        <div class="mcheck"><input type="checkbox" id="m_mem">
           <span><span class="mcheck-label">Memory (MB)</span><span class="mcheck-cost">free · /proc/meminfo</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_mempct" checked>
+        <div class="mcheck"><input type="checkbox" id="m_mempct">
           <span><span class="mcheck-label">Memory used %</span><span class="mcheck-cost">free · /proc/meminfo</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_swap" checked>
+        <div class="mcheck"><input type="checkbox" id="m_swap">
           <span><span class="mcheck-label">Swap used (MB)</span><span class="mcheck-cost">free · /proc/meminfo</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_zone" checked>
+        <div class="mcheck"><input type="checkbox" id="m_zone">
           <span><span class="mcheck-label">Zone watermarks</span><span class="mcheck-cost">free · /proc/zoneinfo — free pages vs min/low/high</span></span></div>
         <div class="mcheck"><input type="checkbox" id="m_psi" checked>
           <span><span class="mcheck-label">PSI pressure stall</span><span class="mcheck-cost">low cost · /proc/pressure/*</span></span></div>
@@ -162,7 +181,7 @@ internal val HOME_PAGE = """<!DOCTYPE html>
           <span><span class="mcheck-label">Load average (1m)</span><span class="mcheck-cost">negligible · /proc/loadavg</span></span></div>
         <div class="mcheck"><input type="checkbox" id="m_pgfault">
           <span><span class="mcheck-label">Page faults (thrash)</span><span class="mcheck-cost">low cost · /proc/vmstat</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_reclaim" checked onchange="if(this.checked){var l=document.getElementById('logcat');if(l)l.checked=true;}">
+        <div class="mcheck"><input type="checkbox" id="m_reclaim" onchange="if(this.checked){var l=document.getElementById('logcat');if(l)l.checked=true;}">
           <span><span class="mcheck-label">Direct reclaim</span><span class="mcheck-cost">logcat · memory-pressure events/s</span></span></div>
         <div class="mcheck"><input type="checkbox" id="m_thermal">
           <span><span class="mcheck-label">CPU temperature</span><span class="mcheck-cost">low cost · /sys/class/thermal/*</span></span></div>
@@ -170,8 +189,10 @@ internal val HOME_PAGE = """<!DOCTYPE html>
           <span><span class="mcheck-label">CPU frequency</span><span class="mcheck-cost">low cost · scaling_cur_freq</span></span></div>
         <div class="mcheck"><input type="checkbox" id="m_network">
           <span><span class="mcheck-label">Network throughput</span><span class="mcheck-cost">low cost · /proc/net/dev</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_topprocs" checked>
+        <div class="mcheck"><input type="checkbox" id="m_topprocs">
           <span><span class="mcheck-label">Top process CPU</span><span class="mcheck-cost">medium · reads /proc/*/stat per tick</span></span></div>
+        <div class="mcheck"><input type="checkbox" id="m_topmem">
+          <span><span class="mcheck-label">Top process memory</span><span class="mcheck-cost">RSS from /proc/*/stat per tick — cheap, no root</span></span></div>
         <div class="mcheck"><input type="checkbox" id="m_playback" onchange="if(this.checked){var l=document.getElementById('logcat');if(l)l.checked=true;}">
           <span><span class="mcheck-label">Playback &amp; tunnel (STB)</span><span class="mcheck-cost">logcat · video state + TUNNELED</span></span></div>
       </div>
@@ -179,11 +200,11 @@ internal val HOME_PAGE = """<!DOCTYPE html>
       <div class="metrics-grid">
         <div class="mcheck"><input type="checkbox" id="m_pss" checked>
           <span><span class="mcheck-label">App PSS breakdown</span><span class="mcheck-cost">medium · dumpsys meminfo</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_appcpu" checked>
+        <div class="mcheck"><input type="checkbox" id="m_appcpu">
           <span><span class="mcheck-label">App process CPU</span><span class="mcheck-cost">low · /proc + dumpsys fallback</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_maincpu" checked>
+        <div class="mcheck"><input type="checkbox" id="m_maincpu">
           <span><span class="mcheck-label">App main-thread CPU</span><span class="mcheck-cost">low · /proc task stat</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_mediacpu" checked>
+        <div class="mcheck"><input type="checkbox" id="m_mediacpu">
           <span><span class="mcheck-label">Media / HAL process CPU</span><span class="mcheck-cost">low · media pipeline PIDs</span></span></div>
       </div>
     </div>
@@ -296,6 +317,7 @@ function startRun() {
   p.set('cpuFreq', document.getElementById('m_freq').checked);
   p.set('network', document.getElementById('m_network').checked);
   p.set('topProcs', document.getElementById('m_topprocs').checked);
+  p.set('topMem', document.getElementById('m_topmem').checked ? 'true' : 'false');
   p.set('playback', document.getElementById('m_playback').checked ? 'true' : 'false');
   p.set('appPss', document.getElementById('m_pss').checked);
   p.set('appCpu', document.getElementById('m_appcpu').checked);
@@ -309,6 +331,70 @@ function startRun() {
       else { msg.textContent = d.error || 'Failed to start'; document.getElementById('startBtn').disabled = false; }
     })
     .catch(function () { msg.textContent = 'Request failed'; document.getElementById('startBtn').disabled = false; });
+}
+
+// Device snapshot — one-shot STB capabilities capture → PDF with progress bar.
+function takeSnapshot() {
+  if (!selected) { document.getElementById('msg').textContent = 'Select a device first.'; return; }
+  var btn = document.getElementById('snapBtn'); btn.disabled = true;
+  var wrap = document.getElementById('snapProgWrap'); wrap.style.display = 'block';
+  var bar = document.getElementById('snapProg'); var msg = document.getElementById('snapMsg');
+  bar.style.background = '#4f46e5'; bar.style.width = '5%'; msg.textContent = 'Starting capture…';
+  var p = new URLSearchParams(); p.set('serial', selected);
+  fetch('/api/snapshot', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: p.toString() })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d.ok) { msg.textContent = d.error || 'Failed to start'; btn.disabled = false; return; }
+      pollSnapshot(btn, bar, msg);
+    })
+    .catch(function () { msg.textContent = 'Request failed'; btn.disabled = false; });
+}
+function pollSnapshot(btn, bar, msg) {
+  fetch('/api/snapshot-status').then(function (r) { return r.json(); }).then(function (d) {
+    bar.style.width = Math.max(5, d.progress) + '%';
+    if (d.error) { bar.style.background = '#dc2626'; msg.textContent = 'Error: ' + d.error; btn.disabled = false; return; }
+    if (d.done) {
+      bar.style.width = '100%'; bar.style.background = '#16a34a';
+      msg.innerHTML = '✓ Snapshot ready — <a href="/api/snapshot-report" target="_blank">open the interactive report</a>';
+      btn.disabled = false;
+      window.open('/api/snapshot-report', '_blank');   // open interactive HTML in a new tab
+      return;
+    }
+    msg.textContent = 'Capturing device capabilities… ' + d.progress + '%';
+    setTimeout(function () { pollSnapshot(btn, bar, msg); }, 600);
+  }).catch(function () { setTimeout(function () { pollSnapshot(btn, bar, msg); }, 1000); });
+}
+
+// Procrank snapshot — one-shot per-process VSS/RSS/PSS/USS capture → interactive HTML.
+function takeProcrank() {
+  if (!selected) { document.getElementById('msg').textContent = 'Select a device first.'; return; }
+  var btn = document.getElementById('procBtn'); btn.disabled = true;
+  var wrap = document.getElementById('procProgWrap'); wrap.style.display = 'block';
+  var bar = document.getElementById('procProg'); var msg = document.getElementById('procMsg');
+  bar.style.background = '#0891b2'; bar.style.width = '5%'; msg.textContent = 'Starting capture…';
+  var p = new URLSearchParams(); p.set('serial', selected);
+  fetch('/api/procrank-snapshot', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: p.toString() })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d.ok) { msg.textContent = d.error || 'Failed to start'; btn.disabled = false; return; }
+      pollProcrank(btn, bar, msg);
+    })
+    .catch(function () { msg.textContent = 'Request failed'; btn.disabled = false; });
+}
+function pollProcrank(btn, bar, msg) {
+  fetch('/api/procrank-status').then(function (r) { return r.json(); }).then(function (d) {
+    bar.style.width = Math.max(5, d.progress) + '%';
+    if (d.error) { bar.style.background = '#dc2626'; msg.textContent = 'Error: ' + d.error; btn.disabled = false; return; }
+    if (d.done) {
+      bar.style.width = '100%'; bar.style.background = '#16a34a';
+      msg.innerHTML = '✓ Procrank ready — <a href="/api/procrank-report" target="_blank">open the interactive report</a>';
+      btn.disabled = false;
+      window.open('/api/procrank-report', '_blank');
+      return;
+    }
+    msg.textContent = 'Capturing per-process memory… ' + d.progress + '%';
+    setTimeout(function () { pollProcrank(btn, bar, msg); }, 600);
+  }).catch(function () { setTimeout(function () { pollProcrank(btn, bar, msg); }, 1000); });
 }
 
 // Native folder picker (opens an OS dialog on the machine running the app).
@@ -382,7 +468,7 @@ internal val DASHBOARD_PAGE = """<!DOCTYPE html>
   #events td:last-child { white-space: normal; word-break: break-word; overflow-wrap: anywhere; font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #374151; }
   #events th { background: #e9ebf0; }
   .tag { display: inline-block; padding: 1px 7px; border-radius: 9px; font-size: 11px; color: #fff; }
-  .tag.anom { background: #ea7317; } .tag.zap { background: #c0392b; }
+  .tag.anom { background: #ea7317; } .tag.zap { background: #c0392b; } .tag.act { background: #4f46e5; }
 </style>
 </head>
 <body>
@@ -394,6 +480,9 @@ internal val DASHBOARD_PAGE = """<!DOCTYPE html>
   <button id="stopBtn" onclick="stopRun()">&#9632; Stop run</button>
   <a id="reportBtn" href="/api/report">&#8681; Download PDF report</a>
 </header>
+<div id="activity-banner" style="display:none;margin:10px 20px 0;padding:9px 14px;border-radius:8px;background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;font-size:13px">
+  <span style="font-weight:700">&#9635; Current activity:</span> <span id="activity-cur" style="font-family:ui-monospace,Menlo,monospace"></span>
+</div>
 <div id="badges"></div>
 <div class="grid" id="grid"></div>
 <div id="proc-section" style="margin:0 20px 20px;display:none">
@@ -408,6 +497,21 @@ internal val DASHBOARD_PAGE = """<!DOCTYPE html>
     <div class="card" style="padding:12px 14px">
       <div class="chartbox" style="height:230px"><canvas id="c-procs"></canvas></div>
       <div id="stats-procs" class="chart-stats"></div>
+    </div>
+  </div>
+</div>
+<div id="mem-section" style="margin:0 20px 20px;display:none">
+  <h2 style="font-size:14px;font-weight:600;color:#374151;margin:0 0 10px">&#128190; Top Process Memory
+    <span id="mem-src" style="font-size:11px;font-weight:400;color:#6b7280">&nbsp;&middot;&nbsp;check a process to add it to the chart</span>
+  </h2>
+  <div style="display:grid;grid-template-columns:230px 1fr;gap:14px">
+    <div style="background:#fff;border:1px solid #e2e4e8;border-radius:10px;padding:12px 14px;overflow-y:auto;max-height:270px">
+      <div style="font-size:11px;color:#6b7280;margin-bottom:6px;font-weight:600;letter-spacing:.04em" id="mem-peak-label">PEAK (MB)</div>
+      <div id="mem-list"><span style="font-size:12px;color:#9aa1ab">Waiting for data&hellip;</span></div>
+    </div>
+    <div class="card" style="padding:12px 14px">
+      <div class="chartbox" style="height:230px"><canvas id="c-mem"></canvas></div>
+      <div id="stats-mem" class="chart-stats"></div>
     </div>
   </div>
 </div>
@@ -481,6 +585,13 @@ var selectedPids = {};        // pid(str) -> true
 var procAutoSelected = false;
 var procChart = null;
 var hasTopProcs = false;
+
+// Top-memory chart state
+var memHistory = {};          // pid(str) -> {name, history:[{x,y}], peak}
+var selectedMemPids = {};
+var memAutoSelected = false;
+var memChart = null;
+var hasTopMem = false;
 
 // Playback (STB) state
 var hasPlayback = false;
@@ -644,6 +755,88 @@ function pushProcSamples(list) {
   renderStats();
 }
 
+// ---- Top memory (PSS) interactive chart ----
+function initMemChart() {
+  var ctx = document.getElementById('c-mem');
+  if (!ctx || memChart) return;
+  memChart = new Chart(ctx, {
+    type: 'line', data: { datasets: [] },
+    options: { animation: false, responsive: true, maintainAspectRatio: false, parsing: false,
+      plugins: { legend: { labels: { boxWidth: 10, font: { size: 10 } } } },
+      scales: { x: { type: 'linear', title: { display: true, text: 'time (s)' } },
+                y: { beginAtZero: true, title: { display: true, text: 'Memory (MB)' } } } }
+  });
+}
+function updateMemSource(src) {
+  var el = document.getElementById('mem-src');
+  var lbl = document.getElementById('mem-peak-label');
+  if (!src) return;
+  var txt = src === 'PSS' ? 'PSS via procrank (root)' : 'RSS via /proc (non-root)';
+  if (el) el.innerHTML = '&nbsp;&middot;&nbsp;' + txt + ' — check a process to chart it';
+  if (lbl) lbl.textContent = 'PEAK ' + src + ' (MB)';
+}
+function renderMemList() {
+  var div = document.getElementById('mem-list');
+  if (!div) return;
+  var pids = Object.keys(memHistory);
+  if (!pids.length) return;
+  pids.sort(function (a, b) { return memHistory[b].peak - memHistory[a].peak; });
+  var html = '';
+  pids.forEach(function (pid) {
+    var proc = memHistory[pid];
+    var chk = selectedMemPids[pid] ? 'checked' : '';
+    html += '<label style="display:flex;align-items:center;gap:7px;padding:3px 0;cursor:pointer;font-size:12px">'
+          + '<input type="checkbox" ' + chk + ' onchange="toggleMemProc(\'' + pid + '\')" '
+          + 'style="width:14px;height:14px;accent-color:#10b981;flex:none;cursor:pointer">'
+          + '<span style="flex:1;font-family:ui-monospace,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+          + escHtml(proc.name) + '</span>'
+          + '<span style="color:#6b7280;min-width:52px;text-align:right;font-size:11px">'
+          + Math.round(proc.peak) + ' MB</span>'
+          + '</label>';
+  });
+  div.innerHTML = html;
+}
+function toggleMemProc(pid) {
+  if (selectedMemPids[pid]) { delete selectedMemPids[pid]; } else { selectedMemPids[pid] = true; }
+  updateMemChart();
+  renderMemList();
+}
+function updateMemChart() {
+  if (!memChart) return;
+  memChart.data.datasets = memChart.data.datasets.filter(function (ds) { return !!selectedMemPids[ds._pid]; });
+  var existing = {};
+  memChart.data.datasets.forEach(function (ds) { existing[ds._pid] = true; });
+  Object.keys(selectedMemPids).forEach(function (pid) {
+    if (existing[pid]) return;
+    var proc = memHistory[pid];
+    if (!proc) return;
+    var color = PROC_COLORS[memChart.data.datasets.length % PROC_COLORS.length];
+    memChart.data.datasets.push({ _pid: pid, label: proc.name, data: proc.history.slice(),
+      borderColor: color, backgroundColor: color + '22', borderWidth: 2, pointRadius: 0, tension: 0.2, fill: false });
+  });
+  memChart.data.datasets.forEach(function (ds) { if (memHistory[ds._pid]) ds.data = memHistory[ds._pid].history.slice(); });
+  memChart.update('none');
+}
+function pushMemSamples(list) {
+  list.forEach(function (s) {
+    if (!s.memprocs || !s.memprocs.length) return;
+    s.memprocs.forEach(function (p) {
+      var key = '' + p.pid;
+      if (!memHistory[key]) memHistory[key] = { name: p.n, history: [], peak: 0 };
+      memHistory[key].history.push({ x: s.t, y: p.mb });
+      if (p.mb > memHistory[key].peak) memHistory[key].peak = p.mb;
+    });
+  });
+  if (!memAutoSelected && Object.keys(memHistory).length > 0) {
+    memAutoSelected = true;
+    var sorted = Object.keys(memHistory).sort(function (a, b) { return memHistory[b].peak - memHistory[a].peak; });
+    sorted.slice(0, 3).forEach(function (pid) { selectedMemPids[pid] = true; });
+  }
+  renderMemList();
+  updateMemChart();
+  renderStats();
+}
+
 // ---- Playback (STB): video state + tunnel mode ----
 function steppedChart(canvasId, color, tickMap, yMax) {
   return new Chart(document.getElementById(canvasId), {
@@ -732,9 +925,30 @@ function renderPlaybackBadges() {
   renderLifecycleFlag();
 }
 
+// ---- foreground activity tracking ----
+var lastActivity = null;
+var activityEvents = [];   // { t, from, to }
+function shortAct(comp) {
+  if (!comp) return comp;
+  var afterSlash = comp.indexOf('/') >= 0 ? comp.substring(comp.indexOf('/') + 1) : comp;
+  var dot = afterSlash.lastIndexOf('.');
+  return dot >= 0 ? afterSlash.substring(dot + 1) : afterSlash;
+}
+function handleActivity(s) {
+  if (s.act === null || s.act === undefined || s.act === '') return;
+  if (s.act !== lastActivity) {
+    if (lastActivity !== null) activityEvents.push({ t: s.t, from: lastActivity, to: s.act });
+    lastActivity = s.act;
+    var b = document.getElementById('activity-banner');
+    var c = document.getElementById('activity-cur');
+    if (b && c) { b.style.display = 'block'; c.textContent = shortAct(s.act); c.title = s.act; }
+  }
+}
+
 function pushSamples(list) {
   list.forEach(function (s) {
     allSamples.push(s);
+    handleActivity(s);
     DEFS.forEach(function (def) {
       if (def.dynamic) return;
       def.series.forEach(function (ser, i) {
@@ -752,6 +966,8 @@ function pushSamples(list) {
   });
   // Push top-process data
   if (hasTopProcs) pushProcSamples(list);
+  // Push top-memory data
+  if (hasTopMem) pushMemSamples(list);
   // Push playback (STB) data
   if (hasPlayback) pushPlaybackSamples(list);
   // Stretch each baseline to [firstSample.t … lastSample.t] — identical x-range
@@ -881,6 +1097,19 @@ function renderStats() {
       div.innerHTML = html;
     }
   }
+  // Mem chart
+  if (memChart && hasTopMem) {
+    var mdiv = document.getElementById('stats-mem');
+    if (mdiv) {
+      var mhtml = '';
+      memChart.data.datasets.forEach(function (ds) {
+        var row = statHtml(ds);
+        if (!row) return;
+        mhtml += '<div class="srow"><span class="sname">' + escHtml(ds.label) + '</span>' + row + '</div>';
+      });
+      mdiv.innerHTML = mhtml;
+    }
+  }
 }
 
 function renderEvents(zaps, anomalies) {
@@ -888,6 +1117,9 @@ function renderEvents(zaps, anomalies) {
   zaps.forEach(function (t) { rows.push({ t: t, html: '<span class="tag zap">zap</span>', detail: 'KEYCODE_CHANNEL_UP sent' }); });
   anomalies.forEach(function (a) {
     rows.push({ t: (a.t === null ? -1 : a.t), html: '<span class="tag anom">' + a.type + '</span>', detail: a.detail });
+  });
+  activityEvents.forEach(function (e) {
+    rows.push({ t: e.t, html: '<span class="tag act">activity</span>', detail: shortAct(e.from) + '  →  ' + shortAct(e.to) });
   });
   rows.sort(function (a, b) { return a.t - b.t; });
   var body = '';
@@ -945,6 +1177,13 @@ function tick() {
         if (ps) ps.style.display = 'block';
         initProcChart();
       }
+      // Top-memory feature
+      if (d.hasTopMem === true) {
+        hasTopMem = true;
+        var ms = document.getElementById('mem-section');
+        if (ms) ms.style.display = 'block';
+        initMemChart();
+      }
       // Playback (STB) feature
       if (d.hasPlayback === true) {
         hasPlayback = true;
@@ -954,6 +1193,7 @@ function tick() {
       }
     }
     idx = d.nextIndex;
+    if (hasTopMem && d.memSource) updateMemSource(d.memSource);
     if (d.samples.length) pushSamples(d.samples);
     if (hasPlayback) renderBuildBanner(d.buildTunnel);
     renderEvents(d.zaps, d.anomalies);

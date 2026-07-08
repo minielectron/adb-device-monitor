@@ -24,29 +24,29 @@ data class SessionConfig(
     val csvOverride: File? = null,
     // ── Metric toggles — each maps 1:1 to a chart; disable to hide it (and, where it costs
     //    device time, to skip collecting it). ──
-    // Core system metrics (collection is essentially free — the toggle mainly shows/hides the chart)
-    val cpuUtilEnabled: Boolean = true,     // CPU utilization %
-    val cpuIdleEnabled: Boolean = true,     // CPU idle %
-    val memoryMbEnabled: Boolean = true,    // Memory used/available/cached (MB)
-    val memoryPctEnabled: Boolean = true,   // Memory used %
-    val swapEnabled: Boolean = true,        // Swap used (MB)
-    val zoneInfoEnabled: Boolean = true,    // /proc/zoneinfo — free pages vs min/low/high watermarks
-    val perCoreEnabled: Boolean = true,     // per-core CPU % from /proc/stat cpuN lines
-    val psiEnabled: Boolean = true,         // /proc/pressure/{cpu,memory,io} PSI stall metrics
-    // Cost-bearing system metrics (off by default)
+    // Defaults: only CPU pressure (PSI) and App PSS are on; everything else is opt-in.
+    val cpuUtilEnabled: Boolean = false,    // CPU utilization %
+    val cpuIdleEnabled: Boolean = false,    // CPU idle %
+    val memoryMbEnabled: Boolean = false,   // Memory used/available/cached (MB)
+    val memoryPctEnabled: Boolean = false,  // Memory used %
+    val swapEnabled: Boolean = false,       // Swap used (MB)
+    val zoneInfoEnabled: Boolean = false,   // /proc/zoneinfo — free pages vs min/low/high watermarks
+    val perCoreEnabled: Boolean = false,    // per-core CPU % from /proc/stat cpuN lines
+    val psiEnabled: Boolean = true,         // /proc/pressure/{cpu,memory,io} PSI stall metrics (default ON)
     val thermalEnabled: Boolean = false,    // /sys/class/thermal — CPU temperature
     val cpuFreqEnabled: Boolean = false,    // /sys/devices/system/cpu/*/cpufreq/scaling_cur_freq
     val networkEnabled: Boolean = false,    // /proc/net/dev — RX/TX KB/s
     val pageFaultsEnabled: Boolean = false, // /proc/vmstat pgmajfault — memory thrashing rate
     val loadEnabled: Boolean = false,       // /proc/loadavg — 1-min load average
-    val directReclaimEnabled: Boolean = true, // direct-reclaim events/s from logcat (needs logcat)
-    val topProcsEnabled: Boolean = true,    // top-10 process CPU% — reads /proc/*/stat per tick
+    val directReclaimEnabled: Boolean = false, // direct-reclaim events/s from logcat (needs logcat)
+    val topProcsEnabled: Boolean = false,   // top-10 process CPU% — reads /proc/*/stat per tick
+    val topMemEnabled: Boolean = false,     // top processes by memory (PSS) — procrank (root) / dumpsys (non-root)
     val playbackEnabled: Boolean = false,   // STB: tunnel mode + video player state from logcat tail
     // App metrics (require a package)
-    val appPssEnabled: Boolean = true,      // dumpsys meminfo — PSS breakdown
-    val appProcCpuEnabled: Boolean = true,  // whole-process CPU%
-    val mainThreadCpuEnabled: Boolean = true, // main-thread CPU%
-    val mediaCpuEnabled: Boolean = true     // media/HAL process CPU%
+    val appPssEnabled: Boolean = true,      // dumpsys meminfo — PSS total + breakdown (default ON)
+    val appProcCpuEnabled: Boolean = false, // whole-process CPU%
+    val mainThreadCpuEnabled: Boolean = false, // main-thread CPU%
+    val mediaCpuEnabled: Boolean = false    // media/HAL process CPU%
 )
 
 /**
@@ -87,6 +87,17 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
     val zapTimes: MutableList<Double> = Collections.synchronizedList(mutableListOf())
 
     val logcatFile: File? get() = runDir?.let { File(it, "logcat.log") }
+
+    @Volatile private var anomalyScanner: AnomalyScanner.Incremental? = null
+    /** Anomalies accumulated incrementally so far (fast — no full re-scan). */
+    fun liveAnomalies(): List<Anomaly> = anomalyScanner?.snapshot() ?: emptyList()
+
+    // Heavy per-app collectors (dumpsys / procrank) run on a background thread and publish here,
+    // so the fixed-interval sampling loop reads them without ever blocking on a slow adb call.
+    @Volatile private var latestTopMem: List<ProcMemSample> = emptyList()
+    @Volatile private var latestActivity: String? = null
+    @Volatile private var slowCollectorRun = false
+    @Volatile var memSource: String? = null; private set   // "PSS" (procrank) or "RSS" (/proc)
 
     @Volatile private var logcatProc: Process? = null
     @Volatile private var stopRequested = false
@@ -177,6 +188,7 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
                 System.err.println("logcat capture failed to start: ${e.message}")
                 null
             }
+            anomalyScanner = AnomalyScanner.Incremental(deviceTimeAnchor)
         }
 
         if (config.profileEnabled && config.packageName != null) {
@@ -227,12 +239,32 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         var prevProcTicks: Map<Int, Pair<String, Long>>? = null
         val playbackTracker = if (config.playbackEnabled && config.logcatEnabled) Playback.Tracker() else null
         val reclaimCounter = if (config.logcatEnabled && config.directReclaimEnabled) GrowTailCounter(LogMetrics.DIRECT_RECLAIM) else null
+
+        // Background collector for the heavy dumpsys/procrank reads (top-memory, foreground
+        // activity). These can take several seconds, so running them here — not inline in the
+        // sampling loop — keeps the loop on its fixed interval and all other charts live.
+        val wantActivity = config.appPssEnabled && config.packageName != null
+        var slowThread: Thread? = null
+        if (config.topMemEnabled || wantActivity) {
+            slowCollectorRun = true
+            slowThread = Thread {
+                while (slowCollectorRun && !stopRequested) {
+                    try {
+                        if (config.topMemEnabled) { latestTopMem = collector.topMemoryProcs(); memSource = collector.lastMemSource }
+                        if (wantActivity) latestActivity = collector.topActivity()
+                    } catch (e: Exception) { /* keep previous values */ }
+                    try { Thread.sleep(4000) } catch (e: InterruptedException) { break }
+                }
+            }.apply { isDaemon = true; name = "slow-collector"; start() }
+        }
         var nextDeadline = startNanos + (config.intervalSec * 1e9).toLong()
 
         for (i in 1..totalSamples) {
             val sleepMs = (nextDeadline - System.nanoTime()) / 1_000_000
             if (sleepMs > 0) Thread.sleep(sleepMs)
             nextDeadline += (config.intervalSec * 1e9).toLong()
+            // Catch a stop request before doing any per-tick work, so Stop is snappy.
+            if (stopRequested) { println("Stop requested — finishing run and generating the report."); break }
 
             val snap = try {
                 collector.snapshot()
@@ -359,8 +391,14 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
                 val n = reclaimCounter.countNew(File(dir, "logcat.log"))
                 directReclaim = n / dtSec
             }
+            // Incrementally scan new logcat lines for anomalies (keeps live polling cheap).
+            anomalyScanner?.scanNew(File(dir, "logcat.log"))
 
-            samples += collector.toSample(prevSnap, dtSec, snap, elapsed, pss, jankPct, mainCpu, phases, appCpu, mediaCpus, topProcs, videoState, tunnelMode, directReclaim)
+            // Read the latest values from the background collector (never blocks the loop).
+            val topActivity = if (wantActivity) latestActivity else null
+            val topMem = if (config.topMemEnabled) latestTopMem else emptyList()
+
+            samples += collector.toSample(prevSnap, dtSec, snap, elapsed, pss, jankPct, mainCpu, phases, appCpu, mediaCpus, topProcs, videoState, tunnelMode, directReclaim, topActivity, topMem)
             prevSnap = snap
             prevElapsed = elapsed
 
@@ -397,6 +435,9 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
                 break
             }
         }
+
+        slowCollectorRun = false
+        slowThread?.interrupt()
 
         if (samples.size < 2) throw IllegalStateException("Not enough samples collected to build a report")
     }
@@ -445,7 +486,11 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         }
 
         val lf = File(dir, "logcat.log")
-        val anomalies = if (config.logcatEnabled) AnomalyScanner.scan(lf, deviceTimeAnchor) else emptyList()
+        // Reuse the incrementally-scanned anomalies (one final catch-up pass) — avoids a full
+        // re-scan of a possibly-huge logcat at stop.
+        val anomalies = if (config.logcatEnabled) {
+            anomalyScanner?.let { it.scanNew(lf); it.snapshot() } ?: AnomalyScanner.scan(lf, deviceTimeAnchor)
+        } else emptyList()
         if (config.logcatEnabled) {
             AnomalyScanner.writeReport(anomalies, File(dir, "anomalies.log"))
             println("\nAnomalies: ${AnomalyScanner.summary(anomalies)}")
@@ -456,8 +501,9 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
             println("App info from logcat events: ${appInfo.entries.joinToString(", ") { "${it.key}=${it.value}" }}")
         }
 
-        // STB build tunnel flag — full-file scan is more reliable than the live-latched value.
-        if (config.playbackEnabled && config.logcatEnabled) {
+        // STB build tunnel flag. It's normally already latched live; only fall back to a full-file
+        // scan when we never saw it (avoids re-reading a huge logcat at stop).
+        if (config.playbackEnabled && config.logcatEnabled && buildTunnelEnabled == null) {
             val a = Playback.analyzeFile(lf)
             if (a.buildTunnel != null) buildTunnelEnabled = a.buildTunnel
             println("Playback: build tunnel flag = ${buildTunnelEnabled?.let { if (it) "ENABLED" else "disabled" } ?: "not found"}" +
@@ -579,7 +625,7 @@ internal fun writeCsv(samples: List<Sample>, file: File) {
             "net_rx_kb_s,net_tx_kb_s,cpu_temp_c,cpu_freq_mhz,major_faults_per_s,direct_reclaim_per_s,jank_pct," +
             "main_thread_cpu_pct,app_cpu_pct,frame_input_ms,frame_anim_ms,frame_layout_ms,frame_draw_ms," +
             "pss_total_mb,pss_java_heap_mb,pss_native_heap_mb,pss_code_mb,pss_stack_mb," +
-            "pss_graphics_mb,pss_private_other_mb,pss_system_mb,$mediaHeader,video_state,tunnel_mode"
+            "pss_graphics_mb,pss_private_other_mb,pss_system_mb,$mediaHeader,video_state,tunnel_mode,top_activity"
         )
         for (s in samples) {
             val base = listOf<Any?>(
@@ -597,7 +643,7 @@ internal fun writeCsv(samples: List<Sample>, file: File) {
                 s.pss?.stackMb, s.pss?.graphicsMb, s.pss?.privateOtherMb, s.pss?.systemMb
             )
             val media = MEDIA_PROC_CSV.map { (key, _) -> s.mediaProcs[key] }
-            val playback = listOf<Any?>(s.videoState, s.tunnelMode)
+            val playback = listOf<Any?>(s.videoState, s.tunnelMode, s.topActivity?.replace(",", " "))
             w.appendLine((base + media + playback).joinToString(",") { it?.toString() ?: "" })
         }
     }

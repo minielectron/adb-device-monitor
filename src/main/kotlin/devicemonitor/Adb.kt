@@ -101,11 +101,21 @@ class Adb(private val adbPath: String) {
 
     private fun exec(cmd: List<String>): String {
         val process = ProcessBuilder(cmd).redirectErrorStream(true).start()
-        val output = process.inputStream.bufferedReader().readText()
+        // Read stdout on a separate thread (per-call holder — exec runs concurrently). If a
+        // command hangs with its stdout still open (e.g. `su` waiting for approval), a plain
+        // readText() would block forever *before* any timeout — so we bound the read with
+        // waitFor and forcibly kill the process if it overruns.
+        val out = java.util.concurrent.atomic.AtomicReference("")
+        val reader = Thread {
+            try { out.set(process.inputStream.bufferedReader().readText()) } catch (_: Exception) {}
+        }.apply { isDaemon = true; start() }
         if (!process.waitFor(20, TimeUnit.SECONDS)) {
             process.destroyForcibly()
+            process.waitFor(2, TimeUnit.SECONDS)
+            reader.join(1000)
             throw IllegalStateException("Command timed out: ${cmd.joinToString(" ")}")
         }
-        return output.trim()
+        reader.join(2000)   // process exited; let the reader drain remaining buffered output
+        return out.get().trim()
     }
 }

@@ -446,20 +446,30 @@ class PdfReport(
     // ---------- chart pages ----------
 
     private fun writeChartPages(doc: PDDocument) {
-        val chartPairs = specs.mapNotNull { spec -> buildChart(spec)?.let { spec to it } }
         val margin = 40f
         val chartW = PDRectangle.A4.width - 2 * margin   // ~515 pt
         val chartH = 318f   // slightly reduced vs 330 to leave room for stats text below
+        val w = (chartW * 2).toInt()
+        val h = (chartH * 2).toInt()
 
-        chartPairs.chunked(2).forEach { pair ->
+        // Rasterize the charts in parallel (CPU-bound and independent), preserving order.
+        // PDFBox insertion below stays single-threaded (a PDDocument isn't thread-safe).
+        val specsWithCharts = specs.mapNotNull { spec -> buildChart(spec)?.let { spec to it } }
+        val parallelism = minOf(specsWithCharts.size, Runtime.getRuntime().availableProcessors(), 4).coerceAtLeast(1)
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(parallelism)
+        val rendered: List<Pair<ChartSpec, BufferedImage>> = try {
+            specsWithCharts.map { (spec, chart) ->
+                pool.submit(java.util.concurrent.Callable { spec to chart.createBufferedImage(w, h) })
+            }.map { it.get() }
+        } finally {
+            pool.shutdown()
+        }
+
+        rendered.chunked(2).forEach { pair ->
             val page = PDPage(PDRectangle.A4)
             doc.addPage(page)
             PDPageContentStream(doc, page).use { cs ->
-                pair.forEachIndexed { i, (spec, chart) ->
-                    // 2x raster for crisp output
-                    val img: BufferedImage = chart.createBufferedImage(
-                        (chartW * 2).toInt(), (chartH * 2).toInt()
-                    )
+                pair.forEachIndexed { i, (spec, img) ->
                     val pdImg = LosslessFactory.createFromImage(doc, img)
                     val yPos = if (i == 0) PDRectangle.A4.height - margin - chartH
                                else PDRectangle.A4.height - margin - 2 * chartH - 30f

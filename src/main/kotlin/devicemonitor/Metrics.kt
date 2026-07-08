@@ -42,11 +42,16 @@ data class Sample(
     val mediaProcs: Map<String, Double?> = emptyMap(), // media/HAL process CPU% keyed by proc name
     val topProcs: List<ProcessSample> = emptyList(),   // top-10 processes by CPU% this tick (only when topProcsEnabled)
     val videoState: String? = null,                    // ExoPlayer/Bitmovin state: READY/BUFFERING/PAUSED/IDLE (logcat, STB)
-    val tunnelMode: String? = null                     // "tunneled" | "non_tunneled" | "unknown" | "n/a" (logcat, STB)
+    val tunnelMode: String? = null,                    // "tunneled" | "non_tunneled" | "unknown" | "n/a" (logcat, STB)
+    val topActivity: String? = null,                   // current foreground activity component (dumpsys)
+    val topMemProcs: List<ProcMemSample> = emptyList() // top processes by RSS this tick (/proc/*/stat)
 )
 
 /** One process entry in the top-10 CPU list. */
 data class ProcessSample(val pid: Int, val name: String, val cpuPct: Double)
+
+/** One process entry in the top memory (PSS) list. */
+data class ProcMemSample(val pid: Int, val name: String, val pssMb: Double)
 
 /** Per-frame phase durations parsed from `dumpsys gfxinfo <pkg> framestats`. */
 data class FramePhases(
@@ -471,6 +476,30 @@ class MetricsCollector(
 
     private fun psiAvg10(name: String, kind: String): Double? = Snapshot.parsePsi(psiFile(name), kind)
 
+    /**
+     * The current foreground (resumed) activity component, e.g.
+     * "com.telekom.onetv.tv.hr/com.telekom.atvretail.homeui.view.HomeActivity", or null.
+     * Grep on-device so only the one relevant line is transferred (dumpsys output is large).
+     */
+    fun topActivity(): String? {
+        val out = try {
+            adb.shell(target, "dumpsys activity activities | grep -m1 -E 'mResumedActivity|topResumedActivity'")
+        } catch (e: Exception) { "" }
+        val comp = out.lines().asSequence()
+            .map { it.trim() }
+            .mapNotNull { line ->
+                line.split(Regex("\\s+")).firstOrNull { it.contains("/") && !it.startsWith("{") }
+            }
+            .firstOrNull()
+        if (comp != null) return comp.trimEnd('}', ',').take(160)
+        // Fallback: focused window.
+        return try {
+            adb.shell(target, "dumpsys window windows | grep -m1 -E 'mCurrentFocus|mFocusedApp'")
+                .lines().firstOrNull { it.isNotBlank() }
+                ?.split(Regex("\\s+"))?.firstOrNull { it.contains("/") }?.trimEnd('}', ',')?.take(160)
+        } catch (e: Exception) { null }
+    }
+
     private var cachedPid: Int? = null
 
     /** Pid of the app's process (cached; call [invalidatePid] if the app may have restarted). */
@@ -667,6 +696,40 @@ class MetricsCollector(
         return result
     }
 
+    /** The memory metric surfaced by topMemoryProcs() — always RSS (from /proc, no root needed). */
+    @Volatile var lastMemSource: String = "RSS"
+        private set
+
+    /**
+     * Top processes by memory (MB), using **RSS from /proc/[pid]/stat** (field 24, in pages) —
+     * the same world-readable, single-shell read used by top-CPU. It's cheap, needs no root, and
+     * (unlike `su`/`procrank`) always terminates, so it never wedges the collector.
+     */
+    fun topMemoryProcs(topN: Int = 12): List<ProcMemSample> {
+        lastMemSource = "RSS"
+        return topMemoryFromStat().sortedByDescending { it.pssMb }.take(topN)
+    }
+
+    /** RSS (MB) per process from /proc/[pid]/stat field 24 (rss pages). Cheap, world-readable. */
+    private fun topMemoryFromStat(): List<ProcMemSample> {
+        val out = try {
+            adb.shell(target, "cat /proc/[0-9]*/stat 2>/dev/null")
+        } catch (e: Exception) { return emptyList() }
+        val list = mutableListOf<ProcMemSample>()
+        for (line in out.lines()) {
+            if (line.isBlank()) continue
+            val pid = line.substringBefore(' ').toIntOrNull() ?: continue
+            val open = line.indexOf('('); val close = line.lastIndexOf(')')
+            if (open < 0 || close < 0 || close <= open) continue
+            val name = line.substring(open + 1, close).take(28)
+            val rest = line.substring(close + 2).trim().split(Regex("\\s+"))
+            val rssPages = rest.getOrNull(21)?.toLongOrNull() ?: continue     // overall field 24 = rss
+            val mb = rssPages * 4.0 / 1024.0                                  // assume 4 KiB pages
+            if (mb >= 1.0) list += ProcMemSample(pid, name, mb)
+        }
+        return list
+    }
+
     fun toSample(
         prev: Snapshot?, dtSec: Double,
         snap: Snapshot, elapsedSec: Double,
@@ -677,7 +740,9 @@ class MetricsCollector(
         topProcs: List<ProcessSample> = emptyList(),
         videoState: String? = null,
         tunnelMode: String? = null,
-        directReclaimPerSec: Double? = null
+        directReclaimPerSec: Double? = null,
+        topActivity: String? = null,
+        topMemProcs: List<ProcMemSample> = emptyList()
     ): Sample {
         fun util(p: CpuTicks?, c: CpuTicks?): Double? {
             if (p == null || c == null) return null
@@ -743,7 +808,9 @@ class MetricsCollector(
             mediaProcs = mediaProcs,
             topProcs = topProcs,
             videoState = videoState,
-            tunnelMode = tunnelMode
+            tunnelMode = tunnelMode,
+            topActivity = topActivity,
+            topMemProcs = topMemProcs
         )
     }
 }

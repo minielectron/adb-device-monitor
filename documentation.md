@@ -408,6 +408,31 @@ round-trip, but many files). Off unless enabled.
 
 ---
 
+### Top Process Memory — RSS (interactive)
+
+**What it means.** The top processes on the device by **RSS** (Resident Set Size, MB) this tick —
+the "who's eating RAM" companion to Top-10 CPU. The dashboard lets you tick any process to chart
+its memory over time. *Example:* spot a background app climbing to 400 MB, or confirm the
+launcher's footprint. (RSS counts each shared page in full, so it slightly over-attributes shared
+memory versus PSS — but it's the standard, cheap "top consumer" signal, the same value `top` shows.)
+
+**How it's calculated.** RSS is read from **`/proc/[pid]/stat` field 24** (resident pages) via a
+single `cat /proc/[0-9]*/stat` — the exact same world-readable, always-terminating shell read
+used by Top-CPU. No root, no `dumpsys meminfo`, no `procrank`: those are either heavy or can hang
+(a wedged `su`/`procrank` keeps stdout open and blocks), so they're deliberately not used here.
+
+> For the true **PSS** *breakdown* of a single app (Java/native/graphics/…), use the *App PSS*
+> metric, which reads `dumpsys meminfo <package>` for your one package (not the whole system).
+
+**How to use it to optimize.** Find memory hogs beyond your own app (vendor services, other apps)
+that shrink available RAM and push the device toward LMK kills. Correlate a rising process with
+the *Memory Zone Watermarks* and *Memory* charts.
+
+**Cost.** **Low–Medium** — one `cat /proc/[0-9]*/stat` per tick (many files, one round-trip), run
+on a background thread so it never delays the sampling loop. Off unless enabled.
+
+---
+
 ## Set-top-box (STB) playback metrics
 
 *(Derived by parsing the captured logcat — no extra adb calls, so effectively free.)*
@@ -475,6 +500,7 @@ a timeline, and a line in the PDF report.
 | UI jank & frame phases | `dumpsys` | `dumpsys gfxinfo <pkg> framestats` | Medium |
 | Media/HAL process CPU | `/proc/<pid>/stat` | `pidof` + `cat /proc/<pid>/stat` | Low–Med |
 | Top-10 process CPU | `/proc/[pid]/stat` (all) | `cat /proc/[0-9]*/stat` | Medium |
+| Top process memory (RSS) | `/proc/[pid]/stat` field 24 | `cat /proc/[0-9]*/stat` | Low–Medium |
 | Player state | logcat | (parses captured logcat) | Negligible |
 | Tunnel mode | logcat | (parses captured logcat) | Negligible |
 

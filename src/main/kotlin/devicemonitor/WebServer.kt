@@ -30,6 +30,18 @@ class WebApp(
     @Volatile private var anomalyCacheLen = -1L
     @Volatile private var anomalyCacheFile: File? = null
 
+    // Device-snapshot (one-shot STB capabilities capture) state.
+    @Volatile private var snapRunning = false
+    @Volatile private var snapProgress = 0
+    @Volatile private var snapError: String? = null
+    @Volatile private var snapFile: File? = null
+
+    // Procrank-snapshot (one-shot per-process memory capture) state.
+    @Volatile private var procRunning = false
+    @Volatile private var procProgress = 0
+    @Volatile private var procError: String? = null
+    @Volatile private var procFile: File? = null
+
     fun start() {
         val s = HttpServer.create(InetSocketAddress(port), 0)
         s.createContext("/") { ex -> respond(ex, 200, "text/html", HOME_PAGE) }
@@ -40,6 +52,22 @@ class WebApp(
             respond(ex, 200, "application/json", "{\"reportsDir\":\"${esc(dir)}\",\"build\":\"${esc(buildTag())}\"}")
         }
         s.createContext("/api/pick-folder") { ex -> handlePickFolder(ex) }
+        s.createContext("/api/snapshot") { ex -> handleSnapshotStart(ex) }
+        s.createContext("/api/snapshot-status") { ex ->
+            val done = snapFile != null
+            respond(ex, 200, "application/json",
+                "{\"running\":$snapRunning,\"progress\":$snapProgress,\"done\":$done," +
+                    "\"error\":${snapError?.let { "\"${esc(it)}\"" } ?: "null"}}")
+        }
+        s.createContext("/api/snapshot-report") { ex -> handleSnapshotReport(ex) }
+        s.createContext("/api/procrank-snapshot") { ex -> handleProcrankStart(ex) }
+        s.createContext("/api/procrank-status") { ex ->
+            val done = procFile != null
+            respond(ex, 200, "application/json",
+                "{\"running\":$procRunning,\"progress\":$procProgress,\"done\":$done," +
+                    "\"error\":${procError?.let { "\"${esc(it)}\"" } ?: "null"}}")
+        }
+        s.createContext("/api/procrank-report") { ex -> handleProcrankReport(ex) }
         s.createContext("/api/start") { ex -> handleStart(ex) }
         s.createContext("/api/stop") { ex ->
             session?.requestStop()
@@ -110,6 +138,75 @@ class WebApp(
         respond(ex, 200, "application/json", "{\"ok\":true,\"message\":\"${esc(out.lines().first())}\"}")
     }
 
+    private fun handleSnapshotStart(ex: HttpExchange) {
+        if (ex.requestMethod != "POST") { respond(ex, 405, "application/json", err("POST only")); return }
+        if (snapRunning) { respond(ex, 409, "application/json", err("A snapshot is already running")); return }
+        val serial = parseForm(ex)["serial"] ?: run { respond(ex, 400, "application/json", err("No device selected")); return }
+        snapRunning = true; snapProgress = 0; snapError = null; snapFile = null
+        Thread {
+            try {
+                val data = Capabilities.capture(adb, serial) { p -> snapProgress = p }
+                val ts = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+                val out = File(MonitorSession.resolveBaseDir(null), "device-snapshot_${ts}.html")
+                Capabilities.writeHtml(data, serial, out)
+                snapProgress = 100
+                snapFile = out
+                println("Web: device snapshot written -> ${out.absolutePath}")
+            } catch (e: Exception) {
+                snapError = e.message ?: "snapshot failed"
+                System.err.println("Snapshot failed: ${e.message}")
+            } finally {
+                snapRunning = false
+            }
+        }.apply { isDaemon = true; name = "device-snapshot" }.start()
+        respond(ex, 200, "application/json", "{\"ok\":true}")
+    }
+
+    private fun handleSnapshotReport(ex: HttpExchange) {
+        val f = snapFile
+        if (f == null || !f.exists()) { respond(ex, 404, "application/json", err("Snapshot not ready")); return }
+        val bytes = f.readBytes()
+        // Serve inline so it opens as an interactive page (with a download option in the browser).
+        ex.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
+        ex.responseHeaders.add("Content-Disposition", "inline; filename=\"${f.name}\"")
+        ex.sendResponseHeaders(200, bytes.size.toLong())
+        ex.responseBody.use { it.write(bytes) }
+    }
+
+    private fun handleProcrankStart(ex: HttpExchange) {
+        if (ex.requestMethod != "POST") { respond(ex, 405, "application/json", err("POST only")); return }
+        if (procRunning) { respond(ex, 409, "application/json", err("A procrank snapshot is already running")); return }
+        val serial = parseForm(ex)["serial"] ?: run { respond(ex, 400, "application/json", err("No device selected")); return }
+        procRunning = true; procProgress = 0; procError = null; procFile = null
+        Thread {
+            try {
+                val data = Capabilities.captureProcrank(adb, serial) { p -> procProgress = p }
+                val ts = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+                val out = File(MonitorSession.resolveBaseDir(null), "procrank-snapshot_${ts}.html")
+                Capabilities.writeProcrankHtml(data, serial, out)
+                procProgress = 100
+                procFile = out
+                println("Web: procrank snapshot written -> ${out.absolutePath}")
+            } catch (e: Exception) {
+                procError = e.message ?: "procrank snapshot failed"
+                System.err.println("Procrank snapshot failed: ${e.message}")
+            } finally {
+                procRunning = false
+            }
+        }.apply { isDaemon = true; name = "procrank-snapshot" }.start()
+        respond(ex, 200, "application/json", "{\"ok\":true}")
+    }
+
+    private fun handleProcrankReport(ex: HttpExchange) {
+        val f = procFile
+        if (f == null || !f.exists()) { respond(ex, 404, "application/json", err("Procrank snapshot not ready")); return }
+        val bytes = f.readBytes()
+        ex.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
+        ex.responseHeaders.add("Content-Disposition", "inline; filename=\"${f.name}\"")
+        ex.sendResponseHeaders(200, bytes.size.toLong())
+        ex.responseBody.use { it.write(bytes) }
+    }
+
     private fun handleStart(ex: HttpExchange) {
         if (ex.requestMethod != "POST") { respond(ex, 405, "application/json", err("POST only")); return }
         val active = session
@@ -162,6 +259,7 @@ class WebApp(
             loadEnabled       = bool("load"),
             directReclaimEnabled = bool("reclaim"),
             topProcsEnabled   = bool("topProcs"),
+            topMemEnabled     = form["topMem"] == "true",   // opt-in (procrank/dumpsys per tick)
             playbackEnabled   = form["playback"] == "true",  // STB opt-in — off by default
             appPssEnabled     = bool("appPss"),
             appProcCpuEnabled = bool("appCpu"),
@@ -260,6 +358,8 @@ class WebApp(
         sb.append("\"hasCpuFreq\":").append(s.config.cpuFreqEnabled).append(",")
         sb.append("\"hasLoad\":").append(s.config.loadEnabled).append(",")
         sb.append("\"hasTopProcs\":").append(s.config.topProcsEnabled).append(",")
+        sb.append("\"hasTopMem\":").append(s.config.topMemEnabled).append(",")
+        sb.append("\"memSource\":").append(s.memSource?.let { "\"${esc(it)}\"" } ?: "null").append(",")
         sb.append("\"hasPlayback\":").append(s.config.playbackEnabled).append(",")
         sb.append("\"buildTunnel\":").append(s.buildTunnelEnabled?.toString() ?: "null").append(",")
         sb.append("\"zapMs\":").append(s.config.zapMs?.toString() ?: "null").append(",")
@@ -325,8 +425,18 @@ class WebApp(
                     .append("}")
             }
             sb.append("]")  // close procs array
+            sb.append(",\"memprocs\":[")
+            p.topMemProcs.forEachIndexed { pi, proc ->
+                if (pi > 0) sb.append(",")
+                sb.append("{\"pid\":").append(proc.pid)
+                    .append(",\"n\":\"").append(esc(proc.name))
+                    .append("\",\"mb\":").append(num(proc.pssMb))
+                    .append("}")
+            }
+            sb.append("]")
             sb.append(",\"video\":").append(p.videoState?.let { "\"${esc(it)}\"" } ?: "null")
             sb.append(",\"tunnel\":").append(p.tunnelMode?.let { "\"${esc(it)}\"" } ?: "null")
+            sb.append(",\"act\":").append(p.topActivity?.let { "\"${esc(it)}\"" } ?: "null")
             sb.append("}")  // close sample object
         }
         sb.append("],")
@@ -346,14 +456,9 @@ class WebApp(
 
     private fun liveAnomalies(s: MonitorSession): List<Anomaly> {
         if (!s.config.logcatEnabled) return emptyList()
-        val f = s.logcatFile ?: return emptyList()
-        val len = try { f.length() } catch (e: Exception) { return anomalyCache }
-        if (f != anomalyCacheFile || len != anomalyCacheLen) {
-            anomalyCache = try { AnomalyScanner.scan(f, s.deviceTimeAnchor) } catch (e: Exception) { anomalyCache }
-            anomalyCacheFile = f
-            anomalyCacheLen = len
-        }
-        return anomalyCache
+        // The session scans logcat incrementally on the sampling thread; just read its list —
+        // no per-poll full re-scan (which used to make long runs lag).
+        return s.liveAnomalies()
     }
 
     /** Lists run_* folders (with samples.csv) in cwd, newest first. */
