@@ -182,11 +182,14 @@ class WebApp(
             try {
                 val data = Capabilities.captureProcrank(adb, serial) { p -> procProgress = p }
                 val ts = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
-                val out = File(MonitorSession.resolveBaseDir(null), "procrank-snapshot_${ts}.html")
+                val base = MonitorSession.resolveBaseDir(null)
+                val out = File(base, "procrank-snapshot_${ts}.html")
                 Capabilities.writeProcrankHtml(data, serial, out)
+                // Write the capture debug log next to the HTML so device output can be inspected/shared.
+                try { File(base, "procrank-snapshot_${ts}.debug.txt").writeText(Capabilities.lastProcrankDebug) } catch (_: Exception) {}
                 procProgress = 100
                 procFile = out
-                println("Web: procrank snapshot written -> ${out.absolutePath}")
+                println("Web: procrank snapshot written -> ${out.absolutePath} (source=${data.source}, entries=${data.entries.size})")
             } catch (e: Exception) {
                 procError = e.message ?: "procrank snapshot failed"
                 System.err.println("Procrank snapshot failed: ${e.message}")

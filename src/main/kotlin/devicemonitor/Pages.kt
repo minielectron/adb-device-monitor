@@ -964,12 +964,12 @@ function pushSamples(list) {
       });
     }
   });
-  // Push top-process data
-  if (hasTopProcs) pushProcSamples(list);
+  // Push top-process data (guarded — never let one section's error freeze the others)
+  try { if (hasTopProcs) pushProcSamples(list); } catch (e) { console.error('proc push failed', e); }
   // Push top-memory data
-  if (hasTopMem) pushMemSamples(list);
+  try { if (hasTopMem) pushMemSamples(list); } catch (e) { console.error('mem push failed', e); }
   // Push playback (STB) data
-  if (hasPlayback) pushPlaybackSamples(list);
+  try { if (hasPlayback) pushPlaybackSamples(list); } catch (e) { console.error('playback push failed', e); }
   // Stretch each baseline to [firstSample.t … lastSample.t] — identical x-range
   // to the real data series, so Chart.js auto-scaling stays consistent.
   if (allSamples.length) {

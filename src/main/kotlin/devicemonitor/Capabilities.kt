@@ -195,7 +195,8 @@ object Capabilities {
 
         sb.append("<header><h1>&#128247; STB Device Snapshot</h1><div class=\"m\">Target: ")
             .append(escHtml(target)).append("  &middot;  Generated: ").append(ts)
-            .append("  &middot;  ").append(escHtml("ADB Performance Studio")).append("</div></header>")
+            .append("  &middot;  ").append(escHtml("ADB Performance Studio"))
+            .append("  &middot;  ").append(escHtml(buildTag())).append("</div></header>")
 
         sb.append("<div class=\"wrap\"><div class=\"grid\">")
 
@@ -208,7 +209,7 @@ object Capabilities {
 
         // Pie card
         sb.append("<div class=\"card\"><h2>Memory footprint (PSS by category vs free/available RAM)</h2>")
-        sb.append("<div class=\"piebox\"><canvas id=\"pie\"></canvas><div class=\"center\"><div id=\"centerTxt\"></div></div></div>")
+        sb.append("<div class=\"piebox\"><canvas id=\"pie\"></canvas></div>")
         sb.append("</div></div>")  // close grid
 
         // Process table
@@ -225,13 +226,15 @@ object Capabilities {
 
         // Data + render script (no '$' / template literals — Kotlin string safety)
         sb.append("<script>")
-        sb.append("var D={android:").append("%.1f".format(s.androidMb))
-            .append(",third:").append("%.1f".format(s.thirdPartyMb))
-            .append(",launcher:").append("%.1f".format(s.launcherMb))
-            .append(",memFree:").append("%.1f".format(s.memFreeMb))
-            .append(",memAvail:").append("%.1f".format(s.memAvailableMb))
-            .append(",memTotal:").append("%.1f".format(s.memTotalMb))
-            .append(",total:").append("%.1f".format(total)).append("};")
+        // Locale.US is REQUIRED: a comma-decimal locale would break the JS number literals below.
+        fun js1(v: Double) = String.format(java.util.Locale.US, "%.1f", v)
+        sb.append("var D={android:").append(js1(s.androidMb))
+            .append(",third:").append(js1(s.thirdPartyMb))
+            .append(",launcher:").append(js1(s.launcherMb))
+            .append(",memFree:").append(js1(s.memFreeMb))
+            .append(",memAvail:").append(js1(s.memAvailableMb))
+            .append(",memTotal:").append(js1(s.memTotalMb))
+            .append(",total:").append(js1(total)).append("};")
         sb.append(RENDER_JS)
         sb.append("</script></body></html>")
 
@@ -245,9 +248,19 @@ var labels=['Android','3rd-party apps','Launcher','MemFree','MemAvailable'];
 var vals=[D.android,D.third,D.launcher,D.memFree,D.memAvail];
 var colors=['#2ca02c','#d62728','#1f77b4','#ff7f0e','#9467bd'];
 var tot=vals.reduce(function(a,b){return a+b;},0)||1;
-document.getElementById('centerTxt').innerHTML =
-  '<div style="font-size:11px;color:#6b7280">Total RAM</div>' +
-  '<div style="font-size:18px;font-weight:600;color:#374151">' + fmt(D.memTotal) + ' MiB</div>';
+// Draw "Total RAM" at the doughnut's TRUE arc center (a right-side legend shifts the ring
+// left, so an HTML overlay centered on the whole box would overlap the ring — this can't).
+var centerText={id:'centerText',afterDraw:function(chart){
+  var meta=chart.getDatasetMeta(0); if(!meta||!meta.data||!meta.data.length) return;
+  var arc=meta.data[0]; var ctx=chart.ctx;
+  var cx=arc.x, cy=arc.y;
+  ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle='#6b7280'; ctx.font='11px -apple-system,Segoe UI,Roboto,sans-serif';
+  ctx.fillText('Total RAM', cx, cy-9);
+  ctx.fillStyle='#374151'; ctx.font='600 18px -apple-system,Segoe UI,Roboto,sans-serif';
+  ctx.fillText(fmt(D.memTotal)+' MiB', cx, cy+9);
+  ctx.restore();
+}};
 new Chart(document.getElementById('pie'),{
   type:'doughnut',
   data:{labels:labels,datasets:[{data:vals,backgroundColor:colors,borderColor:'#fff',borderWidth:2}]},
@@ -261,7 +274,7 @@ new Chart(document.getElementById('pie'),{
         formatter:function(v){return v>0?(100*v/tot).toFixed(1)+'%':'';}},
       tooltip:{callbacks:{label:function(c){return c.label+': '+fmt(c.raw)+' MiB ('+(100*c.raw/tot).toFixed(1)+'%)';}}}
     }},
-  plugins:[ChartDataLabels]
+  plugins:[ChartDataLabels, centerText]
 });
 """
 
@@ -278,29 +291,58 @@ new Chart(document.getElementById('pie'),{
         val memTotalMb: Double, val memFreeMb: Double, val memAvailableMb: Double
     )
 
+    /** Sidecar debug log written next to the procrank HTML — captures exactly what the device returned. */
+    @Volatile var lastProcrankDebug: String = ""
+        private set
+
     /** One-shot procrank capture (falls back to /proc RSS when procrank/root isn't available). */
     fun captureProcrank(adb: Adb, target: String, progress: (Int) -> Unit = {}): ProcrankSnapshot {
+        val dbg = StringBuilder()
+        dbg.append("=== procrank capture debug — ").append(LocalDateTime.now()).append(" — target=").append(target).append(" ===\n")
         progress(10)
-        val mem = parseMeminfo(safeShell(adb, target, "cat /proc/meminfo 2>/dev/null"))
+        val memRaw = safeShell(adb, target, "cat /proc/meminfo 2>/dev/null")
+        val mem = parseMeminfo(memRaw)
         val memTotal = kbToMb(mem["MemTotal"]); val memFree = kbToMb(mem["MemFree"])
         val memAvail = kbToMb(mem["MemAvailable"] ?: mem["MemFree"])
+        dbg.append("meminfo lines: ").append(memRaw.lines().size)
+            .append("  MemTotal=").append(memTotal).append("MiB  MemFree=").append(memFree)
+            .append("  MemAvailable=").append(memAvail).append("\n")
         progress(35)
 
-        var out: String? = null
+        // Try procrank variants. Accept only if it actually yields data ROWS — on a non-rooted
+        // device procrank often prints just the header ("...Pss...Uss...") with no per-process
+        // rows, which previously slipped through and produced an empty chart.
+        var parsed: List<ProcrankEntry> = emptyList()
         for (cmd in listOf("procrank", "su 0 procrank", "su -c procrank")) {
             val o = safeShell(adb, target, cmd)
-            if (o.contains("Pss", ignoreCase = true)) { out = o; break }
+            val rows = if (o.contains("Pss", ignoreCase = true)) parseProcrankFull(o) else emptyList()
+            dbg.append("\n--- `").append(cmd).append("` -> ").append(o.lines().size)
+                .append(" lines, hasPss=").append(o.contains("Pss", ignoreCase = true))
+                .append(", parsedRows=").append(rows.size).append("\n")
+            dbg.append("    first 6 lines of output:\n")
+            o.lines().take(6).forEach { dbg.append("    | ").append(it.take(160)).append("\n") }
+            if (rows.size >= 3) { parsed = rows; break }
         }
         progress(80)
 
         val entries: List<ProcrankEntry>
         val source: String
-        if (out != null) { entries = parseProcrankFull(out); source = "procrank" }
-        else { entries = procFromStat(adb, target); source = "proc-rss" }
+        if (parsed.isNotEmpty()) { entries = parsed; source = "procrank" }
+        else {
+            entries = procFromStat(adb, target)
+            source = "proc-rss"
+            dbg.append("\n--- fallback ps (VSZ,RSS) -> parsedRows=").append(entries.size).append("\n")
+            entries.take(5).forEach { dbg.append("    | pid=").append(it.pid).append(" ").append(it.name)
+                .append(" rss=").append(it.rssMb).append("MiB vss=").append(it.vssMb).append("MiB\n") }
+        }
 
         val sorted = entries.sortedByDescending { it.pssMb ?: it.rssMb ?: 0.0 }
         val totalPss = entries.mapNotNull { it.pssMb }.sum()
         val totalRss = entries.mapNotNull { it.rssMb }.sum()
+        dbg.append("\n=== RESULT: source=").append(source).append("  entries=").append(sorted.size)
+            .append("  totalPss=").append(totalPss).append("MiB  totalRss=").append(totalRss).append("MiB ===\n")
+        lastProcrankDebug = dbg.toString()
+        println(lastProcrankDebug)
         progress(90)
         return ProcrankSnapshot(sorted, source, totalPss, totalRss, memTotal, memFree, memAvail)
     }
@@ -322,43 +364,52 @@ new Chart(document.getElementById('pie'),{
         return list
     }
 
-    /** Fallback (no procrank/root): RSS + VSS from /proc/[pid]/stat (fields 23 vsize, 24 rss). */
+    /**
+     * Fallback (no procrank/root): RSS + VSS from a single `ps` call (VSZ & RSS columns are KiB).
+     * Uses `ps` rather than a `cat /proc/[0-9]#/stat` glob so it can't hit ARG_MAX or stall on a
+     * busy device — PSS/USS aren't available without procrank, so those stay null.
+     */
     private fun procFromStat(adb: Adb, target: String): List<ProcrankEntry> {
-        val out = try { adb.shell(target, "cat /proc/[0-9]*/stat 2>/dev/null") } catch (e: Exception) { return emptyList() }
+        val out = try {
+            adb.shell(target, "ps -A -o PID,VSZ,RSS,NAME 2>/dev/null || ps -o PID,VSZ,RSS,NAME 2>/dev/null")
+        } catch (e: Exception) { return emptyList() }
         val list = mutableListOf<ProcrankEntry>()
         for (line in out.lines()) {
-            if (line.isBlank()) continue
-            val pid = line.substringBefore(' ').toIntOrNull() ?: continue
-            val open = line.indexOf('('); val close = line.lastIndexOf(')')
-            if (open < 0 || close < 0 || close <= open) continue
-            val name = line.substring(open + 1, close).take(60)
-            val rest = line.substring(close + 2).trim().split(Regex("\\s+"))
-            val vsize = rest.getOrNull(20)?.toLongOrNull()            // field 23 (bytes)
-            val rssPages = rest.getOrNull(21)?.toLongOrNull() ?: continue  // field 24 (pages)
-            val rssMb = rssPages * 4.0 / 1024.0
+            val t = line.trim()
+            if (t.isEmpty() || t.startsWith("PID", ignoreCase = true)) continue
+            val cols = t.split(Regex("\\s+"))
+            if (cols.size < 4) continue
+            val pid = cols[0].toIntOrNull() ?: continue
+            val vszKb = cols[1].toLongOrNull()
+            val rssKb = cols[2].toLongOrNull() ?: continue
+            val name = cols.subList(3, cols.size).joinToString(" ").take(60)
+            val rssMb = rssKb / 1024.0
             if (rssMb < 0.5) continue
-            list += ProcrankEntry(pid, name, vsize?.div(1024.0 * 1024.0), rssMb, null, null)
+            list += ProcrankEntry(pid, name, vszKb?.div(1024.0), rssMb, null, null)
         }
         return list
     }
 
-    /** Interactive HTML: top-15 by PSS/RSS bar + sortable, searchable full process table. */
+    private fun n0(v: Double): String = String.format(java.util.Locale.US, "%,.0f", v)
+    private fun n0OrDash(v: Double?): String = v?.let { n0(it) } ?: "—"
+
+    /**
+     * Self-contained procrank report. The chart is rendered SERVER-SIDE as inline SVG and the table
+     * as static HTML — deliberately NO Chart.js, NO CDN, and NO embedded JS data array. Earlier
+     * versions injected a JS `DATA` array and drew with Chart.js, which failed silently whenever a
+     * process name or a locale-formatted number broke the JS literal. Server-side rendering removes
+     * that entire failure surface: if the capture has rows, the graph shows. A tiny optional script
+     * only adds filter/sort on top of the already-rendered table (it can't blank the page).
+     */
     fun writeProcrankHtml(s: ProcrankSnapshot, target: String, out: File) {
         val ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
         val metric = if (s.source == "procrank") "PSS" else "RSS"
-        val rows = StringBuilder()
-        for (e in s.entries) {
-            fun c(v: Double?) = v?.let { "%.1f".format(it) } ?: "null"
-            rows.append("{p:").append(e.pid)
-                .append(",n:\"").append(escHtml(e.name)).append("\"")
-                .append(",vss:").append(c(e.vssMb)).append(",rss:").append(c(e.rssMb))
-                .append(",pss:").append(c(e.pssMb)).append(",uss:").append(c(e.ussMb)).append("},")
-        }
-        val sb = StringBuilder(16384)
+        fun metricVal(e: ProcrankEntry): Double = (if (metric == "PSS") e.pssMb else e.rssMb) ?: e.rssMb ?: 0.0
+
+        val sb = StringBuilder(32768)
         sb.append("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">")
         sb.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
         sb.append("<title>Procrank Snapshot — ").append(escHtml(target)).append("</title>")
-        sb.append("<script src=\"https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js\"></script>")
         sb.append("<style>")
         sb.append("body{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;margin:0;background:#f4f5f7;color:#1f2430}")
         sb.append("header{background:linear-gradient(135deg,#111827,#1e3a5f);color:#fff;padding:16px 24px}")
@@ -371,67 +422,112 @@ new Chart(document.getElementById('pie'),{
         sb.append("input#q{width:260px;padding:7px 10px;border:1px solid #cdd2da;border-radius:7px;font-size:13px;margin-bottom:10px}")
         sb.append("table{width:100%;border-collapse:collapse;font-size:12.5px} th,td{padding:5px 9px;border-bottom:1px solid #eef0f3;text-align:right}")
         sb.append("th:nth-child(2),td:nth-child(2){text-align:left} th{cursor:pointer;background:#f3f4f6;user-select:none;position:sticky;top:0}")
-        sb.append("th.act{color:#0e7490} td.mono,th{font-family:ui-monospace,Menlo,monospace}")
+        sb.append("td.mono,th{font-family:ui-monospace,Menlo,monospace}")
         sb.append(".note{background:#fef3c7;border:1px solid #fde68a;color:#92400e;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:12px}")
+        sb.append(".svgbar{width:100%;height:auto}")
         sb.append("</style></head><body>")
         sb.append("<header><h1>&#128202; Procrank Snapshot</h1><div class=\"m\">Target: ").append(escHtml(target))
             .append("  &middot;  ").append(ts).append("  &middot;  source: ")
-            .append(if (s.source == "procrank") "procrank (PSS/USS)" else "/proc RSS (procrank/root unavailable)")
+            .append(if (s.source == "procrank") "procrank (PSS/USS)" else "ps RSS/VSS (procrank/root unavailable)")
+            .append("  &middot;  ").append(escHtml(buildTag()))
+            .append("  &middot;  ").append(s.entries.size).append(" processes")
             .append("</div></header>")
         sb.append("<div class=\"wrap\">")
-        if (s.source != "procrank") sb.append("<div class=\"note\">procrank was not available (needs root). Showing RSS + VSS from /proc instead — PSS/USS columns are blank.</div>")
+        if (s.entries.isEmpty())
+            sb.append("<div class=\"note\">No process memory data was returned by the device. Neither <code>procrank</code> nor <code>ps</code> produced rows — see the <code>.debug.txt</code> file saved next to this report for the raw device output.</div>")
+        else if (s.source != "procrank")
+            sb.append("<div class=\"note\">procrank was not available (needs root). Showing RSS + VSS from <code>ps</code> instead — PSS/USS columns are blank.</div>")
+
         sb.append("<div class=\"card\"><div class=\"kpis\">")
-        sb.append("<div>Total RAM<b>%,.0f MiB</b></div>".format(s.memTotalMb))
-        sb.append("<div>MemFree<b>%,.0f MiB</b></div>".format(s.memFreeMb))
-        sb.append("<div>MemAvailable<b>%,.0f MiB</b></div>".format(s.memAvailableMb))
-        sb.append("<div>Total ").append(metric).append("<b>%,.0f MiB</b></div>".format(if (metric == "PSS") s.totalPssMb else s.totalRssMb))
+        sb.append("<div>Total RAM<b>").append(n0(s.memTotalMb)).append(" MiB</b></div>")
+        sb.append("<div>MemFree<b>").append(n0(s.memFreeMb)).append(" MiB</b></div>")
+        sb.append("<div>MemAvailable<b>").append(n0(s.memAvailableMb)).append(" MiB</b></div>")
+        sb.append("<div>Total ").append(metric).append("<b>").append(n0(if (metric == "PSS") s.totalPssMb else s.totalRssMb)).append(" MiB</b></div>")
         sb.append("<div>Processes<b>").append(s.entries.size).append("</b></div>")
         sb.append("</div></div>")
-        sb.append("<div class=\"card\"><h2>Top 15 processes by ").append(metric).append(" (MiB)</h2>")
-        sb.append("<div style=\"position:relative;height:360px\"><canvas id=\"bar\"></canvas></div></div>")
+
+        // ---- Top-15 horizontal bar chart, rendered as inline SVG (no JS, no CDN) ----
+        val top = s.entries.take(15)
+        if (top.isNotEmpty()) {
+            val maxV = (top.maxOfOrNull { metricVal(it) } ?: 1.0).coerceAtLeast(0.0001)
+            val rowH = 26; val padTop = 12; val labelW = 250; val barMax = 540; val valW = 78
+            val svgW = labelW + barMax + valW + 16
+            val svgH = top.size * rowH + padTop * 2
+            sb.append("<div class=\"card\"><h2>Top ").append(top.size).append(" processes by ").append(metric).append(" (MiB)</h2>")
+            sb.append("<svg class=\"svgbar\" viewBox=\"0 0 ").append(svgW).append(' ').append(svgH)
+                .append("\" xmlns=\"http://www.w3.org/2000/svg\" font-family=\"-apple-system,Segoe UI,Roboto,sans-serif\">")
+            top.forEachIndexed { i, e ->
+                val v = metricVal(e)
+                val barW = (v / maxV * barMax).coerceIn(1.0, barMax.toDouble())
+                val y = padTop + i * rowH
+                val cy = y + rowH / 2
+                val label = e.name.let { if (it.length > 34) it.take(33) + "…" else it }
+                sb.append("<text x=\"").append(labelW - 8).append("\" y=\"").append(cy + 4)
+                    .append("\" text-anchor=\"end\" font-size=\"11\" fill=\"#374151\">").append(escHtml(label)).append("</text>")
+                sb.append("<rect x=\"").append(labelW).append("\" y=\"").append(y + 4)
+                    .append("\" width=\"").append("%.1f".let { String.format(java.util.Locale.US, it, barW) })
+                    .append("\" height=\"").append(rowH - 8).append("\" rx=\"3\" fill=\"#1d4ed8\"></rect>")
+                sb.append("<text x=\"").append(String.format(java.util.Locale.US, "%.1f", labelW + barW + 6))
+                    .append("\" y=\"").append(cy + 4).append("\" font-size=\"11\" fill=\"#111827\">").append(n0(v)).append("</text>")
+            }
+            sb.append("</svg></div>")
+        }
+
+        // ---- Full process table, rendered statically (no JS needed to see it) ----
         sb.append("<div class=\"card\"><h2>All processes</h2>")
-        sb.append("<input id=\"q\" placeholder=\"filter by process name…\" oninput=\"render()\">")
+        sb.append("<input id=\"q\" placeholder=\"filter by process name…\">")
         sb.append("<div style=\"max-height:520px;overflow:auto\"><table id=\"tbl\"><thead><tr>")
-        sb.append("<th onclick=\"sortBy('p')\">PID</th><th onclick=\"sortBy('n')\">Process</th>")
-        sb.append("<th onclick=\"sortBy('pss')\">PSS</th><th onclick=\"sortBy('rss')\">RSS</th>")
-        sb.append("<th onclick=\"sortBy('uss')\">USS</th><th onclick=\"sortBy('vss')\">VSS</th>")
-        sb.append("</tr></thead><tbody id=\"tb\"></tbody></table></div></div>")
-        sb.append("<script>var DATA=[").append(rows).append("];var METRIC=\"").append(metric.lowercase()).append("\";")
-        sb.append(PROC_RENDER_JS).append("</script></div></body></html>")
+        sb.append("<th data-k=\"p\">PID</th><th data-k=\"n\">Process</th>")
+        sb.append("<th data-k=\"pss\">PSS</th><th data-k=\"rss\">RSS</th>")
+        sb.append("<th data-k=\"uss\">USS</th><th data-k=\"vss\">VSS</th>")
+        sb.append("</tr></thead><tbody id=\"tb\">")
+        for (e in s.entries) {
+            fun d(v: Double?) = v?.let { String.format(java.util.Locale.US, "%.3f", it) } ?: "-1"
+            sb.append("<tr data-p=\"").append(e.pid).append("\" data-n=\"").append(escHtml(e.name.lowercase()))
+                .append("\" data-pss=\"").append(d(e.pssMb)).append("\" data-rss=\"").append(d(e.rssMb))
+                .append("\" data-uss=\"").append(d(e.ussMb)).append("\" data-vss=\"").append(d(e.vssMb)).append("\">")
+                .append("<td class=\"mono\">").append(e.pid).append("</td>")
+                .append("<td>").append(escHtml(e.name)).append("</td>")
+                .append("<td>").append(n0OrDash(e.pssMb)).append("</td>")
+                .append("<td>").append(n0OrDash(e.rssMb)).append("</td>")
+                .append("<td>").append(n0OrDash(e.ussMb)).append("</td>")
+                .append("<td>").append(n0OrDash(e.vssMb)).append("</td></tr>")
+        }
+        sb.append("</tbody></table></div></div>")
+        // Optional progressive-enhancement filter/sort over the ALREADY-rendered rows.
+        sb.append("<script>").append(PROC_TABLE_JS).append("</script>")
+        sb.append("</div></body></html>")
 
         out.parentFile?.mkdirs()
         out.writeText(sb.toString())
     }
 
-    private const val PROC_RENDER_JS = """
-function fmt(v){return (v===null||v===undefined)?'—':Math.round(v).toLocaleString();}
-var sortKey=METRIC, sortDir=-1;
-function sortBy(k){ if(sortKey===k){sortDir=-sortDir;}else{sortKey=k;sortDir=(k==='n')?1:-1;} render(); }
-function render(){
-  var q=(document.getElementById('q').value||'').toLowerCase();
-  var rows=DATA.filter(function(r){return !q || r.n.toLowerCase().indexOf(q)>=0;});
-  rows.sort(function(a,b){
-    var x=a[sortKey], y=b[sortKey];
-    if(sortKey==='n'){ x=(''+x).toLowerCase(); y=(''+y).toLowerCase(); return x<y?-sortDir:x>y?sortDir:0; }
-    x=(x===null||x===undefined)?-1:x; y=(y===null||y===undefined)?-1:y;
-    return (x-y)*sortDir;
+    // Operates only on existing DOM rows via their data-* attributes; if it throws, the fully
+    // server-rendered table and SVG chart are already visible — nothing can blank the report.
+    private const val PROC_TABLE_JS = """
+try{
+(function(){
+  var tb=document.getElementById('tb'), q=document.getElementById('q');
+  var rows=[].slice.call(tb.querySelectorAll('tr'));
+  function num(r,k){ var v=parseFloat(r.getAttribute('data-'+k)); return isNaN(v)?-1:v; }
+  q.addEventListener('input',function(){
+    var f=(q.value||'').toLowerCase();
+    rows.forEach(function(r){ r.style.display=(!f||r.getAttribute('data-n').indexOf(f)>=0)?'':'none'; });
   });
-  var h='';
-  rows.forEach(function(r){
-    h+='<tr><td class="mono">'+r.p+'</td><td>'+r.n+'</td><td>'+fmt(r.pss)+'</td><td>'+fmt(r.rss)+'</td><td>'+fmt(r.uss)+'</td><td>'+fmt(r.vss)+'</td></tr>';
+  var dir={};
+  [].slice.call(document.querySelectorAll('th[data-k]')).forEach(function(th){
+    th.addEventListener('click',function(){
+      var k=th.getAttribute('data-k'); dir[k]=-(dir[k]||1);
+      var vis=rows.filter(function(r){return r.style.display!=='none';});
+      vis.sort(function(a,b){
+        if(k==='n'){ var x=a.getAttribute('data-n'),y=b.getAttribute('data-n'); return x<y?dir[k]:x>y?-dir[k]:0; }
+        return (num(a,k)-num(b,k))*dir[k];
+      });
+      vis.forEach(function(r){ tb.appendChild(r); });
+    });
   });
-  document.getElementById('tb').innerHTML=h;
-}
-render();
-var top=DATA.slice().sort(function(a,b){var x=a[METRIC]||0,y=b[METRIC]||0;return y-x;}).slice(0,15);
-new Chart(document.getElementById('bar'),{
-  type:'bar',
-  data:{labels:top.map(function(r){return r.n.length>26?r.n.slice(0,25)+'…':r.n;}),
-    datasets:[{label:METRIC.toUpperCase()+' (MiB)',data:top.map(function(r){return r[METRIC]||0;}),backgroundColor:'#1d4ed8'}]},
-  options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
-    plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return Math.round(c.raw).toLocaleString()+' MiB';}}}},
-    scales:{x:{title:{display:true,text:'MiB'}}}}
-});
+})();
+}catch(e){}
 """
 
     // ---------- PDF (kept as an alternative output) ----------

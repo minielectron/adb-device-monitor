@@ -65,9 +65,53 @@ fun buildTag(): String = try {
     "v1.0.0"
 }
 
+/** Generates the procrank + device-snapshot HTML from fixed test data (no device needed). */
+private fun selfTest() {
+    val dir = java.io.File(System.getProperty("java.io.tmpdir"), "adm-selftest").apply { mkdirs() }
+
+    // --- procrank snapshot from the real telekom sample (fractional MiB values) ---
+    val entries = listOf(
+        Capabilities.ProcrankEntry(5077, "com.telekom.onetv.tv", 1987.7, 329.6, 204.7, 193.3),
+        Capabilities.ProcrankEntry(687, "system_server", 2138.0, 201.3, 79.6, 73.6),
+        Capabilities.ProcrankEntry(5683, "hu.telekom.telekomtv", 1748.5, 136.2, 48.4, 44.0),
+        Capabilities.ProcrankEntry(1382, "com.google.android.gms.persistent", 1468.3, 184.0, 44.4, 30.2),
+        Capabilities.ProcrankEntry(999, "surfaceflinger", 850.1, 90.5, 30.1, 25.0),
+        // edge-case names that used to be able to break a client-side JS DATA array
+        Capabilities.ProcrankEntry(12, "[kworker/0:1H]", 0.0, 3.2, 2.0, 1.5),
+        Capabilities.ProcrankEntry(13, "weird\"name\\path", 10.0, 5.0, 4.0, 3.0),
+        Capabilities.ProcrankEntry(14, "<script>alert(1)</script>", 10.0, 6.0, 5.0, 4.0)
+    )
+    val ps = Capabilities.ProcrankSnapshot(
+        entries = entries, source = "procrank",
+        totalPssMb = entries.sumOf { it.pssMb ?: 0.0 },
+        totalRssMb = entries.sumOf { it.rssMb ?: 0.0 },
+        memTotalMb = 1912.4, memFreeMb = 86.5, memAvailableMb = 411.7
+    )
+    val pf = java.io.File(dir, "selftest-procrank.html")
+    Capabilities.writeProcrankHtml(ps, "selftest-device", pf)
+    println("SELFTEST procrank  -> ${pf.absolutePath}  (entries=${ps.entries.size})")
+
+    // --- device snapshot ---
+    val snap = Capabilities.Snapshot(
+        summary = listOf("Model" to "SEI SmartBox", "Android" to "11", "RAM" to "1912 MB"),
+        memTotalMb = 1912.4, memFreeMb = 86.5, memAvailableMb = 411.7,
+        androidMb = 512.3, thirdPartyMb = 204.7, launcherMb = 88.2,
+        launcherPkg = "com.telekom.onetv.tv",
+        processes = entries.map { Capabilities.ProcEntry(it.name, it.pssMb ?: 0.0, "third") }
+    )
+    val df = java.io.File(dir, "selftest-device.html")
+    Capabilities.writeHtml(snap, "selftest-device", df)
+    println("SELFTEST device    -> ${df.absolutePath}")
+    println("SELFTEST locale    -> ${java.util.Locale.getDefault()}")
+}
+
 fun main(args: Array<String>) {
     if (args.contains("--version") || args.contains("-v")) {
         println("ADB Device Monitor ${buildTag()}")
+        return
+    }
+    if (args.contains("--selftest")) {
+        selfTest()
         return
     }
     val opts = parseArgs(args)

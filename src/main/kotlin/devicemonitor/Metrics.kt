@@ -696,21 +696,89 @@ class MetricsCollector(
         return result
     }
 
-    /** The memory metric surfaced by topMemoryProcs() — always RSS (from /proc, no root needed). */
+    /** The memory metric surfaced by topMemoryProcs(): "RSS" (ps/proc) or "PSS" (procrank). */
     @Volatile var lastMemSource: String = "RSS"
         private set
+    @Volatile private var memStrategyLogged = false
+
+    private fun sh(cmd: String): String = try { adb.shell(target, cmd) } catch (e: Exception) { "" }
 
     /**
-     * Top processes by memory (MB), using **RSS from /proc/[pid]/stat** (field 24, in pages) —
-     * the same world-readable, single-shell read used by top-CPU. It's cheap, needs no root, and
-     * (unlike `su`/`procrank`) always terminates, so it never wedges the collector.
+     * Top processes by memory (MB). Devices vary a lot in which tools/flags they support, so we
+     * try several cheap, bounded strategies in order and use the first that returns real rows:
+     *   1. `ps -A -o PID,RSS,NAME|COMM|ARGS` — RSS (KiB), one compact call, no ARG_MAX risk.
+     *   2. `procrank` (plain, never `su` — that could hang) — PSS, works on rooted/permitted STBs.
+     *   3. `cat /proc/[pid]/stat` glob — last resort (can hit ARG_MAX / be slow).
+     * The chosen strategy + process count is logged once so the device's behaviour is visible.
      */
     fun topMemoryProcs(topN: Int = 12): List<ProcMemSample> {
+        for (cmd in listOf(
+            "ps -A -o PID,RSS,NAME", "ps -A -o PID,RSS,COMM", "ps -A -o PID,RSS,ARGS",
+            "ps -o PID,RSS,NAME", "ps -A -o pid,rss,comm"
+        )) {
+            val list = parsePsRss(sh("$cmd 2>/dev/null"))
+            if (list.size >= 3) { lastMemSource = "RSS"; logStrategy(cmd, list.size); return finalizeMem(list, topN) }
+        }
+        // procrank gives PSS but usually needs root. `su` is safe here now: Adb.exec is bounded by a
+        // hard timeout (a hung su can't wedge us), and this runs on the background collector thread.
+        for (cmd in listOf("procrank", "su 0 procrank", "su -c procrank")) {
+            val pr = parseProcrankPss(sh("$cmd 2>/dev/null"))
+            if (pr.size >= 3) { lastMemSource = "PSS"; logStrategy(cmd, pr.size); return finalizeMem(pr, topN) }
+        }
+        val stat = topMemoryFromStat()
         lastMemSource = "RSS"
-        return topMemoryFromStat().sortedByDescending { it.pssMb }.take(topN)
+        logStrategy(if (stat.isEmpty()) "NONE — all strategies empty" else "cat /proc/*/stat", stat.size)
+        return finalizeMem(stat, topN)
     }
 
-    /** RSS (MB) per process from /proc/[pid]/stat field 24 (rss pages). Cheap, world-readable. */
+    private fun finalizeMem(list: List<ProcMemSample>, topN: Int): List<ProcMemSample> =
+        list.sortedByDescending { it.pssMb }.take(topN)
+
+    private fun logStrategy(src: String, n: Int) {
+        if (memStrategyLogged) return
+        memStrategyLogged = true
+        println("[top-mem] strategy='$src'  processes=$n  (source=$lastMemSource)")
+    }
+
+    /** Parse `ps ... -o PID,RSS,<name>` output. RSS column is KiB. */
+    private fun parsePsRss(out: String): List<ProcMemSample> {
+        val list = mutableListOf<ProcMemSample>()
+        for (line in out.lines()) {
+            val t = line.trim()
+            if (t.isEmpty() || t.startsWith("PID", ignoreCase = true)) continue
+            val cols = t.split(Regex("\\s+"))
+            if (cols.size < 3) continue
+            val pid = cols[0].toIntOrNull() ?: continue
+            val rssKb = cols[1].toLongOrNull() ?: continue
+            // For ARGS the name may be a full path/cmdline — keep the last path segment, capped.
+            val rawName = cols.subList(2, cols.size).joinToString(" ")
+            val name = rawName.substringAfterLast('/').ifBlank { rawName }.take(28)
+            val mb = rssKb / 1024.0
+            if (mb >= 1.0) list += ProcMemSample(pid, name, mb)
+        }
+        return list
+    }
+
+    /** Parse `procrank` output. Columns: PID Vss Rss Pss Uss (Swap) cmdline (values suffixed K). PSS used. */
+    private fun parseProcrankPss(out: String): List<ProcMemSample> {
+        val list = mutableListOf<ProcMemSample>()
+        for (raw in out.lines()) {
+            val t = raw.trim()
+            if (t.isEmpty() || t.startsWith("PID") || t.startsWith("RAM") || t.startsWith("TOTAL") || t.startsWith("-")) continue
+            val toks = t.split(Regex("\\s+"))
+            val pid = toks.getOrNull(0)?.toIntOrNull() ?: continue
+            val kIdx = toks.indices.filter { toks[it].endsWith("K") && toks[it].dropLast(1).all(Char::isDigit) }
+            if (kIdx.size < 4) continue
+            val pssKb = toks[kIdx[2]].dropLast(1).toLongOrNull() ?: continue   // 3rd K col = Pss
+            val name = toks.subList(kIdx.last() + 1, toks.size).joinToString(" ")
+                .substringAfterLast('/').ifBlank { toks.last() }.take(28)
+            val mb = pssKb / 1024.0
+            if (mb >= 1.0) list += ProcMemSample(pid, name, mb)
+        }
+        return list
+    }
+
+    /** Fallback: RSS (MB) per process from /proc/[pid]/stat field 24 (rss pages). */
     private fun topMemoryFromStat(): List<ProcMemSample> {
         val out = try {
             adb.shell(target, "cat /proc/[0-9]*/stat 2>/dev/null")
