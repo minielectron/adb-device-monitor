@@ -97,6 +97,7 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
     @Volatile private var latestTopMem: List<ProcMemSample> = emptyList()
     @Volatile private var latestActivity: String? = null
     @Volatile private var slowCollectorRun = false
+    @Volatile private var slowThread: Thread? = null
     @Volatile var memSource: String? = null; private set   // "PSS" (procrank) or "RSS" (/proc)
 
     @Volatile private var logcatProc: Process? = null
@@ -106,19 +107,33 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
     @Volatile private var perfettoRemotePath: String? = null
     private val profileRemotePath = "/data/local/tmp/adm_method.trace"
 
+    @Volatile private var sessionThread: Thread? = null
+
     fun startAsync() {
-        Thread({ runBlocking() }, "monitor-session").start()
+        sessionThread = Thread({ runBlocking() }, "monitor-session").apply { start() }
     }
 
     /** Ask the run to finish early; outputs are still generated. */
     fun requestStop() {
+        val t = java.time.LocalTime.now()
+        println("[stop] requested at $t — signalling threads and aborting in-flight adb commands")
         stopRequested = true
+        slowCollectorRun = false
+        slowThread?.interrupt()
+        // Force-kill any adb command currently blocking the sampling loop or the collector, so the
+        // run stops within a sample tick instead of waiting out a slow procrank/su read.
+        try { adb.abortInflight() } catch (_: Exception) {}
+        // Wake the sampling loop if it's mid-sleep between ticks, so Stop is near-instant.
+        sessionThread?.interrupt()
     }
 
     fun runBlocking() {
         try {
             doRun()
+            val t0 = System.nanoTime()
+            println("[stop] finalizing outputs (report/CSV/logcat)…")
             finalizeOutputs()
+            println("[stop] finalize done in ${(System.nanoTime() - t0) / 1_000_000}ms — status DONE")
             status = Status.DONE
         } catch (e: Exception) {
             error = e.message ?: e.toString()
@@ -244,34 +259,58 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         // activity). These can take several seconds, so running them here — not inline in the
         // sampling loop — keeps the loop on its fixed interval and all other charts live.
         val wantActivity = config.appPssEnabled && config.packageName != null
-        var slowThread: Thread? = null
         if (config.topMemEnabled || wantActivity) {
             slowCollectorRun = true
             slowThread = Thread {
+                var cycle = 0
                 while (slowCollectorRun && !stopRequested) {
+                    val t0 = System.nanoTime()
                     try {
-                        if (config.topMemEnabled) { latestTopMem = collector.topMemoryProcs(); memSource = collector.lastMemSource }
-                        if (wantActivity) latestActivity = collector.topActivity()
+                        if (config.topMemEnabled) {
+                            latestTopMem = collector.topMemoryProcs()
+                            memSource = collector.lastMemSource
+                        }
+                        if (wantActivity && !stopRequested) latestActivity = collector.topActivity()
                     } catch (e: Exception) { /* keep previous values */ }
-                    try { Thread.sleep(4000) } catch (e: InterruptedException) { break }
+                    val ms = (System.nanoTime() - t0) / 1_000_000
+                    // Log every cycle so a slow/blocking read on this device is visible.
+                    println("[collector] cycle #${++cycle}: topMem=${latestTopMem.size} rows, source=$memSource, took=${ms}ms")
+                    // Adaptive backoff: if the read is slow it competes with the sampling loop for
+                    // the adb transport, so poll it less often (up to 15 s) to keep other charts live.
+                    val sleep = when {
+                        ms > 5000 -> 15000L
+                        ms > 2000 -> 9000L
+                        else -> 4000L
+                    }
+                    if (ms > 3000) System.err.println("[collector] WARNING: memory read took ${ms}ms — backing off to ${sleep / 1000}s so it doesn't delay other charts")
+                    try { Thread.sleep(sleep) } catch (e: InterruptedException) { break }
                 }
+                println("[collector] stopped")
             }.apply { isDaemon = true; name = "slow-collector"; start() }
         }
         var nextDeadline = startNanos + (config.intervalSec * 1e9).toLong()
 
         for (i in 1..totalSamples) {
             val sleepMs = (nextDeadline - System.nanoTime()) / 1_000_000
-            if (sleepMs > 0) Thread.sleep(sleepMs)
+            // Interruptible sleep: requestStop() interrupts this thread so Stop doesn't wait out
+            // the inter-sample interval. Clear the flag and fall through to the stop check below.
+            if (sleepMs > 0) try { Thread.sleep(sleepMs) } catch (e: InterruptedException) { Thread.interrupted() }
             nextDeadline += (config.intervalSec * 1e9).toLong()
             // Catch a stop request before doing any per-tick work, so Stop is snappy.
             if (stopRequested) { println("Stop requested — finishing run and generating the report."); break }
 
+            val snapT0 = System.nanoTime()
             val snap = try {
                 collector.snapshot()
             } catch (e: Exception) {
+                if (stopRequested) { println("Stop requested — sample aborted, finishing run."); break }
                 System.err.println("[$i/$totalSamples] sample failed: ${e.message}")
                 continue
             }
+            val snapMs = (System.nanoTime() - snapT0) / 1_000_000
+            // A snapshot is normally well under a second. If it blocks much longer, an adb call is
+            // contending with the background collector — surface it so the cause is visible.
+            if (snapMs > 1500) System.err.println("[loop] sample #$i snapshot took ${snapMs}ms (adb contention — likely the Top Process Memory collector)")
             val pss = if (config.appPssEnabled) config.packageName?.let { collector.pss(it) } else null
 
             // UI jank % + frame phase breakdown (gfxinfo framestats)
@@ -397,6 +436,7 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
             // Read the latest values from the background collector (never blocks the loop).
             val topActivity = if (wantActivity) latestActivity else null
             val topMem = if (config.topMemEnabled) latestTopMem else emptyList()
+            if (config.topMemEnabled && i <= 4) println("[loop] sample #$i: memprocs attached = ${topMem.size} rows (latestTopMem=${latestTopMem.size})")
 
             samples += collector.toSample(prevSnap, dtSec, snap, elapsed, pss, jankPct, mainCpu, phases, appCpu, mediaCpus, topProcs, videoState, tunnelMode, directReclaim, topActivity, topMem)
             prevSnap = snap
@@ -438,6 +478,8 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
 
         slowCollectorRun = false
         slowThread?.interrupt()
+        slowThread?.join(2000)   // give the collector up to 2s to unwind; it's a daemon regardless
+        println("[loop] sampling finished (${samples.size} samples); building report…")
 
         if (samples.size < 2) throw IllegalStateException("Not enough samples collected to build a report")
     }

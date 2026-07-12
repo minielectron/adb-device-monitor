@@ -42,6 +42,19 @@ class Adb(private val adbPath: String) {
         }
     }
 
+    // Every running adb child process is registered here so a Stop can force-kill all of them at
+    // once (abortInflight), instantly unblocking any thread parked in exec()'s waitFor.
+    private val inflight: MutableSet<Process> =
+        java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Process, Boolean>())
+
+    /** Force-kill every in-flight adb command. Used on Stop so blocked reads return immediately. */
+    fun abortInflight() {
+        val procs = inflight.toList()
+        if (procs.isEmpty()) return
+        System.err.println("[adb] Stop: aborting ${procs.size} in-flight command(s)")
+        for (p in procs) { try { p.destroyForcibly() } catch (_: Exception) {} }
+    }
+
     /** Run a raw adb command (no -s). */
     fun raw(vararg args: String): String = exec(listOf(adbPath) + args)
 
@@ -49,9 +62,13 @@ class Adb(private val adbPath: String) {
     fun device(serial: String, vararg args: String): String =
         exec(listOf(adbPath, "-s", serial) + args)
 
-    /** Run a shell command on the device. */
+    /** Run a shell command on the device (default 20 s timeout). */
     fun shell(serial: String, command: String): String =
         device(serial, "shell", command)
+
+    /** Run a shell command with an explicit timeout (seconds) — for potentially slow reads. */
+    fun shell(serial: String, command: String, timeoutSec: Long): String =
+        exec(listOf(adbPath, "-s", serial, "shell", command), timeoutSec)
 
     /** List devices known to adb (USB and TCP/IP), parsed from `adb devices -l`. */
     fun devices(): List<AdbDevice> =
@@ -99,23 +116,28 @@ class Adb(private val adbPath: String) {
             .start()
     }
 
-    private fun exec(cmd: List<String>): String {
+    private fun exec(cmd: List<String>, timeoutSec: Long = 20): String {
         val process = ProcessBuilder(cmd).redirectErrorStream(true).start()
-        // Read stdout on a separate thread (per-call holder — exec runs concurrently). If a
-        // command hangs with its stdout still open (e.g. `su` waiting for approval), a plain
-        // readText() would block forever *before* any timeout — so we bound the read with
-        // waitFor and forcibly kill the process if it overruns.
-        val out = java.util.concurrent.atomic.AtomicReference("")
-        val reader = Thread {
-            try { out.set(process.inputStream.bufferedReader().readText()) } catch (_: Exception) {}
-        }.apply { isDaemon = true; start() }
-        if (!process.waitFor(20, TimeUnit.SECONDS)) {
-            process.destroyForcibly()
-            process.waitFor(2, TimeUnit.SECONDS)
-            reader.join(1000)
-            throw IllegalStateException("Command timed out: ${cmd.joinToString(" ")}")
+        inflight.add(process)
+        try {
+            // Read stdout on a separate thread (per-call holder — exec runs concurrently). If a
+            // command hangs with its stdout still open (e.g. `su` waiting for approval), a plain
+            // readText() would block forever *before* any timeout — so we bound the read with
+            // waitFor and forcibly kill the process if it overruns (or Stop calls abortInflight).
+            val out = java.util.concurrent.atomic.AtomicReference("")
+            val reader = Thread {
+                try { out.set(process.inputStream.bufferedReader().readText()) } catch (_: Exception) {}
+            }.apply { isDaemon = true; start() }
+            if (!process.waitFor(timeoutSec, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                process.waitFor(2, TimeUnit.SECONDS)
+                reader.join(1000)
+                throw IllegalStateException("Command timed out (${timeoutSec}s): ${cmd.joinToString(" ")}")
+            }
+            reader.join(2000)   // process exited; let the reader drain remaining buffered output
+            return out.get().trim()
+        } finally {
+            inflight.remove(process)
         }
-        reader.join(2000)   // process exited; let the reader drain remaining buffered output
-        return out.get().trim()
     }
 }

@@ -84,7 +84,7 @@ internal val HOME_PAGE = """<!DOCTYPE html>
   </div>
 </div>
 <div class="wrap">
-  <div class="banner" id="banner">A monitoring session is in progress. <a href="/dashboard">Open the live dashboard &rarr;</a></div>
+  <div class="banner" id="banner">A monitoring session is in progress. <a href="/dashboard" onclick="this.href='/dashboard?v='+Date.now()">Open the live dashboard &rarr;</a></div>
 
   <h2>1 &middot; Connected devices <span class="refresh" onclick="loadDevices()">&#8635; refresh</span></h2>
   <div class="devgrid" id="devices"><div class="empty">Scanning for adb devices&hellip;</div></div>
@@ -192,7 +192,7 @@ internal val HOME_PAGE = """<!DOCTYPE html>
         <div class="mcheck"><input type="checkbox" id="m_topprocs">
           <span><span class="mcheck-label">Top process CPU</span><span class="mcheck-cost">medium · reads /proc/*/stat per tick</span></span></div>
         <div class="mcheck"><input type="checkbox" id="m_topmem">
-          <span><span class="mcheck-label">Top process memory</span><span class="mcheck-cost">RSS from /proc/*/stat per tick — cheap, no root</span></span></div>
+          <span><span class="mcheck-label">Top process memory</span><span class="mcheck-cost">RSS via a single ps call — lightweight, no root, no procrank</span></span></div>
         <div class="mcheck"><input type="checkbox" id="m_playback" onchange="if(this.checked){var l=document.getElementById('logcat');if(l)l.checked=true;}">
           <span><span class="mcheck-label">Playback &amp; tunnel (STB)</span><span class="mcheck-cost">logcat · video state + TUNNELED</span></span></div>
       </div>
@@ -327,7 +327,7 @@ function startRun() {
   fetch('/api/start', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: p.toString() })
     .then(function (r) { return r.json(); })
     .then(function (d) {
-      if (d.ok) { window.location = '/dashboard'; }
+      if (d.ok) { window.location = '/dashboard?v=' + Date.now(); }
       else { msg.textContent = d.error || 'Failed to start'; document.getElementById('startBtn').disabled = false; }
     })
     .catch(function () { msg.textContent = 'Request failed'; document.getElementById('startBtn').disabled = false; });
@@ -479,6 +479,7 @@ internal val DASHBOARD_PAGE = """<!DOCTYPE html>
   <a class="home" href="/">&#8962; Home</a>
   <button id="stopBtn" onclick="stopRun()">&#9632; Stop run</button>
   <a id="reportBtn" href="/api/report">&#8681; Download PDF report</a>
+  <span id="buildStamp" style="position:absolute;right:14px;bottom:6px;font-size:10px;color:#9aa1ab" title="If this build time is older than your running jar, your browser is showing a cached page — hard-refresh with Cmd+Shift+R.">__BUILD__</span>
 </header>
 <div id="activity-banner" style="display:none;margin:10px 20px 0;padding:9px 14px;border-radius:8px;background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;font-size:13px">
   <span style="font-weight:700">&#9635; Current activity:</span> <span id="activity-cur" style="font-family:ui-monospace,Menlo,monospace"></span>
@@ -510,7 +511,7 @@ internal val DASHBOARD_PAGE = """<!DOCTYPE html>
       <div id="mem-list"><span style="font-size:12px;color:#9aa1ab">Waiting for data&hellip;</span></div>
     </div>
     <div class="card" style="padding:12px 14px">
-      <div class="chartbox" style="height:230px"><canvas id="c-mem"></canvas></div>
+      <div class="chartbox" style="height:230px"><canvas id="c-topmem"></canvas></div>
       <div id="stats-mem" class="chart-stats"></div>
     </div>
   </div>
@@ -659,8 +660,10 @@ function initMediaChart(names) {
 }
 
 function initProcChart() {
+  if (procChart) return;
   var ctx = document.getElementById('c-procs');
-  if (!ctx || procChart) return;
+  if (!ctx) { console.error('initProcChart: canvas c-procs not found'); return; }
+  try { if (window.Chart && Chart.getChart) { var ex = Chart.getChart(ctx); if (ex) ex.destroy(); } } catch (e) {}
   procChart = new Chart(ctx, {
     type: 'line',
     data: { datasets: [] },
@@ -706,6 +709,7 @@ function toggleProc(pid) {
 }
 
 function updateProcChart() {
+  if (!procChart) { initProcChart(); }
   if (!procChart) return;
   // Remove datasets for deselected pids
   procChart.data.datasets = procChart.data.datasets.filter(function (ds) { return !!selectedPids[ds._pid]; });
@@ -757,8 +761,12 @@ function pushProcSamples(list) {
 
 // ---- Top memory (PSS) interactive chart ----
 function initMemChart() {
-  var ctx = document.getElementById('c-mem');
-  if (!ctx || memChart) return;
+  if (memChart) return;
+  var ctx = document.getElementById('c-topmem');
+  if (!ctx) { console.error('initMemChart: canvas c-topmem not found'); return; }
+  // Destroy any chart already bound to this canvas (a partially-constructed chart would otherwise
+  // make a fresh `new Chart` throw "Canvas is already in use", leaving memChart null forever).
+  try { if (window.Chart && Chart.getChart) { var ex = Chart.getChart(ctx); if (ex) ex.destroy(); } } catch (e) {}
   memChart = new Chart(ctx, {
     type: 'line', data: { datasets: [] },
     options: { animation: false, responsive: true, maintainAspectRatio: false, parsing: false,
@@ -771,7 +779,7 @@ function updateMemSource(src) {
   var el = document.getElementById('mem-src');
   var lbl = document.getElementById('mem-peak-label');
   if (!src) return;
-  var txt = src === 'PSS' ? 'PSS via procrank (root)' : 'RSS via /proc (non-root)';
+  var txt = src === 'PSS' ? 'PSS via procrank (root)' : 'RSS via ps (lightweight, no root)';
   if (el) el.innerHTML = '&nbsp;&middot;&nbsp;' + txt + ' — check a process to chart it';
   if (lbl) lbl.textContent = 'PEAK ' + src + ' (MB)';
 }
@@ -802,6 +810,7 @@ function toggleMemProc(pid) {
   renderMemList();
 }
 function updateMemChart() {
+  if (!memChart) { initMemChart(); }   // lazy retry — eager init in tick() may have run too early
   if (!memChart) return;
   memChart.data.datasets = memChart.data.datasets.filter(function (ds) { return !!selectedMemPids[ds._pid]; });
   var existing = {};
@@ -981,8 +990,11 @@ function pushSamples(list) {
         [{ x: firstT, y: def._blVal }, { x: lastT, y: def._blVal }];
     });
   }
-  Object.keys(charts).forEach(function (k) { charts[k].update('none'); });
-  renderStats();
+  // Update each chart independently — one chart throwing must not freeze the others.
+  Object.keys(charts).forEach(function (k) { try { charts[k].update('none'); } catch (e) { console.error('chart update failed: ' + k, e); } });
+  try { if (procChart) procChart.update('none'); } catch (e) { console.error('procChart update failed', e); }
+  try { if (memChart) memChart.update('none'); } catch (e) { console.error('memChart update failed', e); }
+  try { renderStats(); } catch (e) { console.error('renderStats failed', e); }
 }
 
 // ---- health badges (last ~30 s window) ----
@@ -1068,48 +1080,54 @@ function statHtml(dataset) {
 }
 
 function renderStats() {
-  // Standard metric charts (DEFS)
+  // Standard metric charts (DEFS) — guarded so one chart's stats error can't stop the rest.
   DEFS.forEach(function (def) {
-    var ch = charts[def.id];
-    var div = document.getElementById('stats-' + def.id);
-    if (!ch || !div) return;
-    var html = '';
-    ch.data.datasets.forEach(function (ds) {
-      if (ds.borderDash && ds.borderDash.length) return; // skip baseline ref lines
-      var row = statHtml(ds);
-      if (!row) return;
-      var namePart = (ch.data.datasets.filter(function (d) { return !d.borderDash || !d.borderDash.length; }).length > 1)
-        ? '<span class="sname">' + escHtml(ds.label) + '</span>' : '';
-      html += '<div class="srow">' + namePart + row + '</div>';
-    });
-    div.innerHTML = html;
-  });
-  // Proc chart
-  if (procChart && hasTopProcs) {
-    var div = document.getElementById('stats-procs');
-    if (div) {
+    try {
+      var ch = charts[def.id];
+      var div = document.getElementById('stats-' + def.id);
+      if (!ch || !div) return;
       var html = '';
-      procChart.data.datasets.forEach(function (ds) {
+      ch.data.datasets.forEach(function (ds) {
+        if (ds.borderDash && ds.borderDash.length) return; // skip baseline ref lines
         var row = statHtml(ds);
         if (!row) return;
-        html += '<div class="srow"><span class="sname">' + escHtml(ds.label) + '</span>' + row + '</div>';
+        var namePart = (ch.data.datasets.filter(function (d) { return !d.borderDash || !d.borderDash.length; }).length > 1)
+          ? '<span class="sname">' + escHtml(ds.label) + '</span>' : '';
+        html += '<div class="srow">' + namePart + row + '</div>';
       });
       div.innerHTML = html;
+    } catch (e) { console.error('stats failed: ' + def.id, e); }
+  });
+  // Proc chart
+  try {
+    if (procChart && hasTopProcs) {
+      var div = document.getElementById('stats-procs');
+      if (div) {
+        var html = '';
+        procChart.data.datasets.forEach(function (ds) {
+          var row = statHtml(ds);
+          if (!row) return;
+          html += '<div class="srow"><span class="sname">' + escHtml(ds.label) + '</span>' + row + '</div>';
+        });
+        div.innerHTML = html;
+      }
     }
-  }
+  } catch (e) { console.error('proc stats failed', e); }
   // Mem chart
-  if (memChart && hasTopMem) {
-    var mdiv = document.getElementById('stats-mem');
-    if (mdiv) {
-      var mhtml = '';
-      memChart.data.datasets.forEach(function (ds) {
-        var row = statHtml(ds);
-        if (!row) return;
-        mhtml += '<div class="srow"><span class="sname">' + escHtml(ds.label) + '</span>' + row + '</div>';
-      });
-      mdiv.innerHTML = mhtml;
+  try {
+    if (memChart && hasTopMem) {
+      var mdiv = document.getElementById('stats-mem');
+      if (mdiv) {
+        var mhtml = '';
+        memChart.data.datasets.forEach(function (ds) {
+          var row = statHtml(ds);
+          if (!row) return;
+          mhtml += '<div class="srow"><span class="sname">' + escHtml(ds.label) + '</span>' + row + '</div>';
+        });
+        mdiv.innerHTML = mhtml;
+      }
     }
-  }
+  } catch (e) { console.error('mem stats failed', e); }
 }
 
 function renderEvents(zaps, anomalies) {
@@ -1148,9 +1166,18 @@ function stopRun() {
 var metricFlags = {};
 
 var idx = 0;
+var PAGE_BUILD = "__BUILD__";
+try { console.log('ADB Performance Studio — dashboard JS build:', PAGE_BUILD); } catch (e) {}
 function tick() {
   fetch('/api/session?since=' + idx).then(function (r) { return r.json(); }).then(function (d) {
     if (d.status === 'idle') { window.location = '/'; return; }
+    // Self-heal stale cached JS: if the server is a newer build than this page, reload fresh once.
+    if (d.build && PAGE_BUILD && d.build !== PAGE_BUILD && !window.__reloadedForBuild) {
+      window.__reloadedForBuild = true;
+      console.warn('Dashboard JS is stale (page=' + PAGE_BUILD + ', server=' + d.build + ') — reloading fresh.');
+      window.location.replace('/dashboard?v=' + Date.now());
+      return;
+    }
     var labelPart = d.label ? ' [' + d.label + ']' : '';
     document.getElementById('device').textContent = d.device + '   [' + d.target + ']' + labelPart + (d.runDir ? '   ' + d.runDir : '');
     if (d.mediaProcNames && d.mediaProcNames.length && d.hasMedia !== false && !mediaNamesInit) {
@@ -1170,43 +1197,47 @@ function tick() {
           var c = document.getElementById('card-' + def.id); if (c) c.style.display = 'none';
         }
       });
-      // Top-process feature
+      // Top-process feature (each init guarded so one failure can't halt the others or the loop)
       if (d.hasTopProcs === true) {
         hasTopProcs = true;
         var ps = document.getElementById('proc-section');
         if (ps) ps.style.display = 'block';
-        initProcChart();
+        try { initProcChart(); } catch (e) { console.error('initProcChart failed', e); }
       }
       // Top-memory feature
       if (d.hasTopMem === true) {
         hasTopMem = true;
         var ms = document.getElementById('mem-section');
         if (ms) ms.style.display = 'block';
-        initMemChart();
+        try { initMemChart(); } catch (e) { console.error('initMemChart failed', e); }
       }
       // Playback (STB) feature
       if (d.hasPlayback === true) {
         hasPlayback = true;
         var pbs = document.getElementById('playback-section');
         if (pbs) pbs.style.display = 'block';
-        initPlaybackCharts();
+        try { initPlaybackCharts(); } catch (e) { console.error('initPlaybackCharts failed', e); }
       }
     }
     idx = d.nextIndex;
-    if (hasTopMem && d.memSource) updateMemSource(d.memSource);
-    if (d.samples.length) pushSamples(d.samples);
-    if (hasPlayback) renderBuildBanner(d.buildTunnel);
-    renderEvents(d.zaps, d.anomalies);
-    renderBadges(d.anomalies);
+    // Update controls/status FIRST so a finished/failed run always flips the Stop button out of
+    // its "Stopping\u2026" state \u2014 even if a later render call throws.
     var st = document.getElementById('status');
-    if (d.status === 'done' || d.status === 'failed') {
+    var finished = (d.status === 'done' || d.status === 'failed');
+    if (finished) {
       st.textContent = d.status === 'done' ? '\u25a0 finished' : '\u26a0 ' + (d.error || 'failed');
       st.className = d.status === 'done' ? 'finished' : 'failed';
-      document.getElementById('stopBtn').style.display = 'none';
-      if (d.status === 'done') document.getElementById('reportBtn').style.display = 'inline-block';
-    } else {
-      setTimeout(tick, Math.max(1000, d.intervalSec * 1000 / 2));
+      var sb2 = document.getElementById('stopBtn'); if (sb2) sb2.style.display = 'none';
+      if (d.status === 'done') { var rb = document.getElementById('reportBtn'); if (rb) rb.style.display = 'inline-block'; }
     }
+    // Render data \u2014 each call independently guarded so no single metric can block the others,
+    // the badges, or the poll loop. (This is what makes enabling Top Process Memory safe.)
+    try { if (hasTopMem && d.memSource) updateMemSource(d.memSource); } catch (e) { console.error('updateMemSource failed', e); }
+    try { if (d.samples.length) pushSamples(d.samples); } catch (e) { console.error('pushSamples failed', e); }
+    try { if (hasPlayback) renderBuildBanner(d.buildTunnel); } catch (e) { console.error('renderBuildBanner failed', e); }
+    try { renderEvents(d.zaps, d.anomalies); } catch (e) { console.error('renderEvents failed', e); }
+    try { renderBadges(d.anomalies); } catch (e) { console.error('renderBadges failed', e); }
+    if (!finished) setTimeout(tick, Math.max(1000, d.intervalSec * 1000 / 2));
   }).catch(function () { setTimeout(tick, 2000); });
 }
 

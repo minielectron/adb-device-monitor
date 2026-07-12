@@ -105,11 +105,36 @@ private fun selfTest() {
     println("SELFTEST locale    -> ${java.util.Locale.getDefault()}")
 }
 
+/**
+ * Tee System.out / System.err to a rolling log file so a GUI-launched .app (which has no visible
+ * terminal) still produces readable logs. File lives next to the reports so it's easy to find.
+ */
+private fun installFileLogging() {
+    try {
+        val dir = MonitorSession.defaultReportsDir().apply { mkdirs() }
+        val logFile = File(dir, "adb-monitor.log")
+        val fos = java.io.FileOutputStream(logFile, true)
+        fun tee(orig: java.io.PrintStream) = java.io.PrintStream(object : java.io.OutputStream() {
+            override fun write(b: Int) { orig.write(b); fos.write(b) }
+            override fun write(b: ByteArray, off: Int, len: Int) { orig.write(b, off, len); fos.write(b, off, len); fos.flush() }
+        }, true)
+        System.setOut(tee(System.out))
+        System.setErr(tee(System.err))
+        println("================================================================")
+        println("ADB Device Monitor ${buildTag()} — log started ${java.time.LocalDateTime.now()}")
+        println("Log file: ${logFile.absolutePath}")
+        println("================================================================")
+    } catch (e: Exception) {
+        System.err.println("Could not open log file: ${e.message}")
+    }
+}
+
 fun main(args: Array<String>) {
     if (args.contains("--version") || args.contains("-v")) {
         println("ADB Device Monitor ${buildTag()}")
         return
     }
+    installFileLogging()
     if (args.contains("--selftest")) {
         selfTest()
         return

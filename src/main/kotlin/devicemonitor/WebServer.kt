@@ -44,8 +44,8 @@ class WebApp(
 
     fun start() {
         val s = HttpServer.create(InetSocketAddress(port), 0)
-        s.createContext("/") { ex -> respond(ex, 200, "text/html", HOME_PAGE) }
-        s.createContext("/dashboard") { ex -> respond(ex, 200, "text/html", DASHBOARD_PAGE) }
+        s.createContext("/") { ex -> respond(ex, 200, "text/html", HOME_PAGE.replace("__BUILD__", esc(buildTag()))) }
+        s.createContext("/dashboard") { ex -> respond(ex, 200, "text/html", DASHBOARD_PAGE.replace("__BUILD__", esc(buildTag()))) }
         s.createContext("/api/devices") { ex -> respond(ex, 200, "application/json", devicesJson()) }
         s.createContext("/api/defaults") { ex ->
             val dir = MonitorSession.resolveBaseDir(null).absolutePath
@@ -334,6 +334,7 @@ class WebApp(
 
         val sb = StringBuilder(4096)
         sb.append("{\"status\":\"").append(s.status.name.lowercase()).append("\",")
+        sb.append("\"build\":\"").append(esc(buildTag())).append("\",")
         sb.append("\"error\":").append(s.error?.let { "\"${esc(it)}\"" } ?: "null").append(",")
         sb.append("\"device\":\"").append(esc(info?.let {
             "${it.manufacturer} ${it.model} | Android ${it.androidVersion} (SDK ${it.sdk}) | ${it.cpuCores} cores | ${"%.0f".format(Locale.US, it.totalMemMb)} MB"
@@ -525,6 +526,10 @@ class WebApp(
     private fun respond(ex: HttpExchange, code: Int, type: String, body: String) {
         val bytes = body.toByteArray(Charsets.UTF_8)
         ex.responseHeaders.add("Content-Type", "$type; charset=utf-8")
+        // Never let the browser cache the dashboard HTML/JS or the live JSON — a stale cached
+        // dashboard was a likely cause of the chart showing old/blank state after an upgrade.
+        ex.responseHeaders.add("Cache-Control", "no-store, no-cache, must-revalidate")
+        ex.responseHeaders.add("Pragma", "no-cache")
         ex.sendResponseHeaders(code, bytes.size.toLong())
         ex.responseBody.use { it.write(bytes) }
     }
