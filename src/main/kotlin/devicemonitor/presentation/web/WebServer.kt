@@ -513,10 +513,10 @@ class WebApp(
         // run_20240612_143022_samsung_galaxy            → null
         val after = folderName.removePrefix("run_")
         val parts = after.split("_")
-        // parts[0] = date (8 digits), parts[1] = time (6 digits), parts[2..] = label?_mfr_model
-        if (parts.size < 4) return null
+        // No label:  run_<date>_<time>_<mfr>_<model>            → 4 segments
+        // With label: run_<date>_<time>_<label>_<mfr>_<model>   → 5+ segments
+        if (parts.size < 5) return null
         val labelCandidate = parts[2]
-        // If it looks like a date/time or known device prefix, no label
         return if (labelCandidate.matches(Regex("[0-9]+"))) null else labelCandidate
     }
 
