@@ -1,16 +1,9 @@
-package devicemonitor
+package devicemonitor.data.logcat
 
+import devicemonitor.domain.*
 import java.io.File
 import java.time.Duration
 import java.time.LocalDateTime
-
-/** One flagged logcat event. [elapsedSec] is relative to run start (null if not derivable). */
-data class Anomaly(
-    val deviceTime: String,
-    val elapsedSec: Double?,
-    val type: String,
-    val detail: String
-)
 
 /**
  * Pulls app metadata out of analytics "Event parameters: {...}" blocks that the

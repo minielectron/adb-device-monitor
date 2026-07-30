@@ -1,4 +1,4 @@
-package devicemonitor
+package devicemonitor.data.adb
 
 import java.awt.FileDialog
 import java.awt.Frame

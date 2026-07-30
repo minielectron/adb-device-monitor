@@ -1,0 +1,41 @@
+sequenceDiagram
+    autonumber
+    actor User
+    participant PA as PlayerActivity
+    participant MO as MaxiOverlayFragment
+    participant MK as MediaKindPlayer
+    participant Seek as subscribeSeekChangeObservable
+
+    Note over User,Seek: Post-reload channel zap (e.g. ch 55 E48 → ch 56)
+
+    User->>PA: Channel Up/Down (zap)
+    PA->>MO: clearMapOfShortCut()
+    MO->>MO: removeAllViews() — shortcut layout emptied
+    PA->>PA: initPlayer() — resetPlayerStateFlags()
+    Note over PA: isHeaderUiPreUpdated = true<br/>header pre-updated during zap
+
+    MK-->>PA: onPlaybackStarted()
+    PA->>Seek: subscribe #1 (onPlaybackStarted)
+    Note over PA: needToUpdateUI = restartedAfterPause == false<br/>may be true after initPlayer
+
+    MK-->>PA: onBufferStopped()
+    PA->>Seek: subscribe #2 (onBufferStopped)
+    Note over Seek: dispose #1 — onPlaybackStarted subscription cancelled
+
+    alt Race: onBufferStopped wins (post-reload / slow seek)
+        Seek-->>PA: doAfterFirst → setPlayer(needToUpdateUI=false)
+        PA->>MO: handlePlayerControlPlay(needToUpdateUI=false)
+        Note over MO: setShortcutMenu() SKIPPED<br/>shortcutMenuLayout still empty
+        User->>PA: OK / open overlay
+        PA->>MO: showNonBufferContents()
+        Note over MO: layout visible but no ShortcutMenuItem children
+    else Race: onPlaybackStarted wins (first zap / fast seek)
+        Seek-->>PA: doAfterFirst → setPlayer(needToUpdateUI=true)
+        PA->>MO: handlePlayerControlPlay(needToUpdateUI=true)
+        MO->>MO: setShortcutMenu() + setVisibilityForEachShortCut()
+        Note over MO: shortcuts rebuilt correctly
+        MK-->>PA: onBufferStopped()
+        PA->>Seek: subscribe #2
+        Seek-->>PA: setPlayer(needToUpdateUI=false)
+        Note over MO: shortcuts already built — OK
+    end

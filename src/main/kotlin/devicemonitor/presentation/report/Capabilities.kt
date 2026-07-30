@@ -1,5 +1,9 @@
-package devicemonitor
+package devicemonitor.presentation.report
 
+import devicemonitor.domain.*
+import devicemonitor.data.adb.*
+import devicemonitor.data.metrics.*
+import devicemonitor.common.*
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.PDPage
 import org.apache.pdfbox.pdmodel.PDPageContentStream

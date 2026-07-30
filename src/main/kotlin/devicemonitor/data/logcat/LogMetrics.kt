@@ -1,4 +1,4 @@
-package devicemonitor
+package devicemonitor.data.logcat
 
 import java.io.File
 import java.io.RandomAccessFile

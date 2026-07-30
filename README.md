@@ -2,6 +2,12 @@
 
 Kotlin tool that monitors any `adb`-connected Android device (phone, TV, STB, Fire Stick) over USB or TCP/IP, samples live system metrics, and renders a PDF report with graphs. Comes with **ADB Performance Studio** — a web UI for configuring and watching runs live — plus a scriptable CLI.
 
+> 📚 **Detailed docs** live in [`docs/`](docs/): [architecture](docs/architecture.md) (the layered
+> package structure), [metrics](docs/metrics.md), [web dashboard](docs/web-dashboard.md),
+> [device & procrank snapshots](docs/device-and-procrank-snapshot.md), and
+> [reports & comparison](docs/reports-and-comparison.md). The code is organized in clean-architecture
+> layers (`domain / data / application / presentation`).
+
 ## Web UI (ADB Performance Studio)
 
 ```bash
@@ -20,6 +26,8 @@ The home page shows every adb-connected device as a card (serial, model, Android
 
 The live dashboard shows all charts updating in real time, a zap/anomaly event feed, live **health verdict badges** (CPU, Memory, Thermal incl. throttling detection, UI Jank, Stability), a Stop button, and a PDF download button when the run finishes. Only one session runs at a time; everything is still written to the run folder. The terminal keeps printing progress, and Ctrl+C in the terminal shuts the studio down (a running session still writes its report).
 
+The home page also has two **one-click deep-dive snapshots** (no run required): **📸 Device Snapshot** — a device capabilities + memory-footprint report (PSS-by-category donut + process table), and **📊 Procrank Snapshot** — per-process VSS/RSS/PSS/USS as a top-15 bar chart and a sortable table. Both are rendered server-side as self-contained interactive HTML. See [docs/device-and-procrank-snapshot.md](docs/device-and-procrank-snapshot.md).
+
 ## Metrics collected
 
 | Metric | Source | Notes |
@@ -36,6 +44,10 @@ The live dashboard shows all charts updating in real time, a zap/anomaly event f
 | CPU temperature (°C) | `/sys/class/thermal/thermal_zone*` | hottest CPU/SoC zone |
 | CPU frequency (MHz) | `/sys/.../cpufreq/scaling_cur_freq` | mean across cores; shows thermal throttling |
 | Major page faults (faults/s) | `/proc/vmstat` `pgmajfault` delta | sustained high rate = memory thrashing |
+| Memory zones — free pages vs min/low/high watermarks | `/proc/zoneinfo` | free below `low` = kswapd; below `min` = direct reclaim |
+| Direct reclaim (events/s) | logcat | allocations blocking on reclaim — hard memory-pressure signal |
+| Top process CPU (top consumers) | `cat /proc/[0-9]*/stat` deltas | interactive chart — pick any PID to plot |
+| Top process memory (RSS) | one `ps -A -o PID,RSS,NAME` per tick | cheap, no root; interactive chart (procrank not used on the hot path) |
 | App PSS: Total / Java Heap / Native Heap / Code / Stack / Graphics / Private Other / System (MB) | `dumpsys meminfo <pkg>` App Summary | only with `--package` |
 | UI jank (% janky frames per tick) | `dumpsys gfxinfo <pkg> framestats` counter deltas | only with jank tracking enabled (needs package) |
 | Frame phases: input / animation / measure-layout / draw (avg ms per frame) | `gfxinfo framestats` PROFILEDATA | with jank tracking; shows which Choreographer phase eats the frame budget |
@@ -60,6 +72,36 @@ gradle fatJar
 ```
 
 No Gradle wrapper is checked in. If you don't have standalone Gradle, either open the project in IntelliJ/Android Studio (it bundles Gradle) or run `gradle wrapper` once and use `./gradlew fatJar` afterwards.
+
+## Sharing the macOS app (.app / .dmg)
+
+The `.app`/`.dmg` produced by `packaging/package-macos.sh` is **not code-signed or notarized**, so
+when someone downloads it, macOS Gatekeeper quarantines it and refuses to open it — you'll see
+*"…is damaged and can't be opened"* or *"cannot be opened because Apple cannot check it for malicious
+software."* This is expected for an unsigned internal build; there is no setting on your side that
+other Macs will honor — trust requires an Apple signature.
+
+**Quick fix for a trusted/internal recipient** — strip the download quarantine flag after copying the
+app to `/Applications` (or on the `.dmg` before opening):
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/ADB Device Monitor.app"
+# or for the dmg before opening:
+xattr -dr com.apple.quarantine ~/Downloads/ADBDeviceMonitor.dmg
+```
+
+Without Terminal: double-click, let it get blocked, then **System Settings → Privacy & Security →
+"Open Anyway"** (and Open once more). Sending the `.dmg` inside a `.zip` also avoids some "damaged"
+errors.
+
+**For wider distribution** sign + notarize with an Apple *Developer ID* (Apple Developer Program,
+$99/yr): `codesign --options runtime`, `xcrun notarytool submit … --wait`, `xcrun stapler staple`.
+After that, any Mac opens it with no warnings. jpackage can sign during packaging via
+`--mac-sign --mac-signing-key-user-name "Developer ID Application: … (TEAMID)"`.
+
+> **Architecture note:** jpackage builds for the machine it runs on. An app built on Apple Silicon
+> won't launch on Intel Macs (and vice-versa) — that also looks like "not accessible." Build on both
+> architectures for a mixed fleet.
 
 ## Run
 

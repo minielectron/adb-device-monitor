@@ -1,5 +1,14 @@
 package devicemonitor
 
+import devicemonitor.common.*
+import devicemonitor.domain.*
+import devicemonitor.data.adb.*
+import devicemonitor.data.metrics.*
+import devicemonitor.data.logcat.*
+import devicemonitor.application.*
+import devicemonitor.presentation.web.*
+import devicemonitor.presentation.report.*
+
 import java.awt.Desktop
 import java.io.File
 import java.net.ServerSocket
@@ -55,15 +64,7 @@ Examples:
 
 private val BOOL_FLAGS = setOf("jank", "no-logcat", "profile", "perfetto", "playback", "app")
 
-/** Build identifier read from the jar manifest — lets you confirm which build is running. */
-fun buildTag(): String = try {
-    val mf = java.util.jar.Manifest(object {}.javaClass.getResourceAsStream("/META-INF/MANIFEST.MF"))
-    val ver = mf.mainAttributes.getValue("Implementation-Version") ?: "1.0.0"
-    val bt = mf.mainAttributes.getValue("Build-Time") ?: "?"
-    "v$ver (build $bt)"
-} catch (e: Exception) {
-    "v1.0.0"
-}
+
 
 /** Generates the procrank + device-snapshot HTML from fixed test data (no device needed). */
 private fun selfTest() {

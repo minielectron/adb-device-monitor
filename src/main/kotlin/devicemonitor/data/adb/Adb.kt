@@ -1,4 +1,4 @@
-package devicemonitor
+package devicemonitor.data.adb
 
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -47,6 +47,12 @@ class Adb(private val adbPath: String) {
     private val inflight: MutableSet<Process> =
         java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Process, Boolean>())
 
+    // When aborting, exec() returns immediately without launching adb. This makes Stop near-instant:
+    // once a run is stopping, the *remaining* adb calls in the in-progress sampling tick (pss, gfxinfo,
+    // top-CPU, media…) short-circuit instead of each running to completion / its timeout. Cleared by
+    // endAbort() before the report is finalized (which itself pulls traces over adb).
+    @Volatile private var aborting = false
+
     /** Force-kill every in-flight adb command. Used on Stop so blocked reads return immediately. */
     fun abortInflight() {
         val procs = inflight.toList()
@@ -54,6 +60,12 @@ class Adb(private val adbPath: String) {
         System.err.println("[adb] Stop: aborting ${procs.size} in-flight command(s)")
         for (p in procs) { try { p.destroyForcibly() } catch (_: Exception) {} }
     }
+
+    /** Enter abort mode: kill in-flight commands and make new exec calls return instantly. */
+    fun beginAbort() { aborting = true; abortInflight() }
+
+    /** Leave abort mode so normal adb calls (e.g. finalize's trace pulls) work again. */
+    fun endAbort() { aborting = false }
 
     /** Run a raw adb command (no -s). */
     fun raw(vararg args: String): String = exec(listOf(adbPath) + args)
@@ -117,6 +129,7 @@ class Adb(private val adbPath: String) {
     }
 
     private fun exec(cmd: List<String>, timeoutSec: Long = 20): String {
+        if (aborting) return ""   // run is stopping — don't launch more adb work
         val process = ProcessBuilder(cmd).redirectErrorStream(true).start()
         inflight.add(process)
         try {

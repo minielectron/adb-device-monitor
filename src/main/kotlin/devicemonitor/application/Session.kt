@@ -1,5 +1,10 @@
-package devicemonitor
+package devicemonitor.application
 
+import devicemonitor.domain.*
+import devicemonitor.data.adb.*
+import devicemonitor.data.metrics.*
+import devicemonitor.data.logcat.*
+import devicemonitor.presentation.report.*
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -120,11 +125,14 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         stopRequested = true
         slowCollectorRun = false
         slowThread?.interrupt()
-        // Force-kill any adb command currently blocking the sampling loop or the collector, so the
-        // run stops within a sample tick instead of waiting out a slow procrank/su read.
-        try { adb.abortInflight() } catch (_: Exception) {}
-        // Wake the sampling loop if it's mid-sleep between ticks, so Stop is near-instant.
-        sessionThread?.interrupt()
+        // Enter abort mode: force-kill the adb command currently blocking the loop/collector AND make
+        // every subsequent adb call return instantly, so the remaining reads in the in-progress tick
+        // (pss, gfxinfo, top-CPU, media…) don't each run to completion before the loop can break.
+        try { adb.beginAbort() } catch (_: Exception) {}
+        // NOTE: we deliberately do NOT interrupt the sampling thread. Interrupting it could surface as
+        // an InterruptedException out of an unrelated blocking call (join/waitFor), which would mark
+        // the run FAILED and hide the report button. The loop instead polls stopRequested during a
+        // short-sliced inter-sample wait, so Stop is still caught within ~150 ms.
     }
 
     fun runBlocking() {
@@ -136,16 +144,26 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
             println("[stop] finalize done in ${(System.nanoTime() - t0) / 1_000_000}ms — status DONE")
             status = Status.DONE
         } catch (e: Exception) {
-            error = e.message ?: e.toString()
-            System.err.println("Session failed: $error")
+            Thread.interrupted()   // clear any lingering interrupt flag before finalizing
             try { finalizeOutputs() } catch (_: Exception) {}
-            status = Status.FAILED
+            // A stop mid-blocking-call (or InterruptedException) is a normal stop, not a failure:
+            // if a report was written, report DONE so the download button appears.
+            if (stopRequested || e is InterruptedException) {
+                status = if (outputsWritten) Status.DONE else Status.FAILED
+                if (status == Status.FAILED) error = "stopped before enough samples were collected for a report"
+                println("[stop] stopped early — status $status")
+            } else {
+                error = e.message ?: e.toString()
+                System.err.println("Session failed: $error")
+                status = Status.FAILED
+            }
         }
     }
 
     // ---------- run pipeline ----------
 
     private fun doRun() {
+        adb.endAbort()   // fresh run — ensure a prior Stop's abort gate isn't still set
         val collector = MetricsCollector(
             adb, config.target,
             thermalEnabled    = config.thermalEnabled,
@@ -291,10 +309,14 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         var nextDeadline = startNanos + (config.intervalSec * 1e9).toLong()
 
         for (i in 1..totalSamples) {
-            val sleepMs = (nextDeadline - System.nanoTime()) / 1_000_000
-            // Interruptible sleep: requestStop() interrupts this thread so Stop doesn't wait out
-            // the inter-sample interval. Clear the flag and fall through to the stop check below.
-            if (sleepMs > 0) try { Thread.sleep(sleepMs) } catch (e: InterruptedException) { Thread.interrupted() }
+            // Responsive inter-sample wait: poll stopRequested in ~150 ms slices instead of one long
+            // sleep, so Stop is caught fast WITHOUT interrupting the thread (which risked a stray
+            // InterruptedException marking the run FAILED).
+            while (!stopRequested) {
+                val remaining = (nextDeadline - System.nanoTime()) / 1_000_000
+                if (remaining <= 0) break
+                try { Thread.sleep(minOf(remaining, 150L)) } catch (e: InterruptedException) { Thread.interrupted(); break }
+            }
             nextDeadline += (config.intervalSec * 1e9).toLong()
             // Catch a stop request before doing any per-tick work, so Stop is snappy.
             if (stopRequested) { println("Stop requested — finishing run and generating the report."); break }
@@ -311,6 +333,9 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
             // A snapshot is normally well under a second. If it blocks much longer, an adb call is
             // contending with the background collector — surface it so the cause is visible.
             if (snapMs > 1500) System.err.println("[loop] sample #$i snapshot took ${snapMs}ms (adb contention — likely the Top Process Memory collector)")
+            // Bail out of the tick the moment Stop arrives, before running the rest of the per-tick
+            // adb reads — the partial sample is discarded and the report is generated immediately.
+            if (stopRequested) { println("Stop requested — finishing run and generating the report."); break }
             val pss = if (config.appPssEnabled) config.packageName?.let { collector.pss(it) } else null
 
             // UI jank % + frame phase breakdown (gfxinfo framestats)
@@ -517,6 +542,8 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
 
     @Synchronized
     fun finalizeOutputs() {
+        // Leave abort mode (if a Stop set it) so the trace pulls below can use adb again.
+        try { adb.endAbort() } catch (_: Exception) {}
         if (outputsWritten || samples.size < 2) return
         outputsWritten = true
         val dir = runDir ?: return

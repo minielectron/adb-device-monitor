@@ -1,5 +1,10 @@
-package devicemonitor
+package devicemonitor.presentation.web
 
+import devicemonitor.domain.*
+import devicemonitor.data.adb.*
+import devicemonitor.application.*
+import devicemonitor.presentation.report.*
+import devicemonitor.common.*
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import java.io.File
@@ -26,6 +31,12 @@ class WebApp(
     @Volatile var session: MonitorSession? = initialSession
 
     private var server: HttpServer? = null
+
+    // Base folder that runs are written to (the UI "Reports folder"). Tracked so the Run Comparison
+    // page lists runs from the SAME place they were saved — not just the process cwd, which is "/"
+    // for a Finder-launched .app. Updated on each Start; defaults to the same dir the UI shows.
+    @Volatile private var reportsBaseDir: File = MonitorSession.resolveBaseDir(null)
+
     @Volatile private var anomalyCache: List<Anomaly> = emptyList()
     @Volatile private var anomalyCacheLen = -1L
     @Volatile private var anomalyCacheFile: File? = null
@@ -217,6 +228,8 @@ class WebApp(
             respond(ex, 409, "application/json", err("A session is already running")); return
         }
         val form = parseForm(ex)
+        // Remember where this run's outputs land, so /api/runs lists from the same folder.
+        reportsBaseDir = MonitorSession.resolveBaseDir(form["outputDir"]?.trim()?.ifBlank { null })
         val serial = form["serial"] ?: run { respond(ex, 400, "application/json", err("No device selected")); return }
         val duration = form["duration"]?.toDoubleOrNull()?.takeIf { it > 0 }
             ?: run { respond(ex, 400, "application/json", err("Invalid duration")); return }
@@ -465,11 +478,24 @@ class WebApp(
         return s.liveAnomalies()
     }
 
-    /** Lists run_* folders (with samples.csv) in cwd, newest first. */
+    /** Directories to look for run_* folders in: the tracked reports folder, the default reports
+     *  folder (~/ADB Device Monitor), and the process cwd — de-duplicated, existing dirs only. */
+    private fun reportsSearchDirs(): List<File> =
+        listOf(reportsBaseDir, MonitorSession.defaultReportsDir(), File("."))
+            .map { it.absoluteFile }
+            .distinctBy { it.path }
+            .filter { it.isDirectory }
+
+    /** Lists run_* folders (with samples.csv) across the reports folders, newest first. */
     private fun runsJson(): String {
-        val dirs = File(".").listFiles { f ->
-            f.isDirectory && f.name.startsWith("run_") && File(f, "samples.csv").exists()
-        }?.sortedByDescending { it.name } ?: emptyList()
+        val seen = HashSet<String>()
+        val dirs = reportsSearchDirs()
+            .flatMap { base ->
+                base.listFiles { f -> f.isDirectory && f.name.startsWith("run_") && File(f, "samples.csv").exists() }
+                    ?.toList() ?: emptyList()
+            }
+            .filter { seen.add(it.name) }        // first occurrence of each run folder wins
+            .sortedByDescending { it.name }
         val sb = StringBuilder("{\"runs\":[")
         dirs.forEachIndexed { i, f ->
             if (i > 0) sb.append(",")
@@ -503,8 +529,9 @@ class WebApp(
         if (!folder.matches(Regex("run_[A-Za-z0-9._-]+"))) {
             respond(ex, 400, "application/json", err("Invalid folder")); return
         }
-        val csv = File(folder, "samples.csv")
-        if (!csv.exists()) { respond(ex, 404, "application/json", err("Not found")); return }
+        // Find the run folder in the same set of reports directories that runsJson lists from.
+        val csv = reportsSearchDirs().map { File(it, "$folder/samples.csv") }.firstOrNull { it.exists() }
+            ?: run { respond(ex, 404, "application/json", err("Not found")); return }
         val bytes = csv.readBytes()
         ex.responseHeaders.add("Content-Type", "text/plain; charset=utf-8")
         ex.sendResponseHeaders(200, bytes.size.toLong())

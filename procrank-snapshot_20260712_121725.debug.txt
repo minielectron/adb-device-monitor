@@ -1,0 +1,13 @@
+=== procrank capture debug — 2026-07-12T12:17:19.828877 — target=09618001220704000838 ===
+meminfo lines: 41  MemTotal=1912.4296875MiB  MemFree=58.83203125  MemAvailable=449.38671875
+
+--- `procrank` -> 125 lines, hasPss=true, parsedRows=119
+    first 6 lines of output:
+    | PID       Vss      Rss      Pss      Uss     Swap    PSwap    USwap    ZSwap  cmdline
+    |  4889  2146160K  330384K  200412K  183308K   96104K   90618K   90472K   35312K  com.telekom.onetv.tv
+    |   683  2189724K  197492K   80769K   74376K   19796K   15941K   15836K    6212K  system_server
+    | 21076    91064K   64260K   62007K   61996K       0K       0K       0K       0K  procrank
+    |  2229  1537548K  149356K   55745K   54864K   54936K   48120K   47936K   18751K  com.netflix.ninja
+    |  1422  1490864K  199368K   53678K   30140K   21560K   14810K   14628K    5771K  com.google.android.gms.persistent
+
+=== RESULT: source=procrank  entries=119  totalPss=786.6767578125MiB  totalRss=4443.4609375MiB ===
