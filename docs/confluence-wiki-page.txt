@@ -1,0 +1,228 @@
+h1. ADB Device Monitor (ADB Performance Studio)
+
+*ADB Device Monitor* is a self-contained Kotlin/JVM tool that samples live CPU, memory, and app performance from adb-connected Android and STB devices. It renders a live web dashboard, writes PDF/CSV reports, captures logcat with anomaly flagging, and supports STB-specific playback metrics (MediaKind player state, tunnel mode).
+
+It consolidates and extends the capabilities of earlier Python tools such as *MemMonitor*, *MemCPUMonitor*, *Pressure Pulse*, and *STB Session Monitor* into a single fat-jar with a unified live dashboard.
+
+This page documents tool #7 in the [Performance and Stability|https://wiki.telekom.de/spaces/OTVTD/pages/3787096188/Performance+and+Stability] supporting-tools section.
+
+h2. Goals
+
+|| Goal || How the tool helps ||
+| Eliminate jank frames and ANRs | Live UI jank %, frame-phase breakdown, main-thread CPU |
+| Lower DDR memory footprint | App PSS breakdown (Java/native/graphics), Top Process Memory, zone watermarks |
+| Minimize disk I/O | IO PSI, major page faults, direct reclaim rate |
+| Ensure stability and robustness | PSI (cpu/mem/io), memory zone watermarks, anomaly log, logcat capture |
+| Benchmark performance on STB | Tunnel mode tracking, player lifecycle, channel-zap stress test, A/B comparison |
+
+h2. 30-Second Mental Model
+
+{noformat}
+adb device --> MetricsCollector (one batched adb shell per tick)
+                    |
+                    v
+              MonitorSession (sampling loop, logcat, anomaly scan)
+        +-----------+-----------+-----------+
+        v           v           v
+   WebApp      PdfReport     samples.csv
+ (live JSON)  (PDF charts)   (raw data)
+{noformat}
+
+A *Sample* is the unit of everything: the collector builds one per tick, and every consumer (dashboard JSON, PDF, CSV) is just a different serialization of the same Sample stream.
+
+h2. Build
+
+Single self-contained fat jar (Kotlin 1.9, JVM 11):
+
+{code:bash}
+./gradlew fatJar
+# output: build/libs/adb-device-monitor-1.0.0-all.jar
+{code}
+
+Verify the build stamp:
+
+{code:bash}
+java -jar build/libs/adb-device-monitor-1.0.0-all.jar --version
+{code}
+
+There is also a {{--selftest}} flag that renders Device/Procrank snapshot HTML from fixed test data (no device needed).
+
+h2. How to Run
+
+h3. Web mode (recommended)
+
+{code:bash}
+java -jar adb-device-monitor-1.0.0-all.jar --web 8080
+{code}
+
+Opens *ADB Performance Studio* at [http://localhost:8080|http://localhost:8080]: pick a connected device, choose metrics, press *Start*, and watch live charts. Reports land in {{run_timestamp_manufacturer_model/}}.
+
+h3. CLI (headless)
+
+{code:bash}
+java -jar adb-device-monitor-1.0.0-all.jar --duration 300 --interval 2 [options]
+{code}
+
+|| Flag || Purpose ||
+| {{--duration}} / {{--interval}} | Run length and sampling period (required in CLI mode) |
+| {{--package}} | Track app PSS, app CPU, media processes via dumpsys |
+| {{--jank}} | UI jank % + frame-phase breakdown (needs {{--package}}) |
+| {{--profile}} | ART sampling profiler, top main-thread methods table |
+| {{--perfetto}} | Record a Perfetto system trace for the run |
+| {{--playback}} | STB: track player state + tunnel mode from logcat |
+| {{--zap-time}} / {{--zap-count}} | Channel-zapping stress test (sends CHANNEL_UP) |
+| {{--label}} | Tag the run for A/B comparisons (e.g. {{tunnel-on}}) |
+| {{--serve}} | Also expose the live dashboard for this CLI run |
+| {{--device}} / {{--ip}} | Target a specific device / connect over TCP-IP |
+| {{--scan-logcat}} | Analyze an existing logcat with no device attached |
+
+h3. Connect to STB over network
+
+{code:bash}
+adb connect STB_IP
+java -jar adb-device-monitor-1.0.0-all.jar --web 8080 --ip STB_IP
+{code}
+
+h3. macOS app
+
+Run {{packaging/package-macos.sh}} to wrap the jar with jpackage into a .app/.dmg. The dashboard build badge (bottom-right) shows which build is live.
+
+*Important:* the .app bundles a frozen copy of the jar taken at package time. After changing code, re-run the packaging script or run the jar directly.
+
+h2. Live Web Dashboard
+
+|| Route || Purpose ||
+| {{/}} | Home: device picker + run configuration |
+| {{/dashboard}} | Live charts |
+| {{/compare}} | Two-run A/B comparison |
+| {{/api/session}} | Incremental run state + new samples as JSON |
+| {{/api/stop}} (POST) | Stop run (aborts in-flight adb, returns in 1-2s) |
+| {{/api/report}} | Download PDF report |
+
+*Health badges* summarize the last ~30s into colored CPU, Memory, and PSI verdicts. *Interactive top-process charts* let you tick any PID to add its time series.
+
+h2. Metrics Collected
+
+h3. How sampling works
+
+On each tick the tool runs *one batched adb shell command* that reads kernel files separated by marker lines. This keeps device overhead tiny on weak STB hardware.
+
+|| Cost || Meaning ||
+| Negligible | Tiny /proc or /sys read in the shared batch command |
+| Low | A few extra small file reads per tick |
+| Medium | dumpsys or reading every process — opt-in only |
+
+Many kernel values are cumulative counters; the tool stores the previous reading and reports the *difference over elapsed time*. The first sample of a run has no rate.
+
+h3. System metrics (always sampled, negligible cost)
+
+|| Metric || Source || What it tells you ||
+| CPU utilization and idle % | /proc/stat | Device saturation; idle % = headroom |
+| Per-core CPU % | /proc/stat cpuN lines | Single-threaded bottlenecks hidden by aggregate |
+| Memory MB and used % | /proc/meminfo | RAM pressure; falling MemAvailable = leak signal |
+| PSI cpu/mem/io avg10 | /proc/pressure/* | Early warning for resource contention (Android 10+) |
+| Load average 1m | /proc/loadavg | Run queue vs core count |
+| Swap used | /proc/meminfo | zram/swap pressure |
+| Memory zone watermarks | /proc/zoneinfo | Free pages vs min/low/high — LMK precursor |
+| Direct reclaim events/s | logcat parse | Allocation stalls (when device logs them) |
+| CPU temperature | /sys/class/thermal | Thermal throttling risk |
+| CPU frequency | scaling_cur_freq | Throttling vs power-saving |
+| Major page faults | /proc/vmstat | Memory thrashing |
+| Network throughput | /proc/net/dev | RX/TX rates across interfaces |
+
+h3. Application metrics (require {{--package}})
+
+|| Metric || Source || Cost || What it tells you ||
+| App PSS total + breakdown | dumpsys meminfo | Medium | Java/native/graphics/code footprint; leak detection |
+| App / main-thread CPU | /proc/pid/task stat | Low | Main-thread CPU above 80% = jank risk |
+| UI jank % and frame phases | dumpsys gfxinfo framestats | Medium | Input/animation/layout/draw ms per frame |
+| Media/HAL process CPU | /proc/pid/stat | Low-Med | Software vs hardware decode path |
+| Top-10 process CPU | /proc/pid/stat all | Medium | Noisy neighbors stealing cycles |
+| Top process memory RSS | /proc/pid/stat field 24 | Low-Med | Who is eating RAM (cheap, no root) |
+
+h3. STB playback metrics (require {{--playback}}, from logcat)
+
+|| Metric || What it tells you ||
+| Video player state | MediaKind lifecycle: onSourceLoad, onRenderFirstFrame, onPlaying, onStallStarted |
+| Tunnel mode build vs actual | Whether tunneled hardware playback was requested and granted |
+
+*Tunnel mode example:* build flag true + actual non_tunneled = silently fell back to software path — explains high codec CPU and micro-stutter. Enabling tunnel mode can reduce app-level CPU by up to ~20% and memory by ~10% (see Performance and Stability page for comparison graphs).
+
+h2. One-Shot Snapshots (Home page buttons)
+
+|| Feature || Purpose ||
+| Device Snapshot | Hardware/OS summary, memory doughnut (PSS by category), full process table |
+| Procrank Snapshot | Per-process VSS/RSS/PSS/USS via procrank (root) or ps fallback |
+
+Use Device Snapshot for a fast baseline before starting a run. Use Procrank Snapshot for the definitive who-is-really-using-memory view during a repro.
+
+h2. Reports and A/B Comparison
+
+Each run creates {{run_timestamp_manufacturer_model/}} containing:
+
+|| File || Contents ||
+| report.pdf | Multi-page summary with charts, health verdict, anomaly timeline |
+| samples.csv | One row per tick — machine-readable source of truth |
+| logcat.log | Full captured logcat |
+| anomalies.log | Flagged events (ANR, LMK, crashes, etc.) |
+| device-info.log | Device properties snapshot |
+
+h3. A/B comparison workflow (tunnel mode example)
+
+{code:bash}
+# Run 1 — tunnel off
+java -jar adb-device-monitor-1.0.0-all.jar --duration 300 --interval 2 \
+  --package com.telekom.onetv.tv.hr --playback --label tunnel-off
+
+# Toggle tunneled playback on device, then Run 2
+java -jar adb-device-monitor-1.0.0-all.jar --duration 300 --interval 2 \
+  --package com.telekom.onetv.tv.hr --playback --label tunnel-on
+
+# Open http://localhost:8080/compare and overlay both runs
+{code}
+
+Expect App PSS to *drop* in tunnel mode while media/HAL CPU may *rise* as work shifts to the hardware pipeline.
+
+h2. Architecture
+
+Clean-architecture layered design in a single Gradle fat-jar:
+
+|| Layer || Responsibility ||
+| domain/ | Immutable data models (Sample, Anomaly) — no I/O |
+| data/ | adb wrapper, metrics collector, logcat parsers |
+| application/ | MonitorSession — sampling loop, CSV writer, lifecycle |
+| presentation/ | Web dashboard, PDF report, snapshot HTML |
+| Main.kt | Composition root / CLI entry point |
+
+*Threading:* fixed-interval sampling on monitor-session thread; expensive reads on a background slow-collector thread so slow reads never stall the loop. Every adb command is bounded with a timeout — hung commands (e.g. su) are killed instead of blocking forever.
+
+h2. Comparison with Earlier Tools
+
+|| Capability || MemMonitor || Pressure Pulse || STB Session Monitor || ADB Device Monitor ||
+| Live dashboard | No (HTML plot at end) | No | No | *Yes* (web UI) |
+| App PSS breakdown | Yes | No | No | *Yes* |
+| PSI pressure | No | Yes | No | *Yes* |
+| UI jank / frame phases | No | No | No | *Yes* |
+| Tunnel mode tracking | No | No | Partial | *Yes* (build + actual) |
+| PDF report | No | No | HTML | *Yes* |
+| A/B comparison | No | No | No | *Yes* |
+| Anomaly flagging | No | No | No | *Yes* |
+| Single round-trip sampling | No | No | No | *Yes* (STB-safe) |
+
+h2. Logs and Troubleshooting
+
+All stdout/stderr is tee'd to {{~/ADB Device Monitor/adb-monitor.log}}. Useful log lines: {{[top-mem] strategy=...}}, {{[collector] cycle ...}}, {{[loop] sample #...}}, {{[stop] ...}}.
+
+If a dashboard chart looks wrong, open the browser console — each chart renders inside its own try/catch and logs precise error messages instead of failing silently.
+
+h2. Repository and Detailed Docs
+
+Source: *adb-tools/adb-device-monitor*
+
+|| Doc || What it covers ||
+| docs/architecture.md | Clean-architecture layout, sample flow, threading model |
+| docs/metrics.md | Every metric: adb command, parsing, dev interpretation |
+| docs/web-dashboard.md | Polling protocol, health badges, Stop/report flow |
+| docs/build-run-package.md | All CLI flags, macOS packaging, log files |
+| docs/reports-and-comparison.md | PDF, CSV schema, compare view |
+| docs/device-and-procrank-snapshot.md | One-shot Device and Procrank snapshot features |

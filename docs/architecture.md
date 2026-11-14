@@ -97,17 +97,27 @@ devicemonitor/
 
 | Thread | Owns | Notes |
 |--------|------|-------|
-| `monitor-session` | the fixed-interval sampling loop | interruptible sleep; Stop wakes it immediately |
+| `monitor-session` | the fixed-interval sampling loop | waits in 150 ms slices polling the stop flag (never interrupted) |
 | `slow-collector` | top-process memory (`ps`), foreground activity | adaptive back-off (4→9→15s) if a read is slow |
 | logcat reader (Process) | streaming `adb logcat` to `logcat.log` | scanned incrementally for anomalies |
-| HTTP executor pool | serving dashboard requests | reads the shared sample buffer under a lock |
+| `http-N` (cached daemon pool) | serving dashboard requests | unbounded, so one slow handler (frozen device, folder dialog) cannot starve the dashboard poll |
+| `watchdog` (per run) | stall detection for the sampling loop / finalize | dumps all thread stacks to the log when the loop makes no progress for max(15 s, 6× interval) |
+| `http-watchdog` | stall detection for HTTP handlers | thread dump when a request is stuck > 10 s |
 
 Two hardening rules run throughout:
 
 - **`Adb.exec` is bounded.** Every adb command runs with a timeout and a separate reader thread; a
   hung command (e.g. `su`) is `destroyForcibly`-killed instead of blocking forever.
-- **Stop aborts in-flight work.** `requestStop()` sets the flag, interrupts the sampling thread, and
-  calls `Adb.abortInflight()` to kill any adb command currently blocking, so Stop returns in ~1–2s.
+- **Stop aborts in-flight work.** `requestStop()` sets the flag and calls
+  `Adb.beginAbort(runThreads)`: the adb commands owned by the run's threads (sampling, slow
+  collector, zapper) are killed, and any further `exec` on those threads returns `""` immediately
+  until `finalizeOutputs()` calls `endAbort()`. The gate is per-thread, so the device list and
+  one-shot snapshots keep working while a run stops. The sampling thread is not interrupted.
+- **Every HTTP handler goes through `route()`** (WebServer.kt): timed, exceptions logged and turned
+  into a 500, exchange always closed. `/api/devices` caches the per-device version/root probe
+  (30 s) and bounds it to 5 s.
+- **Logging is central** (`common/Log.kt`): levelled, timestamped, thread-named lines; `println`
+  is captured too. See [build-run-package.md](build-run-package.md#logs).
 
 ## Conventions
 

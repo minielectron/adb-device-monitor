@@ -1,5 +1,6 @@
 package devicemonitor.data.adb
 
+import devicemonitor.common.Log
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -44,28 +45,28 @@ class Adb(private val adbPath: String) {
 
     // Every running adb child process is registered here so a Stop can force-kill all of them at
     // once (abortInflight), instantly unblocking any thread parked in exec()'s waitFor.
-    private val inflight: MutableSet<Process> =
-        java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Process, Boolean>())
+    private val inflight = java.util.concurrent.ConcurrentHashMap<Process, Thread>()   // process → owner thread
 
-    // When aborting, exec() returns immediately without launching adb. This makes Stop near-instant:
-    // once a run is stopping, the *remaining* adb calls in the in-progress sampling tick (pss, gfxinfo,
-    // top-CPU, media…) short-circuit instead of each running to completion / its timeout. Cleared by
-    // endAbort() before the report is finalized (which itself pulls traces over adb).
-    @Volatile private var aborting = false
+    // Abort gate, scoped to the *run's own threads*. While a thread is in this set, exec() on it
+    // returns immediately without launching adb. This makes Stop near-instant: the remaining adb
+    // calls in the in-progress sampling tick (pss, gfxinfo, top-CPU, media…) short-circuit instead of
+    // each running to completion / its timeout. It is per-thread on purpose — a global gate would
+    // also blank the device list and break snapshots requested from the UI while a run is stopping.
+    private val abortedThreads: MutableSet<Thread> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
-    /** Force-kill every in-flight adb command. Used on Stop so blocked reads return immediately. */
-    fun abortInflight() {
-        val procs = inflight.toList()
+    /** Force-kill in-flight adb commands (all of them, or only those owned by [owners]). */
+    fun abortInflight(owners: Collection<Thread>? = null) {
+        val procs = inflight.entries.filter { owners == null || it.value in owners }.map { it.key }
         if (procs.isEmpty()) return
-        System.err.println("[adb] Stop: aborting ${procs.size} in-flight command(s)")
+        Log.warn("[adb] Stop: aborting ${procs.size} in-flight command(s)")
         for (p in procs) { try { p.destroyForcibly() } catch (_: Exception) {} }
     }
 
-    /** Enter abort mode: kill in-flight commands and make new exec calls return instantly. */
-    fun beginAbort() { aborting = true; abortInflight() }
+    /** Enter abort mode for [threads]: kill their in-flight commands and make their new exec calls return instantly. */
+    fun beginAbort(threads: Collection<Thread>) { abortedThreads.addAll(threads); abortInflight(threads) }
 
     /** Leave abort mode so normal adb calls (e.g. finalize's trace pulls) work again. */
-    fun endAbort() { aborting = false }
+    fun endAbort() { abortedThreads.clear() }
 
     /** Run a raw adb command (no -s). */
     fun raw(vararg args: String): String = exec(listOf(adbPath) + args)
@@ -129,9 +130,12 @@ class Adb(private val adbPath: String) {
     }
 
     private fun exec(cmd: List<String>, timeoutSec: Long = 20): String {
-        if (aborting) return ""   // run is stopping — don't launch more adb work
+        val me = Thread.currentThread()
+        val label = cmd.drop(1).joinToString(" ").replace('\n', ' ').take(160)
+        if (me in abortedThreads) { Log.debug("[adb] skipped (run stopping): $label"); return "" }
+        val t0 = System.nanoTime()
         val process = ProcessBuilder(cmd).redirectErrorStream(true).start()
-        inflight.add(process)
+        inflight[process] = me
         try {
             // Read stdout on a separate thread (per-call holder — exec runs concurrently). If a
             // command hangs with its stdout still open (e.g. `su` waiting for approval), a plain
@@ -145,9 +149,14 @@ class Adb(private val adbPath: String) {
                 process.destroyForcibly()
                 process.waitFor(2, TimeUnit.SECONDS)
                 reader.join(1000)
+                Log.warn("[adb] TIMEOUT after ${timeoutSec}s: $label")
                 throw IllegalStateException("Command timed out (${timeoutSec}s): ${cmd.joinToString(" ")}")
             }
             reader.join(2000)   // process exited; let the reader drain remaining buffered output
+            val ms = (System.nanoTime() - t0) / 1_000_000
+            val exit = try { process.exitValue() } catch (_: Exception) { -1 }
+            val line = "[adb] ${ms}ms exit=$exit out=${out.get().length}B: $label"
+            if (ms > 3000) Log.warn(line) else Log.debug(line)
             return out.get().trim()
         } finally {
             inflight.remove(process)

@@ -17,10 +17,15 @@ repositories {
 dependencies {
     implementation("org.jfree:jfreechart:1.5.4")
     implementation("org.apache.pdfbox:pdfbox:2.0.31")
+    testImplementation(kotlin("test"))
 }
 
 kotlin {
     jvmToolchain(11)
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 application {

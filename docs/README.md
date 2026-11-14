@@ -13,6 +13,7 @@ read the values**, and **how to use it during development**.
 |-----|----------------|
 | [architecture.md](architecture.md) | Clean-architecture layout, package responsibilities, how a sample flows through the system, threading model |
 | [build-run-package.md](build-run-package.md) | Building the fat jar, all CLI flags, running the web UI, packaging the macOS app, log files |
+| [desktop-app.md](desktop-app.md) | The native macOS app: Tauri shell + Kotlin sidecar, build script, verification checklist, signing |
 | [metrics.md](metrics.md) | Every metric: the adb command behind it, how it's parsed, how to read the value, and what it tells you in dev |
 | [web-dashboard.md](web-dashboard.md) | The live dashboard: polling protocol, charts, interactive top-process charts, health badges, Stop/report flow |
 | [device-and-procrank-snapshot.md](device-and-procrank-snapshot.md) | One-shot Device Snapshot and Procrank Snapshot features (server-rendered HTML) |

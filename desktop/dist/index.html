@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ADB Performance Studio</title>
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; align-items: center; justify-content: center; background: #0f172a; color: #e2e8f0;
+         font: 14px -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
+  .box { text-align: center; max-width: 640px; padding: 24px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 10px; }
+  .spin { width: 26px; height: 26px; margin: 0 auto 18px; border: 3px solid #334155; border-top-color: #38bdf8;
+          border-radius: 50%; animation: r 0.9s linear infinite; }
+  @keyframes r { to { transform: rotate(360deg); } }
+  #err { display: none; text-align: left; white-space: pre-wrap; background: #1e293b; border: 1px solid #b91c1c;
+         border-radius: 8px; padding: 14px; margin-top: 16px; font: 12px ui-monospace, Menlo, monospace; color: #fecaca; }
+  p { color: #94a3b8; margin: 4px 0; }
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="spin" id="spin"></div>
+  <h1>ADB Performance Studio</h1>
+  <p id="msg">Starting the monitoring engine&hellip;</p>
+  <div id="err"></div>
+</div>
+<script>
+// Called by the native shell (src-tauri/src/main.rs) if the Kotlin sidecar cannot be started.
+function showError(text) {
+  document.getElementById('spin').style.display = 'none';
+  document.getElementById('msg').textContent = 'The monitoring engine could not be started.';
+  var e = document.getElementById('err'); e.style.display = 'block'; e.textContent = text;
+}
+</script>
+</body>
+</html>

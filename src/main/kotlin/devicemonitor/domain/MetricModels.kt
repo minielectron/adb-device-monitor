@@ -44,7 +44,9 @@ data class Sample(
     val videoState: String? = null,                    // ExoPlayer/Bitmovin state: READY/BUFFERING/PAUSED/IDLE (logcat, STB)
     val tunnelMode: String? = null,                    // "tunneled" | "non_tunneled" | "unknown" | "n/a" (logcat, STB)
     val topActivity: String? = null,                   // current foreground activity component (dumpsys)
-    val topMemProcs: List<ProcMemSample> = emptyList() // top processes by RSS this tick (/proc/*/stat)
+    val topMemProcs: List<ProcMemSample> = emptyList(), // top processes by RSS this tick (/proc/*/stat)
+    val screenFps: Double? = null,                     // presented frames/s of the focused surface (SurfaceFlinger)
+    val videoFps: Double? = null                       // presented frames/s of the video surface (SurfaceFlinger)
 )
 
 /** One process entry in the top-10 CPU list. */

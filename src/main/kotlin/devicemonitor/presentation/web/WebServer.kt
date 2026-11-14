@@ -26,7 +26,8 @@ import java.util.Locale
 class WebApp(
     private val port: Int,
     private val adb: Adb,
-    initialSession: MonitorSession? = null
+    initialSession: MonitorSession? = null,
+    private val bindHost: String? = null   // null = all interfaces (browser mode); "127.0.0.1" for the desktop shell
 ) {
     @Volatile var session: MonitorSession? = initialSession
 
@@ -54,49 +55,158 @@ class WebApp(
     @Volatile private var procFile: File? = null
 
     fun start() {
-        val s = HttpServer.create(InetSocketAddress(port), 0)
-        s.createContext("/") { ex -> respond(ex, 200, "text/html", HOME_PAGE.replace("__BUILD__", esc(buildTag()))) }
-        s.createContext("/dashboard") { ex -> respond(ex, 200, "text/html", DASHBOARD_PAGE.replace("__BUILD__", esc(buildTag()))) }
-        s.createContext("/api/devices") { ex -> respond(ex, 200, "application/json", devicesJson()) }
-        s.createContext("/api/defaults") { ex ->
+        val s = HttpServer.create(if (bindHost != null) InetSocketAddress(bindHost, port) else InetSocketAddress(port), 0)
+        route(s, "/") { ex -> respond(ex, 200, "text/html", HOME_PAGE.replace("__BUILD__", esc(buildTag())).replace("</head>", CLIENT_LOG_TAG + "</head>")) }
+        route(s, "/dashboard") { ex -> respond(ex, 200, "text/html", DASHBOARD_PAGE.replace("__BUILD__", esc(buildTag())).replace("</head>", CLIENT_LOG_TAG + "</head>")) }
+        route(s, "/api/devices") { ex -> respond(ex, 200, "application/json", devicesJson()) }
+        route(s, "/api/defaults") { ex ->
             val dir = MonitorSession.resolveBaseDir(null).absolutePath
             respond(ex, 200, "application/json", "{\"reportsDir\":\"${esc(dir)}\",\"build\":\"${esc(buildTag())}\"}")
         }
-        s.createContext("/api/pick-folder") { ex -> handlePickFolder(ex) }
-        s.createContext("/api/snapshot") { ex -> handleSnapshotStart(ex) }
-        s.createContext("/api/snapshot-status") { ex ->
+        route(s, "/api/pick-folder") { ex -> handlePickFolder(ex) }
+        route(s, "/api/snapshot") { ex -> handleSnapshotStart(ex) }
+        route(s, "/api/snapshot-status") { ex ->
             val done = snapFile != null
             respond(ex, 200, "application/json",
                 "{\"running\":$snapRunning,\"progress\":$snapProgress,\"done\":$done," +
                     "\"error\":${snapError?.let { "\"${esc(it)}\"" } ?: "null"}}")
         }
-        s.createContext("/api/snapshot-report") { ex -> handleSnapshotReport(ex) }
-        s.createContext("/api/procrank-snapshot") { ex -> handleProcrankStart(ex) }
-        s.createContext("/api/procrank-status") { ex ->
+        route(s, "/api/snapshot-report") { ex -> handleSnapshotReport(ex) }
+        route(s, "/api/procrank-snapshot") { ex -> handleProcrankStart(ex) }
+        route(s, "/api/procrank-status") { ex ->
             val done = procFile != null
             respond(ex, 200, "application/json",
                 "{\"running\":$procRunning,\"progress\":$procProgress,\"done\":$done," +
                     "\"error\":${procError?.let { "\"${esc(it)}\"" } ?: "null"}}")
         }
-        s.createContext("/api/procrank-report") { ex -> handleProcrankReport(ex) }
-        s.createContext("/api/start") { ex -> handleStart(ex) }
-        s.createContext("/api/stop") { ex ->
+        route(s, "/api/procrank-report") { ex -> handleProcrankReport(ex) }
+        route(s, "/api/start") { ex -> handleStart(ex) }
+        route(s, "/api/stop") { ex ->
             session?.requestStop()
             respond(ex, 200, "application/json", "{\"ok\":true}")
         }
-        s.createContext("/api/session") { ex -> respond(ex, 200, "application/json", sessionJson(ex)) }
-        s.createContext("/api/report") { ex -> handleReport(ex) }
-        s.createContext("/api/root") { ex -> handleRoot(ex) }
-        s.createContext("/api/runs") { ex -> respond(ex, 200, "application/json", runsJson()) }
-        s.createContext("/api/runcsv") { ex -> handleRunCsv(ex) }
-        s.createContext("/compare") { ex -> respond(ex, 200, "text/html", COMPARE_PAGE) }
-        s.executor = java.util.concurrent.Executors.newFixedThreadPool(4)
+        route(s, "/api/session") { ex -> respond(ex, 200, "application/json", sessionJson(ex)) }
+        route(s, "/api/report") { ex -> handleReport(ex) }
+        route(s, "/api/root") { ex -> handleRoot(ex) }
+        route(s, "/api/runs") { ex -> respond(ex, 200, "application/json", runsJson()) }
+        route(s, "/api/runcsv") { ex -> handleRunCsv(ex) }
+        route(s, "/compare") { ex -> respond(ex, 200, "text/html", COMPARE_PAGE.replace("</head>", CLIENT_LOG_TAG + "</head>")) }
+        route(s, "/clientlog.js") { ex -> respond(ex, 200, "application/javascript", CLIENT_LOG_JS) }
+        route(s, "/api/clientlog") { ex -> handleClientLog(ex) }
+        route(s, "/api/diagnostics") { ex -> handleDiagnostics(ex) }
+        // Unbounded named daemon pool: a slow handler (unresponsive device, native folder dialog)
+        // can no longer starve the dashboard poll the way the old fixed pool of 4 did.
+        val n = java.util.concurrent.atomic.AtomicInteger()
+        s.executor = java.util.concurrent.Executors.newCachedThreadPool { r ->
+            Thread(r, "http-" + n.incrementAndGet()).apply { isDaemon = true }
+        }
+        startHttpWatchdog()
         s.start()
         server = s
     }
 
     fun stop() {
         server?.stop(0)
+    }
+
+    // ---------- request plumbing: timing, error capture, stall detection ----------
+
+    private class InFlight(val what: String, val startNanos: Long, val thread: Thread) { @Volatile var dumped = false }
+    private val inFlight = java.util.concurrent.ConcurrentHashMap<HttpExchange, InFlight>()
+    // Polled endpoints: only logged when slow, otherwise they would flood the log.
+    private val quietPaths = setOf("/api/session", "/api/devices", "/api/snapshot-status", "/api/procrank-status", "/api/clientlog", "/clientlog.js")
+
+    /** Register a handler that is timed, never leaks an exception, and always closes the exchange. */
+    private fun route(s: HttpServer, path: String, handler: (HttpExchange) -> Unit) {
+        s.createContext(path) { ex ->
+            val what = ex.requestMethod + " " + ex.requestURI
+            val t0 = System.nanoTime()
+            inFlight[ex] = InFlight(what, t0, Thread.currentThread())
+            try {
+                handler(ex)
+            } catch (e: Throwable) {
+                Log.error("[http] $what failed", e)
+                try { respond(ex, 500, "application/json", err(e.message ?: e.toString())) } catch (_: Exception) {}
+            } finally {
+                inFlight.remove(ex)
+                val ms = (System.nanoTime() - t0) / 1_000_000
+                if (ms > 1500 && path != "/api/pick-folder") Log.warn("[http] SLOW ${ms}ms $what")
+                else if (path !in quietPaths) Log.debug("[http] ${ms}ms $what")
+                try { ex.close() } catch (_: Exception) {}
+            }
+        }
+    }
+
+    /** Dumps all thread stacks once when a request has been stuck for more than 10 s. */
+    private fun startHttpWatchdog() {
+        Thread {
+            while (true) {
+                try { Thread.sleep(3000) } catch (_: InterruptedException) { return@Thread }
+                val now = System.nanoTime()
+                for (f in inFlight.values) {
+                    val sec = (now - f.startNanos) / 1e9
+                    if (sec > 10 && !f.dumped && !f.what.contains("/api/pick-folder")) {
+                        f.dumped = true
+                        Log.warn("[watchdog] HTTP request stuck for ${sec.toInt()}s on ${f.thread.name}: ${f.what} — thread dump written to the log")
+                        Log.threadDump("http stuck: ${f.what}")
+                    }
+                }
+            }
+        }.apply { isDaemon = true; name = "http-watchdog"; start() }
+    }
+
+    // Browser-side errors (window.onerror, unhandled rejections, console.error) land in the log too.
+    private val clientLogWindow = java.util.concurrent.atomic.AtomicLong(0)
+    private val clientLogCount = java.util.concurrent.atomic.AtomicInteger(0)
+    private fun handleClientLog(ex: HttpExchange) {
+        val body = ex.requestBody.bufferedReader().readText().take(4000).replace('\r', ' ')
+        val minute = System.currentTimeMillis() / 60_000
+        if (clientLogWindow.getAndSet(minute) != minute) clientLogCount.set(0)
+        val n = clientLogCount.incrementAndGet()
+        if (n <= 40) Log.warn("[client] $body")
+        else if (n == 41) Log.warn("[client] (more browser errors this minute suppressed)")
+        respond(ex, 200, "application/json", "{\"ok\":true}")
+    }
+
+    /** One zip with everything needed to debug a hang: log tails, live thread dump, state summary. */
+    private fun handleDiagnostics(ex: HttpExchange) {
+        val s = session
+        val info = buildString {
+            append("build: ").append(buildTag()).append('\n')
+            append("time: ").append(java.time.LocalDateTime.now()).append('\n')
+            append("java: ").append(System.getProperty("java.version")).append(" / ").append(System.getProperty("os.name"))
+                .append(' ').append(System.getProperty("os.version")).append(' ').append(System.getProperty("os.arch")).append('\n')
+            append("locale: ").append(Locale.getDefault()).append('\n')
+            append("cwd: ").append(System.getProperty("user.dir")).append('\n')
+            append("log: ").append(Log.file?.absolutePath).append('\n')
+            append("reportsBaseDir: ").append(reportsBaseDir.absolutePath).append('\n')
+            val rt = Runtime.getRuntime()
+            append("heap: used=").append((rt.totalMemory() - rt.freeMemory()) / 1048576).append("MB max=").append(rt.maxMemory() / 1048576).append("MB\n")
+            append("http in-flight: ").append(inFlight.values.joinToString { it.what + " (" + (System.nanoTime() - it.startNanos) / 1_000_000 + "ms)" }).append('\n')
+            if (s == null) append("session: none\n") else {
+                append("session.status: ").append(s.status).append('\n')
+                append("session.error: ").append(s.error).append('\n')
+                append("session.samples: ").append(s.samples.size).append('\n')
+                append("session.runDir: ").append(s.runDir?.absolutePath).append('\n')
+                append("session.config: ").append(s.config).append('\n')
+            }
+        }
+        val bos = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(bos).use { z ->
+            fun entry(name: String, bytes: ByteArray) { z.putNextEntry(java.util.zip.ZipEntry(name)); z.write(bytes); z.closeEntry() }
+            entry("info.txt", info.toByteArray())
+            entry("threads.txt", Log.threadDump("diagnostics export").toByteArray())
+            entry("adb-monitor.log", Log.tail(Log.file, 3 * 1024 * 1024))
+            val runLog = s?.runDir?.let { File(it, "run.log") } ?: Log.runFile
+            if (runLog != null && runLog.exists()) entry("run.log", Log.tail(runLog, 3 * 1024 * 1024))
+        }
+        val bytes = bos.toByteArray()
+        val name = "adb-monitor-diagnostics_" + java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) + ".zip"
+        ex.responseHeaders.add("Content-Type", "application/zip")
+        ex.responseHeaders.add("Content-Disposition", "attachment; filename=\"$name\"")
+        ex.sendResponseHeaders(200, bytes.size.toLong())
+        ex.responseBody.use { it.write(bytes) }
+        Log.info("[diag] diagnostics bundle exported (${bytes.size / 1024} KB)")
     }
 
     // ---------- handlers ----------
@@ -120,8 +230,20 @@ class WebApp(
     }
 
     /** (android version, root status) — root status: "root" | "available" | "unavailable". */
-    private fun enrich(serial: String): Pair<String?, String> = try {
-        val out = adb.shell(serial, "getprop ro.build.version.release; id; getprop ro.build.type; getprop ro.debuggable")
+    // The home page polls /api/devices every 5 s. Version/root rarely change, so cache them per
+    // device (30 s; failures 10 s) and bound the read to 5 s — an unresponsive device used to hold a
+    // request for 20 s per poll and pile requests up until the whole UI froze.
+    private val enrichCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Pair<String?, String>>>()
+    private fun enrich(serial: String): Pair<String?, String> {
+        val now = System.currentTimeMillis()
+        enrichCache[serial]?.let { (at, v) -> if (now - at < (if (v.second == "unknown") 10_000 else 30_000)) return v }
+        val v = enrichNow(serial)
+        enrichCache[serial] = System.currentTimeMillis() to v
+        return v
+    }
+
+    private fun enrichNow(serial: String): Pair<String?, String> = try {
+        val out = adb.shell(serial, "getprop ro.build.version.release; id; getprop ro.build.type; getprop ro.debuggable", 5)
         val lines = out.lines().map { it.trim() }
         val version = lines.getOrNull(0)?.ifBlank { null }
         val root = when {
@@ -145,6 +267,7 @@ class WebApp(
         }
         // adbd restarts; give the device a moment to come back before the next refresh.
         Thread.sleep(1500)
+        enrichCache.remove(serial)
         println("Web: adb root on $serial -> $out")
         respond(ex, 200, "application/json", "{\"ok\":true,\"message\":\"${esc(out.lines().first())}\"}")
     }
@@ -560,6 +683,8 @@ class WebApp(
         ex.sendResponseHeaders(code, bytes.size.toLong())
         ex.responseBody.use { it.write(bytes) }
     }
+
+    private val CLIENT_LOG_TAG = "<script src=\"/clientlog.js\"></script>"
 
     private fun err(msg: String) = "{\"ok\":false,\"error\":\"${esc(msg)}\"}"
 

@@ -46,6 +46,7 @@ Key options (full list via `--help`):
 | `--profile` | ART sampling profiler → top main-thread methods table (needs debuggable app) |
 | `--perfetto` | record a Perfetto system trace for the run |
 | `--playback` | STB: track player state + tunnel mode from logcat |
+| `--sidecar` (with `--web`) | backend mode for the native app: loopback only, exits when stdin closes — see [desktop-app.md](desktop-app.md) |
 | `--zap-time <ms>` / `--zap-count <n>` | channel-zapping stress test (sends CHANNEL_UP) |
 | `--label <name>` | tag the run/folder/report (e.g. `tunnel-on`) for comparisons |
 | `--serve <port>` | also expose the live dashboard for this CLI run |
@@ -57,12 +58,39 @@ Key options (full list via `--help`):
 Each run creates `run_<timestamp>_<manufacturer>_<model>/` containing `report.pdf`, `samples.csv`,
 `logcat.log`, `anomalies.log`, `device-info.log`.
 
-## Logs
+## Logs and diagnostics
 
-All stdout/stderr is tee'd to `~/ADB Device Monitor/adb-monitor.log` (so a double-clicked GUI app,
-which has no terminal, still produces readable logs). The log starts with the build stamp and the
-log-file path. Useful lines: `[top-mem] strategy=…`, `[collector] cycle …`, `[loop] sample #…`,
-`[stop] …`.
+Line format: `2026-11-13 22:18:58.132 INFO  [monitor-session] message` (level, thread name).
+
+| File | Content |
+|------|---------|
+| `~/ADB Device Monitor/adb-monitor.log` | everything, across runs; rotated to `.log.1` at 5 MB |
+| `<run folder>/run.log` | the same lines, for that run only — travels with the report |
+
+DEBUG lines go to the files only (the terminal shows INFO and above). What to grep for:
+
+| Tag | Meaning |
+|-----|---------|
+| `[adb] 42ms exit=0 out=1832B: -s … shell …` | every adb command with duration; WARN when > 3 s, `TIMEOUT` when killed |
+| `[http] SLOW 2300ms GET /api/…` | a handler took > 1.5 s; `[http] … failed` + stack trace on exceptions |
+| `[watchdog] run appears HUNG: phase=…` | the sampling loop / finalize stalled; a `THREAD DUMP` follows showing where each thread is blocked |
+| `[watchdog] HTTP request stuck …` | same, for a web request stuck > 10 s |
+| `[client] error @ /dashboard: …` | JavaScript errors from the browser (onerror, unhandled rejections, console.error) |
+| `[run]`, `[loop]`, `[collector]`, `[top-mem]`, `[stop]` | run lifecycle |
+
+**Export diagnostics** (link on the home page and dashboard, or `GET /api/diagnostics`) downloads a
+zip with `info.txt` (build, JVM, session state/config), `threads.txt` (live thread dump) and the
+tails of both logs. If the UI hangs, export this first — it works even while a run is stuck.
+
+## Tests
+
+```
+./gradlew test            # unit tests: parsers, adb timeout/abort gate, logger (needs network once for kotlin-test)
+scripts/smoke-test.sh     # end-to-end against scripts/fake-adb.sh: start → stop → report → compare → diagnostics
+```
+
+`scripts/fake-adb.sh` is a stand-in `adb` (`--adb scripts/fake-adb.sh`) for working without a device;
+`FAKE_ADB_DELAY`, `FAKE_ADB_HANG`, `FAKE_ADB_HANG_FILE` simulate a slow or frozen device.
 
 ## Package as a macOS app
 

@@ -62,7 +62,7 @@ Examples:
   adb-device-monitor --duration 300 --interval 2 --package com.telekom.onetv.tv.hr --jank
 """
 
-private val BOOL_FLAGS = setOf("jank", "no-logcat", "profile", "perfetto", "playback", "app")
+private val BOOL_FLAGS = setOf("jank", "no-logcat", "profile", "perfetto", "playback", "app", "sidecar")
 
 
 
@@ -111,23 +111,12 @@ private fun selfTest() {
  * terminal) still produces readable logs. File lives next to the reports so it's easy to find.
  */
 private fun installFileLogging() {
-    try {
-        val dir = MonitorSession.defaultReportsDir().apply { mkdirs() }
-        val logFile = File(dir, "adb-monitor.log")
-        val fos = java.io.FileOutputStream(logFile, true)
-        fun tee(orig: java.io.PrintStream) = java.io.PrintStream(object : java.io.OutputStream() {
-            override fun write(b: Int) { orig.write(b); fos.write(b) }
-            override fun write(b: ByteArray, off: Int, len: Int) { orig.write(b, off, len); fos.write(b, off, len); fos.flush() }
-        }, true)
-        System.setOut(tee(System.out))
-        System.setErr(tee(System.err))
-        println("================================================================")
-        println("ADB Device Monitor ${buildTag()} — log started ${java.time.LocalDateTime.now()}")
-        println("Log file: ${logFile.absolutePath}")
-        println("================================================================")
-    } catch (e: Exception) {
-        System.err.println("Could not open log file: ${e.message}")
-    }
+    Log.install(MonitorSession.defaultReportsDir())
+    Log.info("================================================================")
+    Log.info("ADB Device Monitor ${buildTag()} — log started ${java.time.LocalDateTime.now()}")
+    Log.info("Log file: ${Log.file?.absolutePath ?: "(unavailable)"}")
+    Log.info("java ${System.getProperty("java.version")} on ${System.getProperty("os.name")} ${System.getProperty("os.version")} (${System.getProperty("os.arch")}), cwd=${System.getProperty("user.dir")}")
+    Log.info("================================================================")
 }
 
 fun main(args: Array<String>) {
@@ -153,7 +142,7 @@ fun main(args: Array<String>) {
         } catch (e: Exception) {
             fail("Could not start ADB Device Monitor on port $port: ${e.message}")
         }
-        Runtime.getRuntime().addShutdownHook(Thread { app.session?.finalizeOutputs() })
+        Runtime.getRuntime().addShutdownHook(Thread({ finalizeOnExit(app.session) }, "shutdown-finalize"))
         val url = "http://localhost:$port"
         println("ADB Device Monitor running: $url")
         openBrowser(url)
@@ -170,15 +159,29 @@ fun main(args: Array<String>) {
     // ---------- web mode ----------
     opts["web"]?.let { portArg ->
         val port = portArg.toIntOrNull()?.takeIf { it in 1..65535 } ?: fail("--web must be a valid port")
-        val app = WebApp(port, adb)
+        // --sidecar: we are the backend of the native desktop shell (desktop/, Tauri). Serve on
+        // loopback only and exit when the shell goes away (it holds our stdin open; EOF = shell quit
+        // or crashed), finishing the active run's report first so nothing is lost and no JVM is orphaned.
+        val sidecar = opts.containsKey("sidecar")
+        val app = WebApp(port, adb, bindHost = if (sidecar) "127.0.0.1" else null)
         try {
             app.start()
         } catch (e: Exception) {
             fail("Could not start web server on port $port: ${e.message}")
         }
-        Runtime.getRuntime().addShutdownHook(Thread { app.session?.finalizeOutputs() })
+        Runtime.getRuntime().addShutdownHook(Thread({ finalizeOnExit(app.session) }, "shutdown-finalize"))
         println("ADB Performance Studio running: http://localhost:$port")
-        println("Open it in your browser. Press Ctrl+C here to quit (a running session still writes its report).")
+        if (sidecar) {
+            Log.info("[sidecar] serving the desktop shell on 127.0.0.1:$port")
+            Thread({
+                try { while (System.`in`.read() >= 0) { /* drain */ } } catch (_: Exception) {}
+                Log.info("[sidecar] desktop shell closed — finishing up and exiting")
+                try { app.session?.requestStop() } catch (_: Exception) {}
+                exitProcess(0)   // runs the shutdown hook → finalizeOutputs()
+            }, "sidecar-parent-watch").apply { isDaemon = true; start() }
+        } else {
+            println("Open it in your browser. Press Ctrl+C here to quit (a running session still writes its report).")
+        }
         CountDownLatch(1).await()
         return
     }
@@ -360,6 +363,19 @@ private fun scanLogcat(arg: String) {
 }
 
 /** Use the preferred port if free, otherwise let the OS pick any open port. */
+/** Shutdown hook body: make sure an active run still gets its report, and log why if it cannot. */
+private fun finalizeOnExit(session: MonitorSession?) {
+    if (session == null) return
+    try {
+        Log.info("[exit] shutting down — finalizing the active run (status=${session.status}, samples=${session.samples.size})")
+        session.requestStop()
+        session.finalizeOutputs()
+        Log.info("[exit] finalize complete")
+    } catch (t: Throwable) {
+        Log.error("[exit] finalize failed", t)
+    }
+}
+
 private fun pickPort(preferred: Int): Int {
     try { ServerSocket(preferred).use { return preferred } } catch (_: Exception) {}
     ServerSocket(0).use { return it.localPort }

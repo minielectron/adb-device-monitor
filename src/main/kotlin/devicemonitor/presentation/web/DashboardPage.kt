@@ -52,6 +52,7 @@ internal val DASHBOARD_PAGE = """<!DOCTYPE html>
   <a class="home" href="/">&#8962; Home</a>
   <button id="stopBtn" onclick="stopRun()">&#9632; Stop run</button>
   <a id="reportBtn" href="/api/report">&#8681; Download PDF report</a>
+  <a href="/api/diagnostics" style="position:absolute;right:14px;top:6px;font-size:10px;color:#9aa1ab" title="Download logs + thread dump (attach when reporting a hang)">Export diagnostics</a>
   <span id="buildStamp" style="position:absolute;right:14px;bottom:6px;font-size:10px;color:#9aa1ab" title="If this build time is older than your running jar, your browser is showing a cached page — hard-refresh with Cmd+Shift+R.">__BUILD__</span>
 </header>
 <div id="activity-banner" style="display:none;margin:10px 20px 0;padding:9px 14px;border-radius:8px;background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;font-size:13px">

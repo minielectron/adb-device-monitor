@@ -434,7 +434,9 @@ class MetricsCollector(
         tunnelMode: String? = null,
         directReclaimPerSec: Double? = null,
         topActivity: String? = null,
-        topMemProcs: List<ProcMemSample> = emptyList()
+        topMemProcs: List<ProcMemSample> = emptyList(),
+        screenFps: Double? = null,
+        videoFps: Double? = null
     ): Sample {
         fun util(p: CpuTicks?, c: CpuTicks?): Double? {
             if (p == null || c == null) return null
@@ -502,7 +504,9 @@ class MetricsCollector(
             videoState = videoState,
             tunnelMode = tunnelMode,
             topActivity = topActivity,
-            topMemProcs = topMemProcs
+            topMemProcs = topMemProcs,
+            screenFps = screenFps,
+            videoFps = videoFps
         )
     }
 }

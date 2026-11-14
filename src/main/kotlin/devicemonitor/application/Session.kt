@@ -5,6 +5,7 @@ import devicemonitor.data.adb.*
 import devicemonitor.data.metrics.*
 import devicemonitor.data.logcat.*
 import devicemonitor.presentation.report.*
+import devicemonitor.common.Log
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -46,6 +47,7 @@ data class SessionConfig(
     val directReclaimEnabled: Boolean = false, // direct-reclaim events/s from logcat (needs logcat)
     val topProcsEnabled: Boolean = false,   // top-10 process CPU% — reads /proc/*/stat per tick
     val topMemEnabled: Boolean = false,     // top processes by memory (PSS) — procrank (root) / dumpsys (non-root)
+    val fpsEnabled: Boolean = false,        // device FPS (screen + video) via SurfaceFlinger --latency
     val playbackEnabled: Boolean = false,   // STB: tunnel mode + video player state from logcat tail
     // App metrics (require a package)
     val appPssEnabled: Boolean = true,      // dumpsys meminfo — PSS total + breakdown (default ON)
@@ -113,6 +115,31 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
     private val profileRemotePath = "/data/local/tmp/adm_method.trace"
 
     @Volatile private var sessionThread: Thread? = null
+    @Volatile private var finalizing = false
+    @Volatile private var zapperThread: Thread? = null
+
+    // ---- watchdog: detects a stalled sampling loop / finalize and dumps every thread's stack ----
+    @Volatile private var lastBeatNanos = System.nanoTime()
+    @Volatile private var phase = "startup"
+    private fun beat() { lastBeatNanos = System.nanoTime() }
+
+    private fun startWatchdog() {
+        Thread {
+            var reportedBeat = 0L
+            while (status == Status.STARTING || status == Status.RUNNING) {
+                try { Thread.sleep(2000) } catch (_: InterruptedException) { return@Thread }
+                val beatAt = lastBeatNanos
+                val stalledSec = (System.nanoTime() - beatAt) / 1e9
+                // Sampling should beat every interval; startup/finalize legitimately take longer.
+                val limit = if (phase == "sampling") maxOf(15.0, config.intervalSec * 6) else 90.0
+                if (stalledSec > limit && beatAt != reportedBeat) {
+                    reportedBeat = beatAt   // one dump per stall
+                    Log.warn("[watchdog] run appears HUNG: phase=$phase, no progress for ${"%.0f".format(stalledSec)}s — thread dump written to the log")
+                    Log.threadDump("watchdog: phase=$phase stalled ${"%.0f".format(stalledSec)}s")
+                }
+            }
+        }.apply { isDaemon = true; name = "watchdog"; start() }
+    }
 
     fun startAsync() {
         sessionThread = Thread({ runBlocking() }, "monitor-session").apply { start() }
@@ -128,7 +155,8 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         // Enter abort mode: force-kill the adb command currently blocking the loop/collector AND make
         // every subsequent adb call return instantly, so the remaining reads in the in-progress tick
         // (pss, gfxinfo, top-CPU, media…) don't each run to completion before the loop can break.
-        try { adb.beginAbort() } catch (_: Exception) {}
+        // The gate is scoped to this run's own threads, so the device list and UI snapshots keep working.
+        if (!finalizing) try { adb.beginAbort(listOfNotNull(sessionThread, slowThread, zapperThread)) } catch (_: Exception) {}
         // NOTE: we deliberately do NOT interrupt the sampling thread. Interrupting it could surface as
         // an InterruptedException out of an unrelated blocking call (join/waitFor), which would mark
         // the run FAILED and hide the report button. The loop instead polls stopRequested during a
@@ -136,6 +164,8 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
     }
 
     fun runBlocking() {
+        if (sessionThread == null) sessionThread = Thread.currentThread()
+        startWatchdog()
         try {
             doRun()
             val t0 = System.nanoTime()
@@ -154,9 +184,12 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
                 println("[stop] stopped early — status $status")
             } else {
                 error = e.message ?: e.toString()
-                System.err.println("Session failed: $error")
+                Log.error("Session failed: $error", e)
                 status = Status.FAILED
             }
+        } finally {
+            Log.info("[run] finished: status=$status samples=${samples.size}" + (error?.let { " error=$it" } ?: ""))
+            Log.detachRun()
         }
     }
 
@@ -193,6 +226,9 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
             )
         }
         runDir = dir
+        Log.attachRun(File(dir, "run.log"))
+        Log.info("[run] folder=${dir.absolutePath}")
+        Log.info("[run] config=$config")
         outFile = config.outputOverride ?: File(dir, "report.pdf")
         csvFile = config.csvOverride ?: File(dir, "samples.csv")
         writeDeviceInfo(File(dir, "device-info.log"), info)
@@ -272,6 +308,7 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         var prevProcTicks: Map<Int, Pair<String, Long>>? = null
         val playbackTracker = if (config.playbackEnabled && config.logcatEnabled) Playback.Tracker() else null
         val reclaimCounter = if (config.logcatEnabled && config.directReclaimEnabled) GrowTailCounter(LogMetrics.DIRECT_RECLAIM) else null
+        val fpsCollector = if (config.fpsEnabled) FpsCollector(adb, config.target, config.packageName) else null
 
         // Background collector for the heavy dumpsys/procrank reads (top-memory, foreground
         // activity). These can take several seconds, so running them here — not inline in the
@@ -312,6 +349,7 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
             // Responsive inter-sample wait: poll stopRequested in ~150 ms slices instead of one long
             // sleep, so Stop is caught fast WITHOUT interrupting the thread (which risked a stray
             // InterruptedException marking the run FAILED).
+            phase = "sampling"; beat()
             while (!stopRequested) {
                 val remaining = (nextDeadline - System.nanoTime()) / 1_000_000
                 if (remaining <= 0) break
@@ -330,6 +368,7 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
                 continue
             }
             val snapMs = (System.nanoTime() - snapT0) / 1_000_000
+            beat()
             // A snapshot is normally well under a second. If it blocks much longer, an adb call is
             // contending with the background collector — surface it so the cause is visible.
             if (snapMs > 1500) System.err.println("[loop] sample #$i snapshot took ${snapMs}ms (adb contention — likely the Top Process Memory collector)")
@@ -458,12 +497,21 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
             // Incrementally scan new logcat lines for anomalies (keeps live polling cheap).
             anomalyScanner?.scanNew(File(dir, "logcat.log"))
 
+            // Device FPS — screen (focused surface) + video (SurfaceView) presented frame rate.
+            var screenFps: Double? = null
+            var videoFps: Double? = null
+            if (fpsCollector != null) {
+                val f = fpsCollector.sample(config.intervalSec)
+                screenFps = f.screenFps
+                videoFps = f.videoFps
+            }
+
             // Read the latest values from the background collector (never blocks the loop).
             val topActivity = if (wantActivity) latestActivity else null
             val topMem = if (config.topMemEnabled) latestTopMem else emptyList()
             if (config.topMemEnabled && i <= 4) println("[loop] sample #$i: memprocs attached = ${topMem.size} rows (latestTopMem=${latestTopMem.size})")
 
-            samples += collector.toSample(prevSnap, dtSec, snap, elapsed, pss, jankPct, mainCpu, phases, appCpu, mediaCpus, topProcs, videoState, tunnelMode, directReclaim, topActivity, topMem)
+            samples += collector.toSample(prevSnap, dtSec, snap, elapsed, pss, jankPct, mainCpu, phases, appCpu, mediaCpus, topProcs, videoState, tunnelMode, directReclaim, topActivity, topMem, screenFps, videoFps)
             prevSnap = snap
             prevElapsed = elapsed
 
@@ -535,6 +583,7 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         }
         thread.isDaemon = true
         thread.name = "zapper"
+        zapperThread = thread
         thread.start()
     }
 
@@ -543,6 +592,8 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
     @Synchronized
     fun finalizeOutputs() {
         // Leave abort mode (if a Stop set it) so the trace pulls below can use adb again.
+        finalizing = true
+        phase = "finalize"; beat()
         try { adb.endAbort() } catch (_: Exception) {}
         if (outputsWritten || samples.size < 2) return
         outputsWritten = true

@@ -81,6 +81,7 @@ internal val HOME_PAGE = """<!DOCTYPE html>
   </div>
   <div class="hero-links">
     <a href="/compare">&#9654;&#9654; Run Comparison</a>
+    <a href="/api/diagnostics" title="Download a zip with the logs and a thread dump — attach it when reporting a hang">Export diagnostics</a>
   </div>
 </div>
 <div class="wrap">
@@ -217,8 +218,11 @@ internal val HOME_PAGE = """<!DOCTYPE html>
 <script>
 var selected = null;
 
+var devicesLoading = false;
 function loadDevices() {
-  fetch('/api/devices').then(function (r) { return r.json(); }).then(function (d) {
+  if (devicesLoading) return;   // never stack polls behind a slow adb — that exhausts the browser's connections
+  devicesLoading = true;
+  fetch('/api/devices').then(function (r) { devicesLoading = false; return r.json(); }, function (e) { devicesLoading = false; throw e; }).then(function (d) {
     document.getElementById('banner').style.display = d.busy ? 'block' : 'none';
     var grid = document.getElementById('devices');
     if (!d.devices.length) {
