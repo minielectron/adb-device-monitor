@@ -1,0 +1,19 @@
+docs/superpowers/plans/2026-11-14-offline-diagnostics-implementation.md
+  s_6a41e6dc5a6d74::t_25a87cbb69dcbb 1-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a62dc3e62ad63f6a18151733f6ece6602bd521f7",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
