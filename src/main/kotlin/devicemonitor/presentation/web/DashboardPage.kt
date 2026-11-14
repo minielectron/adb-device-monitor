@@ -1,118 +1,133 @@
 package devicemonitor.presentation.web
 
 internal val DASHBOARD_PAGE = """<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ADB Performance Studio — live</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="/assets/chart.umd.js"></script>
 <style>
-  body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #f4f5f7; color: #1f2430; }
-  header { background: linear-gradient(135deg, #111827, #1e3a5f); color: #fff; padding: 12px 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-  header h1 { font-size: 16px; margin: 0; }
-  header .sub { font-size: 12px; color: #cbd5e1; flex: 1; }
-  #status { font-weight: 700; font-size: 13px; }
-  .running { color: #4ade80; } .finished { color: #fbbf24; } .failed { color: #f87171; } .stopping { color: #fbbf24; }
-  header a, header button { font-size: 12px; border-radius: 6px; padding: 6px 12px; border: 0; cursor: pointer; text-decoration: none; }
-  #stopBtn { background: #b91c1c; color: #fff; }
-  #stopBtn.busy { background: #9ca3af; color: #fff; cursor: default; opacity: .9; }
+  .run-brand { flex: none; }
+  .run-context { min-width: 180px; flex: 1; }
+  #status { margin-bottom: 5px; }
+  #status:before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 5px color-mix(in srgb, currentColor 10%, transparent); }
+  #device { overflow: hidden; color: var(--quiet); font: 10px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+  .running { color: var(--green); } .finished { color: var(--gold); } .failed { color: var(--red); } .stopping { color: var(--amber); }
+  #stopBtn.busy { opacity: .58; cursor: default; }
   .spinner { display: inline-block; width: 11px; height: 11px; margin-right: 4px; border: 2px solid rgba(255,255,255,.45); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -1px; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  #reportBtn { background: #15803d; color: #fff; display: none; }
-  .home { background: #374151; color: #e5e7eb; }
-  #badges { display: flex; gap: 10px; padding: 12px 20px 0 20px; flex-wrap: wrap; }
-  .hb { background: #fff; border: 1px solid #e2e4e8; border-radius: 8px; padding: 8px 14px; min-width: 130px; }
-  .hb .k { font-size: 11px; color: #6b7280; }
-  .hb .v { font-size: 14px; font-weight: 700; margin-top: 2px; }
-  .hb.ok .v { color: #15803d; } .hb.warn .v { color: #b45309; } .hb.bad .v { color: #b91c1c; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 14px 20px; }
-  .card { background: #fff; border: 1px solid #e2e4e8; border-radius: 8px; padding: 10px 12px; }
-  .card h2 { font-size: 13px; margin: 0 0 6px 0; color: #374151; }
-  .card .chartbox { position: relative; height: 200px; }
-  .chart-stats { border-top: 1px solid #f0f0f3; margin-top: 6px; padding-top: 5px; display: flex; flex-wrap: wrap; gap: 2px 0; }
-  .srow { display: flex; gap: 10px; align-items: baseline; width: 100%; font-size: 11px; color: #374151; line-height: 1.6; }
-  .sname { color: #6b7280; min-width: 70px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+  #reportBtn { display: none; }
+  #buildStamp { color: var(--quiet); font: 9px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .dashboard-shell { padding-top: 30px; }
+  .run-lead { display: flex; align-items: end; justify-content: space-between; gap: 22px; margin-bottom: 22px; }
+  .run-lead h1 { margin: 0; font-size: clamp(30px, 4vw, 48px); line-height: 1; letter-spacing: -.045em; }
+  .run-lead-copy { max-width: 620px; margin: 10px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+  #activity-banner { display: none; margin-bottom: 14px; padding: 13px 16px; border: 1px solid rgba(158,140,255,.24); border-radius: var(--radius-md); color: #d8d1ff; background: linear-gradient(100deg, rgba(158,140,255,.12), rgba(158,140,255,.035)); font-size: 12px; }
+  #activity-cur { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .health-panel { margin-bottom: 28px; padding: 18px; }
+  #badges { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 9px; }
+  .hb { min-width: 0; padding: 12px 13px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.025); }
+  .hb .k { color: var(--quiet); font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+  .hb .v { margin-top: 5px; color: var(--text); font-size: 13px; font-weight: 750; }
+  .hb.ok .v { color: var(--green); } .hb.warn .v { color: var(--amber); } .hb.bad .v { color: var(--red); }
+  .metric-catalog { display: grid; gap: 30px; }
+  .metric-group { min-width: 0; }
+  .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .card { min-width: 0; padding: 15px 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: linear-gradient(145deg, rgba(27,27,25,.9), rgba(15,15,14,.88)); box-shadow: inset 0 1px rgba(255,255,255,.025), 0 15px 44px rgba(0,0,0,.2); transition: border-color .2s, transform .2s; }
+  .card:hover { border-color: var(--line-strong); transform: translateY(-2px); }
+  .card h2 { margin: 0 0 8px; color: var(--text); font-size: 12px; letter-spacing: -.01em; }
+  .card .chartbox { position: relative; height: 210px; }
+  .chart-stats { display: flex; flex-wrap: wrap; gap: 2px 0; margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--line); }
+  .srow { display: flex; align-items: baseline; gap: 10px; width: 100%; color: var(--muted); font-size: 10px; line-height: 1.6; }
+  .sname { min-width: 70px; max-width: 110px; overflow: hidden; color: var(--quiet); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
   .sval { font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
-  .sval .sl { color: #9aa1ab; font-size: 9px; margin-right: 1px; text-transform: uppercase; }
-  #events { margin: 0 20px 24px 20px; }
-  #events h2 { font-size: 13px; color: #374151; }
-  #events table { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; border: 1px solid #e2e4e8; }
-  #events th, #events td { text-align: left; padding: 5px 10px; border-bottom: 1px solid #eef0f3; }
-  #events td:last-child { white-space: normal; word-break: break-word; overflow-wrap: anywhere; font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #374151; }
-  #events th { background: #e9ebf0; }
-  .tag { display: inline-block; padding: 1px 7px; border-radius: 9px; font-size: 11px; color: #fff; }
-  .tag.anom { background: #ea7317; } .tag.zap { background: #c0392b; } .tag.act { background: #4f46e5; }
+  .sval .sl { margin-right: 2px; color: var(--quiet); font-size: 8px; text-transform: uppercase; }
+  .analysis-section { display: none; margin-top: 30px; padding: 22px; }
+  .analysis-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 14px; }
+  .rank-panel { max-height: 280px; overflow-y: auto; padding: 14px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.022); }
+  .rank-label { margin-bottom: 8px; color: var(--quiet); font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+  .rank-panel label { color: var(--muted) !important; }
+  .analysis-chart { padding: 14px 15px; }
+  .analysis-chart .chartbox { height: 240px; }
+  #playback-section { border-color: rgba(158,140,255,.18); background: linear-gradient(145deg, rgba(31,27,45,.88), rgba(15,14,20,.92)); }
+  .media-notice { display: none; margin-bottom: 9px; padding: 11px 13px; border-radius: 11px; font-size: 11px; font-weight: 700; }
+  #pb-badges { display: flex; gap: 9px; margin-bottom: 12px; flex-wrap: wrap; }
+  .playback-grid { display: grid; gap: 14px; }
+  .events-panel { margin-top: 30px; padding: 22px; }
+  .event-scroll { max-height: 380px; overflow: auto; border: 1px solid var(--line); border-radius: 13px; }
+  #events table { width: 100%; border-collapse: collapse; color: var(--muted); font-size: 11px; background: rgba(255,255,255,.018); }
+  #events th, #events td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; }
+  #events td:last-child { white-space: normal; word-break: break-word; overflow-wrap: anywhere; color: var(--muted); font: 10px/1.5 ui-monospace, Menlo, monospace; }
+  #events th { position: sticky; top: 0; z-index: 1; color: var(--quiet); background: #151514; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+  .tag { display: inline-flex; padding: 3px 7px; border-radius: 999px; font-size: 9px; font-weight: 800; letter-spacing: .04em; color: #fff; }
+  .tag.anom { background: #a65d28; } .tag.zap { background: #923e43; } .tag.act { background: #6254a8; }
+  @media (max-width: 900px) { .metric-grid { grid-template-columns: 1fr; } .analysis-layout { grid-template-columns: 1fr; } .rank-panel { max-height: 210px; } }
+  @media (max-width: 720px) { .studio-appbar { flex-wrap: wrap; } .run-brand { min-width: 0; flex: 1 1 180px; } .run-context { min-width: 0; order: 3; flex: 1 0 100%; } .run-lead { display: block; } .run-lead .studio-status { margin-top: 16px; } .dashboard-shell { padding-top: 24px; } .health-panel, .analysis-section, .events-panel { padding: 16px; } .card .chartbox { height: 190px; } }
 </style>
 </head>
 <body>
-<header>
-  <h1>Live run</h1>
-  <span id="status" class="running">&#9679; live</span>
-  <div class="sub" id="device">connecting&hellip;</div>
-  <a class="home" href="/">&#8962; Home</a>
-  <button id="stopBtn" onclick="stopRun()">&#9632; Stop run</button>
-  <a id="reportBtn" href="/api/report">&#8681; Download PDF report</a>
-  <a href="/api/diagnostics" style="position:absolute;right:14px;top:6px;font-size:10px;color:#9aa1ab" title="Download logs + thread dump (attach when reporting a hang)">Export diagnostics</a>
-  <span id="buildStamp" style="position:absolute;right:14px;bottom:6px;font-size:10px;color:#9aa1ab" title="If this build time is older than your running jar, your browser is showing a cached page — hard-refresh with Cmd+Shift+R.">__BUILD__</span>
+<div class="studio-ambient" aria-hidden="true"><span class="studio-orb gold"></span><span class="studio-orb violet"></span><span class="studio-orb teal"></span></div>
+<header class="studio-appbar">
+  <div class="studio-brand run-brand"><div class="studio-brand-mark">APS</div><div class="studio-brand-copy"><div class="studio-brand-name">Live telemetry</div><div class="studio-brand-meta" id="buildStamp" title="If this build time is older than your running jar, your browser is showing a cached page — hard-refresh with Cmd+Shift+R.">__BUILD__</div></div></div>
+  <div class="run-context"><div id="status" class="running">live capture</div><div id="device">connecting&hellip;</div></div>
+  <nav class="studio-actions" aria-label="Run actions">
+    <a class="studio-link" href="/">&#8592; Home</a>
+    <a class="studio-link" href="/api/diagnostics" title="Download logs and a thread dump">Diagnostics</a>
+    <button class="studio-button danger" id="stopBtn" onclick="stopRun()">&#9632; Stop run</button>
+    <a class="studio-button success" id="reportBtn" href="/api/report">&#8681; Download report</a>
+  </nav>
 </header>
-<div id="activity-banner" style="display:none;margin:10px 20px 0;padding:9px 14px;border-radius:8px;background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;font-size:13px">
-  <span style="font-weight:700">&#9635; Current activity:</span> <span id="activity-cur" style="font-family:ui-monospace,Menlo,monospace"></span>
-</div>
-<div id="badges"></div>
-<div class="grid" id="grid"></div>
-<div id="proc-section" style="margin:0 20px 20px;display:none">
-  <h2 style="font-size:14px;font-weight:600;color:#374151;margin:0 0 10px">&#129424; Top Process CPU %
-    <span style="font-size:11px;font-weight:400;color:#6b7280">&nbsp;&middot;&nbsp;check a process to add it to the chart</span>
-  </h2>
-  <div style="display:grid;grid-template-columns:230px 1fr;gap:14px">
-    <div style="background:#fff;border:1px solid #e2e4e8;border-radius:10px;padding:12px 14px;overflow-y:auto;max-height:270px">
-      <div style="font-size:11px;color:#6b7280;margin-bottom:6px;font-weight:600;letter-spacing:.04em">PEAK CPU %</div>
-      <div id="proc-list"><span style="font-size:12px;color:#9aa1ab">Waiting for data&hellip;</span></div>
-    </div>
-    <div class="card" style="padding:12px 14px">
-      <div class="chartbox" style="height:230px"><canvas id="c-procs"></canvas></div>
+<main class="studio-shell dashboard-shell">
+  <section class="run-lead studio-enter"><div><p class="studio-eyebrow">Real-time performance</p><h1>Device under observation.</h1><p class="run-lead-copy">Live system, application, rendering, and media signals—organized for fast diagnosis while the run is active.</p></div><span class="studio-status ok">Streaming telemetry</span></section>
+  <div id="activity-banner" role="status"><strong>Current activity</strong>&nbsp; <span id="activity-cur"></span></div>
+  <section class="health-panel studio-panel studio-enter" aria-labelledby="health-title"><div class="studio-section-head"><div><h2 class="studio-section-title" id="health-title">Health at a glance</h2><p class="studio-section-copy">Recent signals from the active sampling window.</p></div></div><div id="badges"></div></section>
+
+  <div id="grid" class="metric-catalog">
+    <section class="metric-group" id="group-system"><div class="studio-section-head"><div><p class="studio-eyebrow">01 · Device</p><h2 class="studio-section-title">System</h2><p class="studio-section-copy">Compute, thermal, load, and network behavior.</p></div></div><div class="metric-grid" id="grid-system"></div></section>
+    <section class="metric-group" id="group-memory"><div class="studio-section-head"><div><p class="studio-eyebrow">02 · Pressure</p><h2 class="studio-section-title">Memory</h2><p class="studio-section-copy">Capacity, reclaim, pressure, faults, and zone watermarks.</p></div></div><div class="metric-grid" id="grid-memory"></div></section>
+    <section class="metric-group" id="group-application"><div class="studio-section-head"><div><p class="studio-eyebrow">03 · Workload</p><h2 class="studio-section-title">Application</h2><p class="studio-section-copy">Process CPU, memory footprint, and main-thread cost.</p></div></div><div class="metric-grid" id="grid-application"></div></section>
+    <section class="metric-group" id="group-rendering"><div class="studio-section-head"><div><p class="studio-eyebrow">04 · Experience</p><h2 class="studio-section-title">Rendering</h2><p class="studio-section-copy">Frame health and UI smoothness.</p></div></div><div class="metric-grid" id="grid-rendering"></div></section>
+    <section class="metric-group" id="group-media"><div class="studio-section-head"><div><p class="studio-eyebrow">05 · Playback</p><h2 class="studio-section-title">Media</h2><p class="studio-section-copy">Audio and video process demand.</p></div></div><div class="metric-grid" id="grid-media"></div></section>
+  </div>
+
+  <section id="proc-section" class="analysis-section studio-panel" aria-labelledby="proc-title">
+    <div class="studio-section-head"><div><p class="studio-eyebrow">Application analysis</p><h2 class="studio-section-title" id="proc-title">Top Process CPU</h2><p class="studio-section-copy">Select processes to add or remove them from the chart.</p></div></div>
+    <div class="analysis-layout">
+      <div class="rank-panel"><div class="rank-label">Peak CPU %</div><div id="proc-list"><span class="studio-section-copy">Waiting for data&hellip;</span></div></div>
+      <div class="card analysis-chart"><div class="chartbox"><canvas id="c-procs"></canvas></div>
       <div id="stats-procs" class="chart-stats"></div>
     </div>
   </div>
-</div>
-<div id="mem-section" style="margin:0 20px 20px;display:none">
-  <h2 style="font-size:14px;font-weight:600;color:#374151;margin:0 0 10px">&#128190; Top Process Memory
-    <span id="mem-src" style="font-size:11px;font-weight:400;color:#6b7280">&nbsp;&middot;&nbsp;check a process to add it to the chart</span>
-  </h2>
-  <div style="display:grid;grid-template-columns:230px 1fr;gap:14px">
-    <div style="background:#fff;border:1px solid #e2e4e8;border-radius:10px;padding:12px 14px;overflow-y:auto;max-height:270px">
-      <div style="font-size:11px;color:#6b7280;margin-bottom:6px;font-weight:600;letter-spacing:.04em" id="mem-peak-label">PEAK (MB)</div>
-      <div id="mem-list"><span style="font-size:12px;color:#9aa1ab">Waiting for data&hellip;</span></div>
-    </div>
-    <div class="card" style="padding:12px 14px">
-      <div class="chartbox" style="height:230px"><canvas id="c-topmem"></canvas></div>
+  </section>
+  <section id="mem-section" class="analysis-section studio-panel" aria-labelledby="memory-analysis-title">
+    <div class="studio-section-head"><div><p class="studio-eyebrow">Application analysis</p><h2 class="studio-section-title" id="memory-analysis-title">Top Process Memory</h2><p class="studio-section-copy" id="mem-src">Select processes to add or remove them from the chart.</p></div></div>
+    <div class="analysis-layout">
+      <div class="rank-panel"><div class="rank-label" id="mem-peak-label">Peak (MB)</div><div id="mem-list"><span class="studio-section-copy">Waiting for data&hellip;</span></div></div>
+      <div class="card analysis-chart"><div class="chartbox"><canvas id="c-topmem"></canvas></div>
       <div id="stats-mem" class="chart-stats"></div>
     </div>
   </div>
-</div>
-<div id="playback-section" style="margin:0 20px 20px;display:none">
-  <h2 style="font-size:14px;font-weight:600;color:#374151;margin:0 0 10px">&#128250; Playback &amp; Tunnel Mode (STB)
-    <span style="font-size:11px;font-weight:400;color:#6b7280">&nbsp;&middot;&nbsp;video player state &amp; TUNNELED/NON-TUNNELED from logcat</span>
-  </h2>
-  <div id="pb-buildbanner" style="display:none;margin-bottom:8px;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600"></div>
-  <div id="pb-lifecycleflag" style="display:none;margin-bottom:12px;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:600"></div>
-  <div id="pb-badges" style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap"></div>
-  <div style="display:grid;grid-template-columns:1fr;gap:14px">
-    <div class="card" style="padding:12px 14px">
-      <h2 style="font-size:13px">Video player state <span style="font-size:11px;font-weight:400;color:#6b7280">&nbsp;&middot;&nbsp;raw mk-player-lifecycle events</span></h2>
-      <div class="chartbox" style="height:320px"><canvas id="c-video"></canvas></div>
+  </section>
+  <section id="playback-section" class="analysis-section studio-panel" aria-labelledby="playback-title">
+    <div class="studio-section-head"><div><p class="studio-eyebrow">Media analysis</p><h2 class="studio-section-title" id="playback-title">Playback &amp; tunnel mode</h2><p class="studio-section-copy">Video lifecycle and TUNNELED / NON-TUNNELED state from logcat.</p></div></div>
+    <div id="pb-buildbanner" class="media-notice"></div>
+    <div id="pb-lifecycleflag" class="media-notice"></div>
+    <div id="pb-badges"></div>
+    <div class="playback-grid">
+      <div class="card"><h2>Video player state <span class="studio-section-copy">&nbsp;&middot;&nbsp;raw mk-player-lifecycle events</span></h2><div class="chartbox" style="height:320px"><canvas id="c-video"></canvas></div>
     </div>
-    <div class="card" style="padding:12px 14px">
-      <h2 style="font-size:13px">Tunnel mode</h2>
+    <div class="card"><h2>Tunnel mode</h2>
       <div class="chartbox" style="height:170px"><canvas id="c-tunnel"></canvas></div>
     </div>
   </div>
-</div>
-<div id="events">
-  <h2>Events (zaps &amp; anomalies)</h2>
-  <table><thead><tr><th style="width:70px">t</th><th style="width:140px">kind</th><th>detail</th></tr></thead><tbody id="evbody"></tbody></table>
-</div>
+  </section>
+  <section id="events" class="events-panel studio-panel" aria-labelledby="events-title"><div class="studio-section-head"><div><p class="studio-eyebrow">Run narrative</p><h2 class="studio-section-title" id="events-title">Events</h2><p class="studio-section-copy">Channel changes, anomalies, and foreground activity in chronological order.</p></div></div><div class="event-scroll"><table><thead><tr><th style="width:70px">Time</th><th style="width:140px">Kind</th><th>Detail</th></tr></thead><tbody id="evbody"></tbody></table></div></section>
+</main>
 <script>
+Chart.defaults.color = '#aaa69e';
+Chart.defaults.borderColor = 'rgba(255,255,255,.08)';
+Chart.defaults.font.family = 'Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif';
 // baseline: { value, label } — green dashed Android standard/idle reference line.
 //   PSI  = 0   (any positive value = resource stall)
 //   Jank = 0%  (zero janky frames = smooth playback)
@@ -147,8 +162,14 @@ var DEFS = [
   { id: 'phases',  title: 'Frame Phases (avg ms)',             series: [['input', 'fIn'], ['animation', 'fAnim'], ['layout', 'fLay'], ['draw', 'fDraw']],
                    baseline: { value: 4, label: '4ms/phase (60fps budget)' }, flag: 'hasJank' }
 ];
-var COLORS = ['#1f77b4', '#d62728', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b', '#17becf', '#7f7f7f'];
+var COLORS = ['#e8b66d', '#9e8cff', '#58d6c7', '#ff7676', '#71a8ff', '#61d89c', '#d68cff', '#b5afa5'];
 var PROC_COLORS = ['#6366f1','#f59e0b','#10b981','#ef4444','#3b82f6','#8b5cf6','#ec4899','#14b8a6','#f97316','#84cc16'];
+var METRIC_GROUPS = {
+  cpu: 'system', cpuidle: 'system', load: 'system', temp: 'system', freq: 'system', net: 'system',
+  mem: 'memory', mempct: 'memory', swap: 'memory', zonewm: 'memory', psi: 'memory', reclaim: 'memory', faults: 'memory',
+  pss: 'application', pssbreak: 'application', appcpu: 'application', maincpu: 'application',
+  jank: 'rendering', phases: 'rendering', mediacpu: 'media'
+};
 var charts = {};
 var allSamples = [];
 var mediaNamesInit = false;
@@ -182,14 +203,13 @@ var VIDEO_TICKS = {}; LIFECYCLE_STATES.forEach(function (s, i) { VIDEO_TICKS[i] 
 var TUNNEL_ENC = { 'n/a': 0, unknown: 0.5, non_tunneled: 1, tunneled: 2 };
 
 function buildCards() {
-  var grid = document.getElementById('grid');
   DEFS.forEach(function (def) {
     var card = document.createElement('div');
     card.className = 'card';
     card.id = 'card-' + def.id;
     card.innerHTML = '<h2>' + def.title + '</h2><div class="chartbox"><canvas id="c-' + def.id + '"></canvas></div>'
       + '<div id="stats-' + def.id + '" class="chart-stats"></div>';
-    grid.appendChild(card);
+    document.getElementById('grid-' + METRIC_GROUPS[def.id]).appendChild(card);
     if (def.dynamic) return;  // media chart built later
     var datasets = def.series.map(function (s, i) {
       var col = (def.colors && def.colors[i]) || COLORS[i % COLORS.length];
@@ -214,6 +234,15 @@ function buildCards() {
       options: { animation: false, responsive: true, maintainAspectRatio: false,
                  plugins: { legend: { labels: { boxWidth: 12, font: { size: 10 } } } }, scales: scales }
     });
+  });
+}
+
+function updateMetricGroups() {
+  Object.keys({ system: 1, memory: 1, application: 1, rendering: 1, media: 1 }).forEach(function (name) {
+    var grid = document.getElementById('grid-' + name);
+    var group = document.getElementById('group-' + name);
+    var visible = Array.prototype.some.call(grid.children, function (card) { return card.style.display !== 'none'; });
+    group.style.display = visible ? 'block' : 'none';
   });
 }
 
@@ -464,13 +493,13 @@ function renderBuildBanner(buildTunnel) {
   el.style.display = 'block';
   if (buildTunnel === true) {
     el.textContent = '✓ Tunnel mode ENABLED in build (isTunneledPlaybackEnabled=true)';
-    el.style.background = '#dcfce7'; el.style.color = '#166534'; el.style.border = '1px solid #86efac';
+    el.style.background = 'rgba(97,216,156,.09)'; el.style.color = '#9af0c4'; el.style.border = '1px solid rgba(97,216,156,.28)';
   } else if (buildTunnel === false) {
     el.textContent = '✗ Tunnel mode DISABLED in build (isTunneledPlaybackEnabled=false)';
-    el.style.background = '#fee2e2'; el.style.color = '#991b1b'; el.style.border = '1px solid #fca5a5';
+    el.style.background = 'rgba(255,118,118,.09)'; el.style.color = '#ffb0b0'; el.style.border = '1px solid rgba(255,118,118,.28)';
   } else {
     el.textContent = '— Build tunnel flag not yet detected (play a video; reads isTunneledPlaybackEnabled from player config)';
-    el.style.background = '#f3f4f6'; el.style.color = '#6b7280'; el.style.border = '1px solid #e5e7eb';
+    el.style.background = 'rgba(255,255,255,.035)'; el.style.color = '#aaa69e'; el.style.border = '1px solid rgba(255,255,255,.09)';
   }
 }
 
@@ -487,11 +516,11 @@ function renderLifecycleFlag() {
   if (vs) {
     var playing = isPlayingState(vs);
     el.textContent = '▶ Lifecycle state: ' + vs + (playing ? '  (playing)' : '  (not playing)');
-    if (playing) { el.style.background = '#dbeafe'; el.style.color = '#1e40af'; el.style.border = '1px solid #93c5fd'; }
-    else { el.style.background = '#f3f4f6'; el.style.color = '#6b7280'; el.style.border = '1px solid #e5e7eb'; }
+    if (playing) { el.style.background = 'rgba(113,168,255,.09)'; el.style.color = '#a9caff'; el.style.border = '1px solid rgba(113,168,255,.28)'; }
+    else { el.style.background = 'rgba(255,255,255,.035)'; el.style.color = '#aaa69e'; el.style.border = '1px solid rgba(255,255,255,.09)'; }
   } else {
     el.textContent = '▶ Lifecycle state: none yet (start a video)';
-    el.style.background = '#f3f4f6'; el.style.color = '#6b7280'; el.style.border = '1px solid #e5e7eb';
+    el.style.background = 'rgba(255,255,255,.035)'; el.style.color = '#aaa69e'; el.style.border = '1px solid rgba(255,255,255,.09)';
   }
 }
 
@@ -771,6 +800,7 @@ function tick() {
           var c = document.getElementById('card-' + def.id); if (c) c.style.display = 'none';
         }
       });
+      updateMetricGroups();
       // Top-process feature (each init guarded so one failure can't halt the others or the loop)
       if (d.hasTopProcs === true) {
         hasTopProcs = true;

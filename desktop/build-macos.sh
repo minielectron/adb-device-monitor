@@ -13,6 +13,11 @@
 #
 set -euo pipefail
 cd "$(dirname "$0")"            # → desktop/
+
+# Finder, launchd and some IDE terminals do not load shell profiles. Keep the caller's
+# preferred tools first, then add the standard Rust and Homebrew install locations.
+export PATH="${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin"
+
 MODE="${1:-build}"
 RES="src-tauri/resources"
 JAR="../build/libs/adb-device-monitor-1.0.0-all.jar"
@@ -34,6 +39,22 @@ if [[ ! -x "$RES/runtime/bin/java" ]]; then
   echo "==> Creating the bundled Java runtime (jlink)"
   rm -rf "$RES/runtime"
   jlink --add-modules "$MODULES" --strip-debug --no-header-files --no-man-pages --compress=2 --output "$RES/runtime"
+fi
+
+# jlink emits deduplicated, read-only license files. Tauri stages bundled resources and
+# can reject those files on macOS, so normalize them before packaging.
+if [[ -d "$RES/runtime/legal" ]]; then
+  while IFS= read -r -d '' legal_link; do
+    legal_copy="${legal_link}.file"
+    cp -L "$legal_link" "$legal_copy"
+    mv -f "$legal_copy" "$legal_link"
+  done < <(find "$RES/runtime/legal" -type l -print0)
+  [[ -z "$(find "$RES/runtime/legal" -type l -print -quit)" ]] || { echo "Could not normalize runtime license links." >&2; exit 1; }
+  find "$RES/runtime/legal" -type f -exec chmod u+w {} +
+fi
+# Older builds may already contain read-only copies that Tauri cannot overwrite.
+if [[ -d "src-tauri/target/release/resources/runtime/legal" ]]; then
+  find "src-tauri/target/release/resources/runtime/legal" -type f -exec chmod u+w {} +
 fi
 "$RES/runtime/bin/java" -jar "$RES/app.jar" --version
 

@@ -1,91 +1,102 @@
 package devicemonitor.presentation.web
 
 internal val COMPARE_PAGE = """<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Run Comparison — ADB Performance Studio</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="/assets/chart.umd.js"></script>
+<script src="/assets/jspdf.umd.min.js"></script>
 <style>
-  * { box-sizing: border-box; }
-  body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #f4f5f7; color: #1f2430; }
-  .hero { background: linear-gradient(135deg, #111827 0%, #1e3a5f 60%, #0e7490 100%); color: #fff; padding: 20px 28px; }
-  .hero h1 { margin: 0; font-size: 20px; }
-  .hero p { margin: 5px 0 0 0; color: #b8c4d4; font-size: 13px; }
-  .wrap { max-width: 1060px; margin: 0 auto; padding: 20px 24px 40px 24px; }
-  .panel { background: #fff; border: 1px solid #e2e4e8; border-radius: 10px; padding: 18px; margin-bottom: 20px; }
-  .row { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; }
-  .field { display: flex; flex-direction: column; gap: 5px; }
-  .field label { font-size: 12px; color: #4b5563; font-weight: 600; }
-  select { padding: 7px 10px; border: 1px solid #cdd2da; border-radius: 6px; font-size: 13px; min-width: 280px; }
-  button.cmp { background: linear-gradient(135deg, #0e7490, #1e40af); border: 0; color: #fff; font-size: 14px; font-weight: 700;
-               padding: 10px 28px; border-radius: 8px; cursor: pointer; }
-  button.cmp:disabled { background: #9aa1ab; cursor: not-allowed; }
-  button.pdf { background: linear-gradient(135deg, #15803d, #166534); border: 0; color: #fff; font-size: 13px; font-weight: 600;
-               padding: 9px 22px; border-radius: 8px; cursor: pointer; }
-  button.pdf:disabled { background: #9aa1ab; cursor: wait; }
-  #err { color: #b91c1c; font-size: 13px; margin-top: 8px; }
-  .chartgrid { display: grid; grid-template-columns: 1fr; gap: 20px; }
-  .ccard { background: #fff; border: 1px solid #e2e4e8; border-radius: 8px; padding: 14px 16px; }
-  .ccard h3 { font-size: 13px; margin: 0 0 10px 0; color: #374151; }
-  .ccard .chartbox { position: relative; height: 220px; }
-  .legend { display: flex; gap: 20px; margin-bottom: 10px; font-size: 12px; align-items: center; flex-wrap: wrap; }
-  .dot { display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
-  .tip { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #1e40af; margin-bottom: 16px; }
-  a.back { color: #0e7490; font-size: 13px; text-decoration: none; }
-  a.back:hover { text-decoration: underline; }
-  #loading { display: none; color: #6b7280; font-size: 13px; margin-top: 8px; }
+  .compare-shell { padding-top: 44px; }
+  .compare-intro { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 30px; }
+  .compare-intro-copy { max-width: 680px; }
+  .compare-workspace { margin-bottom: 18px; padding: 22px; }
+  .run-pair { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 14px; align-items: stretch; }
+  .run-card { padding: 17px; border: 1px solid var(--line); border-radius: var(--radius-md); background: rgba(255,255,255,.025); }
+  .run-card.a { border-color: rgba(232,182,109,.22); }
+  .run-card.b { border-color: rgba(158,140,255,.22); }
+  .run-marker { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 11px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+  .run-marker:after { content: ""; width: 34px; height: 3px; border-radius: 99px; background: var(--gold); }
+  .run-card.b .run-marker:after { background: var(--violet); }
+  .field { display: flex; flex-direction: column; gap: 7px; }
+  .field label { color: var(--quiet); font-size: 10px; font-weight: 700; }
+  select { width: 100%; min-width: 0; padding: 11px 38px 11px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); background: #171716; font-size: 12px; }
+  .compare-action { display: grid; place-items: center; }
+  button.cmp { min-width: 124px; }
+  #err { min-height: 18px; margin-top: 10px; color: var(--red); font-size: 11px; }
+  #loading { display: none; margin-top: 10px; color: var(--muted); font-size: 11px; }
+  .result-tools { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; padding: 13px 15px; }
+  .legend { display: flex; align-items: center; gap: 18px; color: var(--muted); font-size: 11px; flex-wrap: wrap; }
+  .dot { display: inline-block; width: 12px; height: 3px; margin-right: 5px; border-radius: 2px; vertical-align: middle; }
+  #exportBar { margin-left: auto; }
+  .tip { display: none; margin-bottom: 20px; padding: 14px 16px; border: 1px solid rgba(88,214,199,.2); border-radius: var(--radius-md); color: #bcebe6; background: linear-gradient(100deg, rgba(88,214,199,.1), rgba(88,214,199,.025)); font-size: 11px; line-height: 1.6; }
+  .chartgrid { display: grid; gap: 30px; }
+  .compare-group { min-width: 0; }
+  .compare-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .ccard { min-width: 0; padding: 15px 16px; border: 1px solid var(--line); border-radius: var(--radius-md); background: linear-gradient(145deg, rgba(27,27,25,.9), rgba(15,15,14,.88)); box-shadow: inset 0 1px rgba(255,255,255,.025), 0 15px 44px rgba(0,0,0,.2); transition: border-color .2s, transform .2s; }
+  .ccard:hover { border-color: var(--line-strong); transform: translateY(-2px); }
+  .ccard h3 { margin: 0 0 10px; color: var(--text); font-size: 12px; letter-spacing: -.01em; }
+  .ccard .chartbox { position: relative; height: 230px; }
+  .empty-comparison { padding: 24px; border: 1px dashed var(--line-strong); border-radius: var(--radius-md); color: var(--muted); font-size: 12px; text-align: center; }
+  @media (max-width: 880px) { .run-pair { grid-template-columns: 1fr; } .run-card.a { order: 1; } .run-card.b { order: 2; } .compare-action { order: 3; justify-items: stretch; } button.cmp { width: 100%; } .compare-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 680px) { .compare-intro { display: block; } .result-tools { align-items: flex-start; flex-direction: column; } #exportBar { margin-left: 0; } .compare-workspace { padding: 16px; } .ccard .chartbox { height: 205px; } }
 </style>
 </head>
 <body>
-<div class="hero">
-  <h1>&#9654;&#9654; Run Comparison</h1>
-  <p>Compare two runs side-by-side — App CPU, App PSS, Media Process CPU, CPU Pressure, Jank.</p>
-</div>
-<div class="wrap">
-  <a class="back" href="/">&#8592; Back to home</a>
+<div class="studio-ambient" aria-hidden="true"><span class="studio-orb gold"></span><span class="studio-orb violet"></span><span class="studio-orb teal"></span></div>
+<header class="studio-appbar"><div class="studio-brand"><div class="studio-brand-mark">APS</div><div class="studio-brand-copy"><div class="studio-brand-name">Run comparison</div><div class="studio-brand-meta">Performance intelligence workspace</div></div></div><div class="studio-appbar-context"></div><nav class="studio-actions" aria-label="Comparison navigation"><a class="studio-link" href="/">&#8592; Home</a><a class="studio-link" href="/api/diagnostics">Diagnostics</a></nav></header>
+<main class="studio-shell compare-shell">
+  <section class="compare-intro studio-enter"><div class="compare-intro-copy"><p class="studio-eyebrow">Evidence, side by side</p><h1 class="studio-page-title">Find the signal between two runs.</h1><p class="studio-page-copy">Compare application, pressure, rendering, media, and system behavior with a consistent baseline and candidate view.</p></div><span class="studio-status ok">Historical analysis</span></section>
 
-  <div class="panel" style="margin-top:16px">
-    <div class="row">
-      <div class="field">
-        <label>Run A (e.g. Tunnel OFF / Baseline)</label>
-        <select id="runA"><option value="">Loading runs...</option></select>
-      </div>
-      <div class="field">
-        <label>Run B (e.g. Tunnel ON)</label>
-        <select id="runB"><option value="">Loading runs...</option></select>
-      </div>
-      <button class="cmp" id="cmpBtn" onclick="doCompare()" disabled>Compare &rarr;</button>
+  <section class="compare-workspace studio-panel studio-enter" aria-labelledby="select-runs-title">
+    <div class="studio-section-head"><div><h2 class="studio-section-title" id="select-runs-title">Choose two captures</h2><p class="studio-section-copy">Use Run A as the baseline and Run B as the candidate.</p></div></div>
+    <div class="run-pair">
+      <div class="run-card a"><div class="run-marker">Run A · Baseline</div><div class="field"><label for="runA">Reference capture</label><select id="runA"><option value="">Loading runs...</option></select></div></div>
+      <div class="compare-action"><button class="cmp studio-button primary" id="cmpBtn" onclick="doCompare()" disabled>Compare &rarr;</button></div>
+      <div class="run-card b"><div class="run-marker">Run B · Candidate</div><div class="field"><label for="runB">Candidate capture</label><select id="runB"><option value="">Loading runs...</option></select></div></div>
     </div>
     <div id="err"></div>
     <div id="loading">Loading CSV data...</div>
-  </div>
+  </section>
 
-  <div class="tip" id="tunnelTip" style="display:none">
+  <div class="tip" id="tunnelTip">
     <strong>Tunnel mode notes:</strong>
     App PSS decrease in tunnel mode is expected (video frames bypass the app render path).
     Watch for CPU PSI increases — this may indicate work shifting to media/HAL processes.
     Compare <em>media.codec</em> and <em>audioserver</em> CPU to confirm.
   </div>
 
-  <div class="legend" id="legend" style="display:none">
-    <span><span class="dot" style="background:#1f77b4;height:3px;display:inline-block;width:24px"></span> Run A</span>
-    <span><span class="dot" style="background:#d62728;height:3px;display:inline-block;width:24px"></span> Run B</span>
-    <span><span style="display:inline-block;width:24px;height:0;border-top:2px dashed #16a34a;margin-right:5px;vertical-align:middle"></span> Android target</span>
-  </div>
-  <div id="exportBar" style="display:none;margin-bottom:10px">
-    <button class="pdf" id="exportBtn" onclick="exportPdf()">&#8681; Export as PDF</button>
+  <div class="result-tools studio-panel" id="resultTools" style="display:none">
+    <div class="legend" id="legend"></div>
+    <div id="exportBar" style="display:none">
+      <button class="pdf studio-button success" id="exportBtn" onclick="exportPdf()">&#8681; Export as PDF</button>
+    </div>
   </div>
 
   <div class="chartgrid" id="charts"></div>
-</div>
+</main>
 <script>
-var COLOR_A = '#1f77b4';
-var COLOR_B = '#d62728';
-var COLOR_TARGET = '#16a34a';
+var COLOR_A = '#e8b66d';
+var COLOR_B = '#9e8cff';
+var COLOR_TARGET = '#61d89c';
+Chart.defaults.color = '#aaa69e';
+Chart.defaults.borderColor = 'rgba(255,255,255,.08)';
+Chart.defaults.font.family = 'Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif';
+Chart.register({ id: 'studioBackground', beforeDraw: function (chart) {
+  var ctx = chart.ctx; ctx.save(); ctx.globalCompositeOperation = 'destination-over';
+  ctx.fillStyle = '#171716'; ctx.fillRect(0, 0, chart.width, chart.height); ctx.restore();
+} });
 var chartInsts = [];
 var chartTitles = [];
+var GROUP_META = {
+  application: ['01 · Workload', 'Application', 'Process CPU, main-thread demand, and app memory.'],
+  pressure: ['02 · Contention', 'Pressure', 'CPU and memory stall signals.'],
+  rendering: ['03 · Experience', 'Rendering', 'Frame health and visible smoothness.'],
+  media: ['04 · Playback', 'Media', 'Codec, audio, and media-service demand.'],
+  system: ['05 · Device', 'System', 'Whole-device utilization.']
+};
 
 function parseCsv(text) {
   var lines = text.trim().split('\n');
@@ -112,18 +123,31 @@ function hasData(rows, col) {
 }
 
 function makeLegend(labelA, labelB) {
-  document.getElementById('legend').style.display = 'flex';
   document.getElementById('legend').innerHTML =
-    '<span style="font-size:12px"><span style="display:inline-block;width:24px;height:3px;background:' + COLOR_A + ';margin-right:5px;vertical-align:middle"></span>' + escHtml(labelA) + '</span>' +
-    '<span style="font-size:12px"><span style="display:inline-block;width:24px;height:3px;background:' + COLOR_B + ';margin-right:5px;vertical-align:middle;opacity:.7"></span>' + escHtml(labelB) + '</span>';
+    '<span><span class="dot" style="width:24px;background:' + COLOR_A + '"></span>' + escHtml(labelA) + '</span>' +
+    '<span><span class="dot" style="width:24px;background:' + COLOR_B + '"></span>' + escHtml(labelB) + '</span>' +
+    '<span><span class="dot" style="width:24px;height:0;border-top:2px dashed ' + COLOR_TARGET + '"></span>Android target</span>';
 }
 
-function makeChart(title, yLabel, seriesA, seriesB, labelA, labelB, baseline) {
+function prepareComparisonGroups() {
+  var root = document.getElementById('charts');
+  root.innerHTML = '';
+  Object.keys(GROUP_META).forEach(function (name) {
+    var meta = GROUP_META[name];
+    var section = document.createElement('section');
+    section.className = 'compare-group';
+    section.id = 'compare-group-' + name;
+    section.innerHTML = '<div class="studio-section-head"><div><p class="studio-eyebrow">' + meta[0] + '</p><h2 class="studio-section-title">' + meta[1] + '</h2><p class="studio-section-copy">' + meta[2] + '</p></div></div><div class="compare-grid" id="compare-grid-' + name + '"></div>';
+    root.appendChild(section);
+  });
+}
+
+function makeChart(group, title, yLabel, seriesA, seriesB, labelA, labelB, baseline) {
   var div = document.createElement('div');
   div.className = 'ccard';
   var canvasId = 'cc' + chartInsts.length;
   div.innerHTML = '<h3>' + title + '</h3><div class="chartbox"><canvas id="' + canvasId + '"></canvas></div>';
-  document.getElementById('charts').appendChild(div);
+  document.getElementById('compare-grid-' + group).appendChild(div);
   var datasets = [
     { label: labelA, data: seriesA, borderColor: COLOR_A, borderWidth: 2, pointRadius: 0, tension: 0.15 },
     { label: labelB, data: seriesB, borderColor: COLOR_B, borderWidth: 2, pointRadius: 0, tension: 0.15, borderDash: [5, 3] }
@@ -161,27 +185,28 @@ function renderComparison(rowsA, rowsB, labelA, labelB) {
   chartInsts.forEach(function (c) { c.destroy(); });
   chartInsts = [];
   chartTitles = [];
-  document.getElementById('charts').innerHTML = '';
+  prepareComparisonGroups();
   document.getElementById('exportBar').style.display = 'none';
   document.getElementById('tunnelTip').style.display = 'block';
+  document.getElementById('resultTools').style.display = 'flex';
   makeLegend(labelA, labelB);
 
   var metrics = [
-    { col: 'app_cpu_pct',           title: 'App Process CPU (all threads) %',    y: '%' },
-    { col: 'main_thread_cpu_pct',   title: 'App Main-Thread CPU %',              y: '%' },
-    { col: 'pss_total_mb',          title: 'App PSS Total (MB)',                  y: 'MB' },
-    { col: 'cpu_psi_some_avg10',    title: 'CPU Pressure PSI avg10 (%)',          y: '% stalled',
+    { group: 'application', col: 'app_cpu_pct',           title: 'App Process CPU (all threads) %',    y: '%' },
+    { group: 'application', col: 'main_thread_cpu_pct',   title: 'App Main-Thread CPU %',              y: '%' },
+    { group: 'application', col: 'pss_total_mb',          title: 'App PSS Total (MB)',                  y: 'MB' },
+    { group: 'pressure', col: 'cpu_psi_some_avg10',    title: 'CPU Pressure PSI avg10 (%)',          y: '% stalled',
       baseline: { value: 0, label: '0 (no stall)' } },
-    { col: 'mem_psi_some_avg10',    title: 'Memory Pressure PSI some avg10 (%)',  y: '% stalled',
+    { group: 'pressure', col: 'mem_psi_some_avg10',    title: 'Memory Pressure PSI some avg10 (%)',  y: '% stalled',
       baseline: { value: 0, label: '0 (no stall)' } },
-    { col: 'jank_pct',              title: 'UI Jank (% janky frames)',            y: '%',
+    { group: 'rendering', col: 'jank_pct',              title: 'UI Jank (% janky frames)',            y: '%',
       baseline: { value: 0, label: '0% (zero dropped frames)' } },
-    { col: 'media_mediaserver_cpu', title: 'Media: mediaserver CPU %',            y: '%' },
-    { col: 'media_codec_cpu',       title: 'Media: media.codec CPU %',            y: '%' },
-    { col: 'media_audioserver_cpu', title: 'Media: audioserver CPU %',            y: '%' },
-    { col: 'media_swcodec_cpu',     title: 'Media: vendor.mediaswcodec CPU %',    y: '%' },
-    { col: 'media_omx_cpu',         title: 'Media: OMX HAL CPU %',                y: '%' },
-    { col: 'cpu_util_pct',          title: 'System CPU Utilization %',            y: '%' }
+    { group: 'media', col: 'media_mediaserver_cpu', title: 'Media: mediaserver CPU %',            y: '%' },
+    { group: 'media', col: 'media_codec_cpu',       title: 'Media: media.codec CPU %',            y: '%' },
+    { group: 'media', col: 'media_audioserver_cpu', title: 'Media: audioserver CPU %',            y: '%' },
+    { group: 'media', col: 'media_swcodec_cpu',     title: 'Media: vendor.mediaswcodec CPU %',    y: '%' },
+    { group: 'media', col: 'media_omx_cpu',         title: 'Media: OMX HAL CPU %',                y: '%' },
+    { group: 'system', col: 'cpu_util_pct',          title: 'System CPU Utilization %',            y: '%' }
   ];
 
   var shown = 0;
@@ -189,13 +214,17 @@ function renderComparison(rowsA, rowsB, labelA, labelB) {
     var dA = hasData(rowsA, m.col), dB = hasData(rowsB, m.col);
     if (!dA && !dB) return;
     shown++;
-    makeChart(m.title, m.y,
+    makeChart(m.group, m.title, m.y,
       dA ? colSeries(rowsA, m.col) : [],
       dB ? colSeries(rowsB, m.col) : [],
       labelA, labelB, m.baseline || null);
   });
+  Object.keys(GROUP_META).forEach(function (name) {
+    var grid = document.getElementById('compare-grid-' + name);
+    document.getElementById('compare-group-' + name).style.display = grid.children.length ? 'block' : 'none';
+  });
   if (!shown) {
-    document.getElementById('charts').innerHTML = '<div style="padding:20px;color:#6b7280;font-size:13px">No common metrics found between the two runs. Make sure both runs used --package (or set App package in the web UI).</div>';
+    document.getElementById('charts').innerHTML = '<div class="empty-comparison">No common metrics found between the two runs. Make sure both runs used --package (or set App package on the Home screen).</div>';
   } else {
     document.getElementById('exportBar').style.display = 'block';
   }
@@ -211,7 +240,7 @@ function doCompare() {
   document.getElementById('cmpBtn').disabled = true;
   document.getElementById('loading').style.display = 'block';
   document.getElementById('tunnelTip').style.display = 'none';
-  document.getElementById('legend').style.display = 'none';
+  document.getElementById('resultTools').style.display = 'none';
 
   var labelA = document.getElementById('runA').options[document.getElementById('runA').selectedIndex].text;
   var labelB = document.getElementById('runB').options[document.getElementById('runB').selectedIndex].text;

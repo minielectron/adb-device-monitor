@@ -164,40 +164,47 @@ object Capabilities {
         s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
     private fun catColor(cat: String) = when (cat) {
-        "android" -> "#2ca02c"; "launcher" -> "#1f77b4"; else -> "#d62728"
+        "android" -> "#61d89c"; "launcher" -> "#9e8cff"; else -> "#ff7676"
     }
     private fun catLabel(cat: String) = when (cat) {
         "android" -> "Android"; "launcher" -> "Launcher"; else -> "3rd-party"
     }
 
-    /** Self-contained interactive HTML snapshot (doughnut with %, summary, process table). */
+    /** Self-contained HTML snapshot (inline SVG doughnut, summary, process table). */
     fun writeHtml(s: Snapshot, target: String, out: File) {
         val ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
-        val total = s.androidMb + s.thirdPartyMb + s.launcherMb + s.memFreeMb + s.memAvailableMb
+        val categories = listOf(
+            Triple("Android", s.androidMb, "#61d89c"),
+            Triple("3rd-party apps", s.thirdPartyMb, "#ff7676"),
+            Triple("Launcher", s.launcherMb, "#9e8cff"),
+            Triple("MemFree", s.memFreeMb, "#e8b66d"),
+            Triple("MemAvailable", s.memAvailableMb, "#58d6c7")
+        )
+        val total = categories.sumOf { it.second }.coerceAtLeast(0.0001)
+        fun decimal(v: Double) = String.format(java.util.Locale.US, "%.2f", v)
         val sb = StringBuilder(16384)
         sb.append("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">")
         sb.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
         sb.append("<title>STB Device Snapshot — ").append(escHtml(target)).append("</title>")
-        sb.append("<script src=\"https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js\"></script>")
-        sb.append("<script src=\"https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js\"></script>")
         sb.append("<style>")
-        sb.append("body{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;margin:0;background:#f4f5f7;color:#1f2430}")
-        sb.append("header{background:linear-gradient(135deg,#111827,#1e3a5f);color:#fff;padding:16px 24px}")
-        sb.append("header h1{margin:0;font-size:20px} header .m{font-size:12px;color:#cbd5e1;margin-top:4px}")
-        sb.append(".wrap{padding:18px 24px;max-width:1100px}")
-        sb.append(".grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}")
-        sb.append(".card{background:#fff;border:1px solid #e2e4e8;border-radius:10px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.05)}")
-        sb.append(".card h2{font-size:14px;margin:0 0 10px;color:#374151}")
-        sb.append("table{width:100%;border-collapse:collapse;font-size:12.5px} td,th{text-align:left;padding:4px 8px;border-bottom:1px solid #eef0f3}")
-        sb.append(".sumk{font-weight:700;color:#374151;width:150px} .piebox{position:relative;height:300px}")
-        sb.append(".center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}")
-        sb.append(".center>div{text-align:center;max-width:150px;line-height:1.4}")
+        sb.append(":root{color-scheme:dark;--bg:#090a0b;--panel:#111315;--line:#292b2e;--text:#f4f0e8;--muted:#aaa59b;--quiet:#74716b;--gold:#e8b66d}")
+        sb.append("*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:radial-gradient(circle at 90% 0%,rgba(158,140,255,.11),transparent 33%),var(--bg);color:var(--text)}")
+        sb.append("header{border-bottom:1px solid var(--line);background:rgba(8,9,10,.92);padding:22px clamp(18px,4vw,42px)}")
+        sb.append("header h1{margin:0;font-size:22px;letter-spacing:-.02em}header .eyebrow{margin:0 0 7px;color:var(--gold);font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}header .m{font-size:11px;color:var(--muted);margin-top:7px;line-height:1.6}")
+        sb.append(".wrap{padding:22px clamp(18px,4vw,42px) 48px;max-width:1180px;margin:auto}.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(340px,.85fr);gap:16px}")
+        sb.append(".card{background:linear-gradient(145deg,rgba(255,255,255,.038),rgba(255,255,255,.014));border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:16px;box-shadow:0 20px 50px rgba(0,0,0,.18)}")
+        sb.append(".card h2{font-size:13px;margin:0 0 14px;color:var(--text)}")
+        sb.append("table{width:100%;border-collapse:collapse;font-size:12px}td,th{text-align:left;padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.055)}th{color:var(--muted);font-size:9px;letter-spacing:.09em;text-transform:uppercase}")
+        sb.append(".sumk{font-weight:700;color:var(--muted);width:150px}.piebox{display:grid;grid-template-columns:minmax(180px,1fr) minmax(170px,.9fr);align-items:center;gap:12px;min-height:270px}")
+        sb.append(".donut{display:block;width:min(100%,260px);height:auto;margin:auto}.legend{display:grid;gap:9px}.legend-row{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;color:var(--muted);font-size:10px}.legend-row strong{color:var(--text);font:600 10px ui-monospace,SFMono-Regular,Menlo,monospace}")
         sb.append(".dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:middle}")
-        sb.append(".tag{font-size:10px;color:#fff;border-radius:8px;padding:1px 7px}")
+        sb.append(".tag{font-size:9px;color:#090a0b;border-radius:8px;padding:2px 7px;font-weight:800}")
         sb.append("#proc td:last-child,#proc th:last-child{text-align:right;font-family:ui-monospace,Menlo,monospace}")
+        sb.append("@media(max-width:760px){.grid{grid-template-columns:1fr}.piebox{grid-template-columns:1fr}.sumk{width:auto}.card{padding:14px;overflow:auto}}")
+        sb.append("@media print{:root{color-scheme:light;--bg:#fff;--panel:#fff;--line:#ddd;--text:#151515;--muted:#555;--quiet:#777}body,header{background:#fff}.card{box-shadow:none;break-inside:avoid}.wrap{padding:16px}}")
         sb.append("</style></head><body>")
 
-        sb.append("<header><h1>&#128247; STB Device Snapshot</h1><div class=\"m\">Target: ")
+        sb.append("<header><p class=\"eyebrow\">Standalone diagnostic report</p><h1>Device Snapshot</h1><div class=\"m\">Target: ")
             .append(escHtml(target)).append("  &middot;  Generated: ").append(ts)
             .append("  &middot;  ").append(escHtml("ADB Performance Studio"))
             .append("  &middot;  ").append(escHtml(buildTag())).append("</div></header>")
@@ -211,9 +218,28 @@ object Capabilities {
         }
         sb.append("</table></div>")
 
-        // Pie card
+        // Server-rendered SVG memory chart — no browser library and no network dependency.
         sb.append("<div class=\"card\"><h2>Memory footprint (PSS by category vs free/available RAM)</h2>")
-        sb.append("<div class=\"piebox\"><canvas id=\"pie\"></canvas></div>")
+        sb.append("<div class=\"piebox\"><svg class=\"donut\" viewBox=\"0 0 180 180\" role=\"img\" aria-labelledby=\"memory-title memory-desc\" xmlns=\"http://www.w3.org/2000/svg\">")
+        sb.append("<title id=\"memory-title\">Memory distribution</title><desc id=\"memory-desc\">Memory categories shown as a doughnut chart with exact values in the adjacent legend.</desc>")
+        sb.append("<circle cx=\"90\" cy=\"90\" r=\"62\" fill=\"none\" stroke=\"#202326\" stroke-width=\"22\"/>")
+        var offset = 0.0
+        for ((_, value, color) in categories) {
+            val pct = value.coerceAtLeast(0.0) / total * 100.0
+            sb.append("<circle cx=\"90\" cy=\"90\" r=\"62\" pathLength=\"100\" fill=\"none\" stroke=\"").append(color)
+                .append("\" stroke-width=\"22\" stroke-dasharray=\"").append(decimal(pct)).append(' ').append(decimal(100.0 - pct))
+                .append("\" stroke-dashoffset=\"-").append(decimal(offset)).append("\" transform=\"rotate(-90 90 90)\"/>")
+            offset += pct
+        }
+        sb.append("<text x=\"90\" y=\"84\" text-anchor=\"middle\" fill=\"#aaa59b\" font-size=\"9\">TOTAL RAM</text>")
+        sb.append("<text x=\"90\" y=\"104\" text-anchor=\"middle\" fill=\"#f4f0e8\" font-size=\"15\" font-weight=\"700\">").append(n0(s.memTotalMb)).append(" MiB</text></svg>")
+        sb.append("<div class=\"legend\">")
+        for ((label, value, color) in categories) {
+            val pct = value.coerceAtLeast(0.0) / total * 100.0
+            sb.append("<div class=\"legend-row\"><span class=\"dot\" style=\"background:").append(color).append("\"></span><span>")
+                .append(escHtml(label)).append("</span><strong>").append(n0(value)).append(" MiB · ").append(decimal(pct)).append("%</strong></div>")
+        }
+        sb.append("</div></div>")
         sb.append("</div></div>")  // close grid
 
         // Process table
@@ -228,59 +254,11 @@ object Capabilities {
         }
         sb.append("</tbody></table></div>")
 
-        // Data + render script (no '$' / template literals — Kotlin string safety)
-        sb.append("<script>")
-        // Locale.US is REQUIRED: a comma-decimal locale would break the JS number literals below.
-        fun js1(v: Double) = String.format(java.util.Locale.US, "%.1f", v)
-        sb.append("var D={android:").append(js1(s.androidMb))
-            .append(",third:").append(js1(s.thirdPartyMb))
-            .append(",launcher:").append(js1(s.launcherMb))
-            .append(",memFree:").append(js1(s.memFreeMb))
-            .append(",memAvail:").append(js1(s.memAvailableMb))
-            .append(",memTotal:").append(js1(s.memTotalMb))
-            .append(",total:").append(js1(total)).append("};")
-        sb.append(RENDER_JS)
-        sb.append("</script></body></html>")
+        sb.append("</div></body></html>")
 
         out.parentFile?.mkdirs()
         out.writeText(sb.toString())
     }
-
-    private const val RENDER_JS = """
-function fmt(v){return Math.round(v).toLocaleString();}
-var labels=['Android','3rd-party apps','Launcher','MemFree','MemAvailable'];
-var vals=[D.android,D.third,D.launcher,D.memFree,D.memAvail];
-var colors=['#2ca02c','#d62728','#1f77b4','#ff7f0e','#9467bd'];
-var tot=vals.reduce(function(a,b){return a+b;},0)||1;
-// Draw "Total RAM" at the doughnut's TRUE arc center (a right-side legend shifts the ring
-// left, so an HTML overlay centered on the whole box would overlap the ring — this can't).
-var centerText={id:'centerText',afterDraw:function(chart){
-  var meta=chart.getDatasetMeta(0); if(!meta||!meta.data||!meta.data.length) return;
-  var arc=meta.data[0]; var ctx=chart.ctx;
-  var cx=arc.x, cy=arc.y;
-  ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillStyle='#6b7280'; ctx.font='11px -apple-system,Segoe UI,Roboto,sans-serif';
-  ctx.fillText('Total RAM', cx, cy-9);
-  ctx.fillStyle='#374151'; ctx.font='600 18px -apple-system,Segoe UI,Roboto,sans-serif';
-  ctx.fillText(fmt(D.memTotal)+' MiB', cx, cy+9);
-  ctx.restore();
-}};
-new Chart(document.getElementById('pie'),{
-  type:'doughnut',
-  data:{labels:labels,datasets:[{data:vals,backgroundColor:colors,borderColor:'#fff',borderWidth:2}]},
-  options:{responsive:true,maintainAspectRatio:false,cutout:'56%',
-    plugins:{
-      legend:{position:'right',labels:{boxWidth:12,font:{size:11},
-        generateLabels:function(ch){return labels.map(function(l,i){
-          return {text:l+'  '+fmt(vals[i])+' MiB ('+(100*vals[i]/tot).toFixed(1)+'%)',
-            fillStyle:colors[i],strokeStyle:colors[i],index:i};});}}},
-      datalabels:{color:'#fff',font:{weight:'bold',size:12},
-        formatter:function(v){return v>0?(100*v/tot).toFixed(1)+'%':'';}},
-      tooltip:{callbacks:{label:function(c){return c.label+': '+fmt(c.raw)+' MiB ('+(100*c.raw/tot).toFixed(1)+'%)';}}}
-    }},
-  plugins:[ChartDataLabels, centerText]
-});
-"""
 
     // ---------- procrank snapshot (per-process VSS/RSS/PSS/USS) ----------
 
@@ -415,22 +393,25 @@ new Chart(document.getElementById('pie'),{
         sb.append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
         sb.append("<title>Procrank Snapshot — ").append(escHtml(target)).append("</title>")
         sb.append("<style>")
-        sb.append("body{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;margin:0;background:#f4f5f7;color:#1f2430}")
-        sb.append("header{background:linear-gradient(135deg,#111827,#1e3a5f);color:#fff;padding:16px 24px}")
-        sb.append("header h1{margin:0;font-size:20px} header .m{font-size:12px;color:#cbd5e1;margin-top:4px}")
-        sb.append(".wrap{padding:18px 24px;max-width:1100px}")
-        sb.append(".card{background:#fff;border:1px solid #e2e4e8;border-radius:10px;padding:14px 16px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.05)}")
-        sb.append(".card h2{font-size:14px;margin:0 0 10px;color:#374151}")
-        sb.append(".kpis{display:flex;gap:22px;flex-wrap:wrap;font-size:13px;margin-bottom:6px}")
-        sb.append(".kpis b{font-size:17px;display:block;color:#111827}")
-        sb.append("input#q{width:260px;padding:7px 10px;border:1px solid #cdd2da;border-radius:7px;font-size:13px;margin-bottom:10px}")
-        sb.append("table{width:100%;border-collapse:collapse;font-size:12.5px} th,td{padding:5px 9px;border-bottom:1px solid #eef0f3;text-align:right}")
-        sb.append("th:nth-child(2),td:nth-child(2){text-align:left} th{cursor:pointer;background:#f3f4f6;user-select:none;position:sticky;top:0}")
+        sb.append(":root{color-scheme:dark;--bg:#090a0b;--panel:#111315;--line:#292b2e;--text:#f4f0e8;--muted:#aaa59b;--gold:#e8b66d}")
+        sb.append("*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:radial-gradient(circle at 85% 0%,rgba(88,214,199,.1),transparent 34%),var(--bg);color:var(--text)}")
+        sb.append("header{border-bottom:1px solid var(--line);background:rgba(8,9,10,.92);padding:22px clamp(18px,4vw,42px)}")
+        sb.append("header h1{margin:0;font-size:22px;letter-spacing:-.02em}header .eyebrow{margin:0 0 7px;color:var(--gold);font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}header .m{font-size:11px;color:var(--muted);margin-top:7px;line-height:1.6}")
+        sb.append(".wrap{padding:22px clamp(18px,4vw,42px) 48px;max-width:1180px;margin:auto}")
+        sb.append(".card{background:linear-gradient(145deg,rgba(255,255,255,.038),rgba(255,255,255,.014));border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:16px;box-shadow:0 20px 50px rgba(0,0,0,.18)}")
+        sb.append(".card h2{font-size:13px;margin:0 0 14px;color:var(--text)}")
+        sb.append(".kpis{display:flex;gap:26px;flex-wrap:wrap;color:var(--muted);font-size:10px;margin-bottom:2px}")
+        sb.append(".kpis b{font-size:17px;display:block;color:var(--text);margin-top:4px}")
+        sb.append("input#q{width:min(100%,320px);padding:9px 11px;border:1px solid var(--line);border-radius:9px;color:var(--text);background:#090a0b;font-size:12px;margin-bottom:12px;outline:0}input#q:focus{border-color:rgba(232,182,109,.65);box-shadow:0 0 0 3px rgba(232,182,109,.08)}")
+        sb.append("table{width:100%;border-collapse:collapse;font-size:12px}th,td{padding:7px 9px;border-bottom:1px solid rgba(255,255,255,.055);text-align:right}")
+        sb.append("th:nth-child(2),td:nth-child(2){text-align:left}th{cursor:pointer;color:var(--muted);background:#16181a;user-select:none;position:sticky;top:0;font-size:9px;letter-spacing:.08em;text-transform:uppercase}")
         sb.append("td.mono,th{font-family:ui-monospace,Menlo,monospace}")
-        sb.append(".note{background:#fef3c7;border:1px solid #fde68a;color:#92400e;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:12px}")
+        sb.append(".note{background:rgba(232,182,109,.08);border:1px solid rgba(232,182,109,.3);color:#e8c996;padding:10px 12px;border-radius:10px;font-size:11px;line-height:1.55;margin-bottom:14px}")
         sb.append(".svgbar{width:100%;height:auto}")
+        sb.append("@media(max-width:680px){.card{padding:14px;overflow:auto}.kpis{display:grid;grid-template-columns:1fr 1fr}.svgbar{min-width:720px}}")
+        sb.append("@media print{:root{color-scheme:light;--bg:#fff;--panel:#fff;--line:#ddd;--text:#151515;--muted:#555}body,header{background:#fff}.card{box-shadow:none;break-inside:avoid}.wrap{padding:16px}th{background:#eee}}")
         sb.append("</style></head><body>")
-        sb.append("<header><h1>&#128202; Procrank Snapshot</h1><div class=\"m\">Target: ").append(escHtml(target))
+        sb.append("<header><p class=\"eyebrow\">Standalone diagnostic report</p><h1>Memory Snapshot</h1><div class=\"m\">Target: ").append(escHtml(target))
             .append("  &middot;  ").append(ts).append("  &middot;  source: ")
             .append(if (s.source == "procrank") "procrank (PSS/USS)" else "ps RSS/VSS (procrank/root unavailable)")
             .append("  &middot;  ").append(escHtml(buildTag()))
@@ -467,12 +448,12 @@ new Chart(document.getElementById('pie'),{
                 val cy = y + rowH / 2
                 val label = e.name.let { if (it.length > 34) it.take(33) + "…" else it }
                 sb.append("<text x=\"").append(labelW - 8).append("\" y=\"").append(cy + 4)
-                    .append("\" text-anchor=\"end\" font-size=\"11\" fill=\"#374151\">").append(escHtml(label)).append("</text>")
+                    .append("\" text-anchor=\"end\" font-size=\"11\" fill=\"#aaa59b\">").append(escHtml(label)).append("</text>")
                 sb.append("<rect x=\"").append(labelW).append("\" y=\"").append(y + 4)
                     .append("\" width=\"").append("%.1f".let { String.format(java.util.Locale.US, it, barW) })
-                    .append("\" height=\"").append(rowH - 8).append("\" rx=\"3\" fill=\"#1d4ed8\"></rect>")
+                    .append("\" height=\"").append(rowH - 8).append("\" rx=\"3\" fill=\"#58d6c7\"></rect>")
                 sb.append("<text x=\"").append(String.format(java.util.Locale.US, "%.1f", labelW + barW + 6))
-                    .append("\" y=\"").append(cy + 4).append("\" font-size=\"11\" fill=\"#111827\">").append(n0(v)).append("</text>")
+                    .append("\" y=\"").append(cy + 4).append("\" font-size=\"11\" fill=\"#f4f0e8\">").append(n0(v)).append("</text>")
             }
             sb.append("</svg></div>")
         }

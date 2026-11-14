@@ -3,295 +3,841 @@ package devicemonitor.presentation.web
 // Plain JS throughout (no template literals) so these Kotlin raw strings stay simple.
 
 internal val HOME_PAGE = """<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ADB Performance Studio</title>
 <style>
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #f4f5f7; color: #1f2430; }
-  .hero { background: linear-gradient(135deg, #111827 0%, #1e3a5f 60%, #0e7490 100%); color: #fff; padding: 28px 28px 22px 28px; display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
-  .hero h1 { margin: 0; font-size: 24px; letter-spacing: 0.3px; }
-  .hero p { margin: 6px 0 0 0; color: #b8c4d4; font-size: 13px; }
-  .hero-links { display: flex; gap: 10px; align-items: center; }
-  .hero-links a { color: #7dd3fc; font-size: 13px; text-decoration: none; }
-  .hero-links a:hover { text-decoration: underline; }
-  .wrap { max-width: 1060px; margin: 0 auto; padding: 20px 24px 40px 24px; }
-  h2 { font-size: 15px; color: #374151; margin: 22px 0 10px 0; }
-  .devgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
-  .dev { background: #fff; border: 2px solid #e2e4e8; border-radius: 10px; padding: 14px; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
-  .dev:hover { box-shadow: 0 2px 10px rgba(0,0,0,.07); }
-  .dev.selected { border-color: #0e7490; box-shadow: 0 0 0 3px rgba(14,116,144,.15); }
-  .dev.dead { opacity: .55; cursor: not-allowed; }
-  .dev .serial { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #6b7280; }
-  .dev .model { font-weight: 600; margin: 4px 0; font-size: 14px; }
-  .dev .meta { font-size: 12px; color: #4b5563; }
-  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 9px; color: #fff; float: right; }
-  .badge.ok { background: #15803d; } .badge.bad { background: #b91c1c; }
-  .rootchip { display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 8px; margin-top: 6px; }
-  .rootchip.root { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
-  .rootbtn { display: inline-block; font-size: 11px; margin-top: 6px; padding: 3px 10px; border-radius: 6px;
-             border: 1px solid #b45309; background: #fff7ed; color: #b45309; cursor: pointer; }
+  html { scroll-behavior: smooth; }
+  body {
+    min-width: 320px;
+    min-height: 100vh;
+    margin: 0;
+    overflow-x: hidden;
+    background:
+      radial-gradient(circle at 15% -10%, rgba(126, 88, 42, .18), transparent 34rem),
+      radial-gradient(circle at 92% 16%, rgba(74, 53, 133, .15), transparent 31rem),
+      var(--bg);
+    color: var(--text);
+    font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body:before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: .28;
+    background-image: linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+    background-size: 72px 72px;
+    mask-image: linear-gradient(to bottom, black, transparent 72%);
+  }
+  button, input { font: inherit; }
+  button, a { -webkit-tap-highlight-color: transparent; }
+  a { color: inherit; }
+  .ambient { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+  .orb { position: absolute; width: 30rem; height: 30rem; border-radius: 50%; filter: blur(90px); opacity: .12; animation: drift 18s ease-in-out infinite alternate; }
+  .orb.one { top: 8%; left: -14rem; background: var(--gold); }
+  .orb.two { top: 38%; right: -16rem; background: var(--violet); animation-delay: -7s; }
+  .orb.three { bottom: -17rem; left: 42%; background: var(--teal); animation-delay: -12s; }
+  @keyframes drift { to { transform: translate3d(32px, -24px, 0) scale(1.08); } }
+  .appbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    height: 68px;
+    padding: 0 32px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(7, 7, 7, .78);
+    backdrop-filter: blur(22px) saturate(130%);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .brand-mark {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    flex: none;
+    border: 1px solid rgba(232, 182, 109, .42);
+    border-radius: 12px;
+    background: linear-gradient(145deg, rgba(232,182,109,.22), rgba(232,182,109,.04));
+    color: var(--gold-bright);
+    font: 700 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    box-shadow: inset 0 1px rgba(255,255,255,.08), 0 8px 30px rgba(232,182,109,.08);
+  }
+  .brand-copy { min-width: 0; }
+  .brand-name { font-size: 14px; font-weight: 700; letter-spacing: .01em; white-space: nowrap; }
+  .build { margin-top: 2px; color: var(--quiet); font: 10px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nav-actions { display: flex; align-items: center; gap: 8px; }
+  .nav-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 12px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 650;
+    text-decoration: none;
+    transition: color .2s, background .2s, border-color .2s, transform .2s;
+  }
+  .nav-link:hover { color: var(--text); background: rgba(255,255,255,.045); border-color: var(--line); transform: translateY(-1px); }
+  .nav-link:focus-visible, button:focus-visible, input:focus-visible, .dev:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 3px; }
+  .shell { width: min(1240px, calc(100% - 48px)); margin: 0 auto; padding: 52px 0 88px; }
+  .intro { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 24px; margin-bottom: 36px; }
+  .eyebrow { margin: 0 0 12px; color: var(--gold); font-size: 11px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
+  .intro h1 { max-width: 780px; margin: 0; font-size: clamp(34px, 5vw, 64px); line-height: .98; letter-spacing: -.05em; font-weight: 720; }
+  .intro h1 span { color: var(--muted); }
+  .intro-copy { max-width: 440px; margin: 18px 0 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
+  .signal {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 10px 13px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--muted);
+    background: rgba(255,255,255,.025);
+    font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .signal-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 5px rgba(97,216,156,.08), 0 0 16px rgba(97,216,156,.45); }
+  .banner {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 20px;
+    padding: 16px 18px;
+    border: 1px solid rgba(232,182,109,.28);
+    border-radius: var(--radius-md);
+    background: linear-gradient(100deg, rgba(232,182,109,.13), rgba(232,182,109,.035));
+    color: #e8ddcc;
+    font-size: 13px;
+  }
+  .banner a { color: var(--gold-bright); font-weight: 750; text-decoration: none; white-space: nowrap; }
+  .stage, .control-card, .review-card {
+    border: 1px solid var(--line);
+    background: linear-gradient(145deg, rgba(27,27,25,.92), rgba(15,15,14,.9));
+    box-shadow: inset 0 1px rgba(255,255,255,.025), var(--shadow);
+  }
+  .stage { margin-bottom: 18px; padding: 26px; border-radius: var(--radius-lg); }
+  .stage-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 20px; }
+  .title-lockup { display: flex; align-items: flex-start; gap: 14px; }
+  .step {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    flex: none;
+    border: 1px solid rgba(232,182,109,.24);
+    border-radius: 50%;
+    color: var(--gold);
+    background: rgba(232,182,109,.07);
+    font: 700 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .kicker { margin: 1px 0 5px; color: var(--quiet); font-size: 10px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+  h2, h3 { margin: 0; }
+  .stage h2, .control-card h2, .review-card h2 { font-size: 20px; line-height: 1.2; letter-spacing: -.025em; }
+  .section-copy { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+  .refresh {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 11px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    color: var(--muted);
+    background: rgba(255,255,255,.025);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 700;
+    transition: color .2s, border-color .2s, background .2s;
+  }
+  .refresh:hover { color: var(--text); border-color: var(--line-strong); background: rgba(255,255,255,.045); }
+  .refresh.loading .refresh-icon { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .device-layout { display: grid; gap: 18px; }
+  .devgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(235px, 1fr)); gap: 12px; align-content: start; }
+  .dev {
+    position: relative;
+    min-height: 142px;
+    overflow: hidden;
+    padding: 17px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    color: var(--text);
+    background: rgba(255,255,255,.025);
+    cursor: pointer;
+    transition: transform .25s cubic-bezier(.2,.8,.2,1), border-color .25s, background .25s, box-shadow .25s;
+  }
+  .dev:before { content: ""; position: absolute; inset: -1px; opacity: 0; border-radius: inherit; background: radial-gradient(circle at 20% 0%, rgba(232,182,109,.24), transparent 47%); transition: opacity .3s; pointer-events: none; }
+  .dev:hover { transform: translateY(-3px); border-color: var(--line-strong); background: rgba(255,255,255,.04); }
+  .dev:hover:before, .dev.selected:before { opacity: 1; }
+  .dev.selected { border-color: rgba(232,182,109,.54); background: rgba(232,182,109,.07); box-shadow: 0 16px 40px rgba(0,0,0,.26), inset 0 0 0 1px rgba(232,182,109,.08); }
+  .dev.dead { opacity: .48; cursor: not-allowed; filter: grayscale(.55); }
+  .dev.dead:hover { transform: none; }
+  .device-top { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .device-glyph { position: relative; width: 24px; height: 34px; border: 1.5px solid var(--gold); border-radius: 6px; opacity: .82; }
+  .device-glyph:after { content: ""; position: absolute; bottom: 3px; left: 50%; width: 3px; height: 3px; border-radius: 50%; background: var(--gold); transform: translateX(-50%); }
+  .dev .model { position: relative; margin: 15px 0 5px; font-size: 15px; font-weight: 720; letter-spacing: -.015em; }
+  .dev .serial { position: relative; overflow: hidden; color: var(--muted); font: 10px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+  .dev .meta { position: relative; margin-top: 7px; color: var(--quiet); font-size: 11px; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .badge:before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+  .badge.ok { color: var(--green); background: rgba(97,216,156,.09); }
+  .badge.bad { color: var(--red); background: rgba(255,118,118,.09); }
+  .rootchip, .rootbtn { position: relative; display: inline-flex; margin-top: 9px; padding: 5px 8px; border-radius: 8px; font-size: 9px; font-weight: 750; }
+  .rootchip.root { color: var(--green); background: rgba(97,216,156,.08); }
+  .rootbtn { border: 1px solid rgba(232,182,109,.3); color: var(--gold-bright); background: rgba(232,182,109,.07); cursor: pointer; }
   .rootbtn:disabled { opacity: .5; cursor: wait; }
-  .empty { background: #fff; border: 2px dashed #cdd2da; border-radius: 10px; padding: 26px; text-align: center; color: #6b7280; font-size: 13px; grid-column: 1 / -1; }
-  .panel { background: #fff; border: 1px solid #e2e4e8; border-radius: 10px; padding: 18px; }
-  .row { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 14px; }
-  .field { display: flex; flex-direction: column; gap: 4px; }
-  .field label { font-size: 12px; color: #4b5563; font-weight: 600; }
-  .field input[type=number], .field input[type=text] { padding: 7px 9px; border: 1px solid #cdd2da; border-radius: 6px; width: 150px; font-size: 13px; }
-  .field .hint { font-size: 11px; color: #9aa1ab; }
-  .toggle { display: flex; align-items: center; gap: 10px; padding: 9px 0; }
-  .toggle .desc { font-size: 12px; color: #6b7280; }
-  .toggle .name { font-size: 13px; font-weight: 600; }
-  .switch { position: relative; width: 42px; height: 23px; flex: none; }
-  .switch input { opacity: 0; width: 0; height: 0; }
-  .slider { position: absolute; inset: 0; background: #cbd5e1; border-radius: 23px; cursor: pointer; transition: .15s; }
-  .slider:before { content: ""; position: absolute; height: 17px; width: 17px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .15s; }
-  .switch input:checked + .slider { background: #0e7490; }
-  .switch input:checked + .slider:before { transform: translateX(19px); }
-  .sub { margin-left: 52px; }
-  button.start { background: linear-gradient(135deg, #0e7490, #15803d); border: 0; color: #fff; font-size: 15px; font-weight: 700;
-                 padding: 12px 34px; border-radius: 8px; cursor: pointer; }
-  button.start:disabled { background: #9aa1ab; cursor: not-allowed; }
-  #msg { color: #b91c1c; font-size: 13px; margin-left: 14px; }
-  .banner { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 14px; display: none; }
-  .banner a { color: #0e7490; font-weight: 600; }
-  .refresh { float: right; font-size: 12px; color: #0e7490; cursor: pointer; }
-  .metrics-header { display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 9px 0 5px 0; border-top: 1px solid #e2e4e8; margin-top: 8px; user-select: none; }
-  .metrics-header .mh-title { font-size: 13px; font-weight: 600; color: #374151; }
-  .metrics-header .mh-hint { font-size: 11px; color: #9aa1ab; margin-left: 8px; }
-  .metrics-header .mh-arrow { font-size: 11px; color: #6b7280; transition: transform .2s; }
-  .metrics-header.open .mh-arrow { transform: rotate(180deg); }
-  .metrics-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 2px 18px; padding: 8px 0 4px 0; }
-  .mcheck { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
-  .mcheck input[type=checkbox] { width: 15px; height: 15px; accent-color: #0e7490; cursor: pointer; flex: none; }
-  .mcheck-label { font-size: 13px; font-weight: 600; color: #374151; }
-  .mcheck-cost { font-size: 11px; color: #9aa1ab; margin-left: 4px; }
-  .mgroup-title { font-size: 12px; font-weight: 700; color: #0e7490; letter-spacing: .03em; text-transform: uppercase; margin: 12px 0 2px 0; }
-  .mgroup-title:first-child { margin-top: 4px; }
-  .mgroup-hint { font-size: 11px; font-weight: 400; color: #9aa1ab; text-transform: none; letter-spacing: 0; margin-left: 6px; }
+  .empty { grid-column: 1 / -1; display: grid; place-items: center; min-height: 142px; padding: 24px; border: 1px dashed var(--line-strong); border-radius: var(--radius-md); color: var(--muted); background: rgba(255,255,255,.018); text-align: center; font-size: 12px; line-height: 1.6; }
+  .quick-card { padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: linear-gradient(145deg, rgba(255,255,255,.032), rgba(255,255,255,.012)); }
+  .quick-head { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 15px; }
+  .quick-card h3 { margin: 0; font-size: 15px; }
+  .quick-card .quick-copy { margin: 6px 0 0; max-width: 610px; color: var(--quiet); font-size: 11px; line-height: 1.55; }
+  .diag-context { flex: none; display: flex; align-items: center; gap: 8px; max-width: 330px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); background: rgba(0,0,0,.22); font-size: 10px; }
+  .diag-context:before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 4px rgba(232,182,109,.08); }
+  #diagTarget { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tool-stack { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+  .diagnostic-tool { position: relative; overflow: hidden; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(0,0,0,.19); transition: transform .24s cubic-bezier(.2,.8,.2,1), border-color .24s, background .24s; }
+  .diagnostic-tool:hover { transform: translateY(-2px); border-color: var(--line-strong); background: rgba(255,255,255,.028); }
+  .tool-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .tool-type { color: var(--quiet); font-size: 8px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+  .diagnostic-tool h4 { margin: 13px 0 4px; font-size: 13px; }
+  .diagnostic-tool > p { min-height: 33px; margin: 0 0 11px; color: var(--quiet); font-size: 10px; line-height: 1.55; }
+  .tool-requirement { display: flex; align-items: center; gap: 7px; margin-bottom: 13px; color: var(--muted); font-size: 9px; }
+  .tool-requirement:before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+  .tool-button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 11px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    color: var(--text);
+    background: rgba(255,255,255,.04);
+    text-align: left;
+    cursor: pointer;
+    transition: transform .2s, background .2s, border-color .2s;
+  }
+  .tool-button:hover:not(:disabled) { transform: translateX(2px); background: rgba(255,255,255,.065); border-color: var(--line-strong); }
+  .tool-button:disabled { opacity: .42; cursor: not-allowed; }
+  .tool-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; font-size: 15px; }
+  .tool-icon.violet { color: #c3b8ff; background: rgba(158,140,255,.12); }
+  .tool-icon.teal { color: #8df1e5; background: rgba(88,214,199,.11); }
+  .tool-name { display: block; font-size: 10px; font-weight: 760; }
+  .tool-arrow { color: var(--quiet); font-size: 14px; }
+  .progress-wrap { display: none; margin-top: 12px; }
+  .progress-track { height: 5px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.07); }
+  .progress-bar { height: 100%; width: 0; border-radius: inherit; transition: width .3s ease, background .2s; }
+  .progress-message { margin-top: 6px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+  .progress-message a { color: var(--gold-bright); }
+  body.report-open { overflow: hidden; }
+  .report-viewer { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; background: var(--bg); }
+  .report-viewer[hidden] { display: none; }
+  .report-toolbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; min-height: 62px; padding: 10px 18px; border-bottom: 1px solid var(--line); background: rgba(9,10,11,.97); box-shadow: 0 10px 30px rgba(0,0,0,.22); }
+  .report-toolbar-title { min-width: 0; color: var(--text); font-size: 12px; font-weight: 760; letter-spacing: -.01em; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .report-toolbar-actions { display: flex; justify-content: flex-end; }
+  .viewer-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); background: rgba(255,255,255,.035); cursor: pointer; font-size: 10px; font-weight: 750; transition: color .2s, border-color .2s, background .2s, transform .2s; }
+  .viewer-button:hover { color: var(--text); border-color: var(--line-strong); background: rgba(255,255,255,.06); }
+  .viewer-button:active { transform: scale(.98); }
+  .viewer-button.primary { color: #15120d; border-color: rgba(232,182,109,.7); background: var(--gold); }
+  .report-body { position: relative; flex: 1; min-height: 0; background: #090a0b; }
+  .report-frame { width: 100%; height: 100%; border: 0; background: #090a0b; opacity: 0; transition: opacity .22s ease; }
+  .report-viewer.loaded .report-frame { opacity: 1; }
+  .report-state { position: absolute; inset: 0; z-index: 1; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 50% 34%, rgba(158,140,255,.11), transparent 38%), #090a0b; text-align: center; }
+  .report-viewer.loaded .report-state { display: none; }
+  .report-state-card { max-width: 380px; }
+  .viewer-spinner { width: 28px; height: 28px; margin: 0 auto 15px; border: 2px solid rgba(255,255,255,.1); border-top-color: var(--gold); border-radius: 50%; animation: spin .8s linear infinite; }
+  .report-state h3 { margin: 0; font-size: 15px; }
+  .report-state p { margin: 7px 0 15px; color: var(--quiet); font-size: 10px; line-height: 1.55; }
+  .report-viewer.failed .viewer-spinner { display: none; }
+  .report-viewer:not(.failed) #reportRetry { display: none; }
+  .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; align-items: start; }
+  .config-stack { display: grid; gap: 14px; min-width: 0; }
+  .control-card { overflow: hidden; border-radius: var(--radius-lg); }
+  .card-heading { padding: 24px 25px 0; }
+  .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 22px 25px 26px; }
+  .field { display: flex; min-width: 0; flex-direction: column; gap: 7px; }
+  .field.span-2 { grid-column: 1 / -1; }
+  .field label { color: #c7c3ba; font-size: 10px; font-weight: 780; letter-spacing: .07em; text-transform: uppercase; }
+  .field input[type=number], .field input[type=text] {
+    width: 100%;
+    min-width: 0;
+    height: 43px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    outline: 0;
+    color: var(--text);
+    background: rgba(4,4,4,.46);
+    font-size: 12px;
+    transition: border-color .2s, box-shadow .2s, background .2s;
+  }
+  .field input:hover { border-color: var(--line-strong); }
+  .field input:focus { border-color: rgba(232,182,109,.58); background: rgba(4,4,4,.7); box-shadow: 0 0 0 3px rgba(232,182,109,.08); }
+  .field .hint { color: var(--quiet); font-size: 9px; line-height: 1.45; }
+  .input-action { display: flex; gap: 8px; }
+  .input-action input { flex: 1; }
+  .browse {
+    flex: none;
+    padding: 0 14px;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    color: var(--muted);
+    background: rgba(255,255,255,.035);
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 750;
+  }
+  .browse:hover { color: var(--text); border-color: var(--line-strong); }
+  .disclosure-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    width: 100%;
+    padding: 22px 25px;
+    border: 0;
+    color: var(--text);
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+  }
+  .disclosure-title { display: flex; align-items: center; gap: 12px; }
+  .section-glyph { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 11px; color: var(--gold); background: rgba(232,182,109,.055); font-size: 14px; }
+  .disclosure-actions { display: flex; align-items: center; gap: 10px; }
+  .count-pill { min-width: 25px; padding: 4px 8px; border-radius: 999px; color: var(--gold-bright); background: rgba(232,182,109,.09); font: 700 9px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; }
+  .chevron { color: var(--quiet); font-size: 11px; transition: transform .3s cubic-bezier(.2,.8,.2,1); }
+  .disclosure-trigger.open .chevron { transform: rotate(180deg); }
+  .disclosure-body { display: grid; grid-template-rows: 0fr; opacity: .25; transition: grid-template-rows .38s cubic-bezier(.2,.8,.2,1), opacity .25s; }
+  .disclosure-body.open { grid-template-rows: 1fr; opacity: 1; }
+  .disclosure-inner { overflow: hidden; }
+  .disclosure-content { padding: 0 25px 24px; border-top: 1px solid var(--line); }
+  .toggle-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding-top: 18px; }
+  .toggle { display: flex; align-items: flex-start; gap: 12px; min-height: 78px; padding: 13px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.018); transition: border-color .2s, background .2s; }
+  .toggle:has(input:checked) { border-color: rgba(232,182,109,.24); background: rgba(232,182,109,.035); }
+  .toggle .name { color: #dedad2; font-size: 11px; font-weight: 720; }
+  .toggle .desc { margin-top: 4px; color: var(--quiet); font-size: 9px; line-height: 1.45; }
+  .switch { position: relative; width: 38px; height: 22px; flex: none; margin-top: 1px; }
+  .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .slider { position: absolute; inset: 0; border: 1px solid var(--line-strong); border-radius: 999px; background: #282826; cursor: pointer; transition: background .25s, border-color .25s; }
+  .slider:before { content: ""; position: absolute; width: 14px; height: 14px; top: 3px; left: 3px; border-radius: 50%; background: #8b8881; box-shadow: 0 2px 6px rgba(0,0,0,.35); transition: transform .25s cubic-bezier(.2,.8,.2,1), background .25s; }
+  .switch input:checked + .slider { border-color: rgba(232,182,109,.48); background: rgba(232,182,109,.25); }
+  .switch input:checked + .slider:before { background: var(--gold-bright); transform: translateX(16px); }
+  .switch input:focus-visible + .slider { outline: 2px solid var(--gold-bright); outline-offset: 3px; }
+  .sub { grid-column: 1 / -1; display: flex; gap: 12px; padding: 4px 12px 2px 50px; }
+  .sub .field { flex: 1; }
+  .metric-cluster { margin-top: 14px; padding: 17px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.015); }
+  .metric-cluster:first-child { margin-top: 18px; }
+  .mgroup-title { color: #d7d2c9; font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+  .mgroup-hint { margin-left: 7px; color: var(--quiet); font-size: 9px; font-weight: 450; letter-spacing: 0; text-transform: none; }
+  .metrics-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 18px; margin-top: 10px; }
+  .mcheck { display: flex; align-items: flex-start; gap: 9px; padding: 8px 4px; border-radius: 8px; cursor: pointer; }
+  .mcheck:hover { background: rgba(255,255,255,.025); }
+  .mcheck input[type=checkbox] { width: 14px; height: 14px; margin: 1px 0 0; flex: none; accent-color: var(--gold); cursor: pointer; }
+  .mcheck-label { display: block; color: #cbc7be; font-size: 10px; font-weight: 680; }
+  .mcheck-cost { display: block; margin-top: 2px; color: var(--quiet); font-size: 8px; line-height: 1.35; }
+  .review-card { position: sticky; top: 86px; overflow: hidden; border-radius: var(--radius-lg); }
+  .review-top { padding: 24px 23px 19px; border-bottom: 1px solid var(--line); background: radial-gradient(circle at 100% 0%, rgba(232,182,109,.1), transparent 54%); }
+  .summary-device { display: flex; align-items: center; gap: 12px; margin-top: 20px; padding: 13px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.025); }
+  .summary-device .device-glyph { width: 19px; height: 28px; flex: none; }
+  .summary-device .device-glyph:after { bottom: 2px; }
+  .summary-name { overflow: hidden; font-size: 11px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+  .summary-serial { margin-top: 3px; overflow: hidden; color: var(--quiet); font: 8px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+  .summary-body { padding: 9px 23px 22px; }
+  .summary-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+  .summary-row span:first-child { color: var(--quiet); font-size: 10px; }
+  .summary-row strong { max-width: 170px; overflow: hidden; color: #dcd7cd; font: 650 10px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+  .start {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 49px;
+    margin-top: 20px;
+    overflow: hidden;
+    border: 0;
+    border-radius: 13px;
+    color: #19130c;
+    background: linear-gradient(135deg, #f0c887, #d89c4f);
+    box-shadow: 0 12px 28px rgba(216,156,79,.18), inset 0 1px rgba(255,255,255,.42);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 820;
+    letter-spacing: .01em;
+    transition: transform .2s, box-shadow .2s, filter .2s;
+  }
+  .start:before { content: ""; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 20%, rgba(255,255,255,.35) 45%, transparent 70%); transform: translateX(-120%); transition: transform .6s; }
+  .start:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 18px 34px rgba(216,156,79,.24), inset 0 1px rgba(255,255,255,.5); }
+  .start:hover:not(:disabled):before { transform: translateX(120%); }
+  .start:active:not(:disabled) { transform: translateY(0) scale(.99); }
+  .start:disabled { color: #77736d; background: #242422; box-shadow: none; cursor: not-allowed; }
+  .start.loading .start-play { animation: spin .8s linear infinite; }
+  #msg { min-height: 18px; margin-top: 10px; color: var(--red); font-size: 10px; line-height: 1.5; text-align: center; }
+  .trust-line { display: flex; justify-content: center; gap: 7px; margin-top: 5px; color: var(--quiet); font-size: 8px; }
+  .trust-line:before { content: ""; width: 5px; height: 5px; margin-top: 2px; border-radius: 50%; background: var(--green); }
+  .reveal { opacity: 0; animation: reveal .65s cubic-bezier(.2,.8,.2,1) forwards; }
+  .reveal.d1 { animation-delay: .06s; }
+  .reveal.d2 { animation-delay: .13s; }
+  .reveal.d3 { animation-delay: .2s; }
+  @keyframes reveal { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  @media (max-width: 980px) {
+    .device-layout, .workspace { grid-template-columns: 1fr; }
+    .review-card { position: static; }
+  }
+  @media (max-width: 680px) {
+    .appbar { height: auto; min-height: 64px; padding: 12px 18px; }
+    .brand-copy { display: none; }
+    .nav-link span { display: none; }
+    .nav-link { width: 38px; height: 38px; justify-content: center; padding: 0; }
+    .shell { width: min(100% - 28px, 1240px); padding-top: 34px; }
+    .intro { display: block; }
+    .intro h1 { font-size: clamp(34px, 12vw, 50px); }
+    .signal { width: fit-content; margin-top: 22px; }
+    .stage, .card-heading, .disclosure-trigger, .review-top, .summary-body { padding-left: 18px; padding-right: 18px; }
+    .stage-heading { align-items: center; }
+    .stage-heading .section-copy { display: none; }
+    .device-layout { gap: 12px; }
+    .devgrid, .field-grid, .toggle-grid, .metrics-grid { grid-template-columns: 1fr; }
+    .quick-card { padding: 16px; }
+    .quick-head { display: block; }
+    .diag-context { max-width: none; margin-top: 12px; }
+    .tool-stack { grid-template-columns: 1fr; }
+    .field-grid { padding-left: 18px; padding-right: 18px; }
+    .field.span-2 { grid-column: auto; }
+    .sub { display: grid; grid-template-columns: 1fr; padding-left: 0; }
+    .mgroup-hint { display: block; margin: 4px 0 0; }
+    .report-toolbar { grid-template-columns: auto minmax(0,1fr) auto; gap: 8px; min-height: 58px; padding: 9px 10px; }
+    .viewer-button { width: 38px; padding: 0; }
+    .viewer-button .viewer-label { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *:before, *:after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+    .reveal { opacity: 1; }
+  }
 </style>
 </head>
 <body>
-<div class="hero">
-  <div>
-    <h1>ADB Performance Studio</h1>
-    <p>Live system &amp; app performance for Android phones, TVs, STBs and Fire sticks — over adb.</p>
-    <p style="font-size:11px;color:#9aa1ab;margin-top:2px">Build: <span id="buildtag">…</span></p>
+<div class="ambient" aria-hidden="true"><span class="orb one"></span><span class="orb two"></span><span class="orb three"></span></div>
+<header class="appbar">
+  <div class="brand">
+    <div class="brand-mark">APS</div>
+    <div class="brand-copy">
+      <div class="brand-name">ADB Performance Studio</div>
+      <div class="build">Build <span id="buildtag">loading…</span></div>
+    </div>
   </div>
-  <div class="hero-links">
-    <a href="/compare">&#9654;&#9654; Run Comparison</a>
-    <a href="/api/diagnostics" title="Download a zip with the logs and a thread dump — attach it when reporting a hang">Export diagnostics</a>
-  </div>
-</div>
-<div class="wrap">
-  <div class="banner" id="banner">A monitoring session is in progress. <a href="/dashboard" onclick="this.href='/dashboard?v='+Date.now()">Open the live dashboard &rarr;</a></div>
+  <nav class="nav-actions" aria-label="Application">
+    <a class="nav-link" href="/compare" title="Compare previous runs"><b aria-hidden="true">&#8644;</b><span>Compare runs</span></a>
+    <a class="nav-link" href="/api/diagnostics" title="Download logs and thread diagnostics"><b aria-hidden="true">&#8595;</b><span>Diagnostics</span></a>
+  </nav>
+</header>
 
-  <h2>1 &middot; Connected devices <span class="refresh" onclick="loadDevices()">&#8635; refresh</span></h2>
-  <div class="devgrid" id="devices"><div class="empty">Scanning for adb devices&hellip;</div></div>
-  <div id="snapshot-box" style="margin:10px 0 2px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-    <button type="button" id="snapBtn" onclick="takeSnapshot()"
-      style="padding:9px 16px;border:1px solid #c7ccd6;border-radius:8px;background:#eef2ff;color:#3730a3;font-weight:600;cursor:pointer;font-size:13px">&#128247; Device Snapshot</button>
-    <button type="button" id="procBtn" onclick="takeProcrank()"
-      style="padding:9px 16px;border:1px solid #c7ccd6;border-radius:8px;background:#ecfeff;color:#0e7490;font-weight:600;cursor:pointer;font-size:13px">&#128202; Procrank Snapshot</button>
-    <span class="hint">one-shot STB capabilities &amp; memory footprint &rarr; interactive report</span>
-  </div>
-  <div id="snapProgWrap" style="display:none;margin:6px 0 2px;max-width:520px">
-    <div style="height:9px;background:#e5e7eb;border-radius:5px;overflow:hidden">
-      <div id="snapProg" style="height:100%;width:0;background:#4f46e5;transition:width .3s"></div>
+<main class="shell">
+  <section class="intro reveal">
+    <div>
+      <p class="eyebrow">Performance intelligence</p>
+      <h1>See what your device <span>is really doing.</span></h1>
+      <p class="intro-copy">Measure system pressure, app behavior, media playback and frame health across Android phones, TVs, STBs and Fire sticks.</p>
     </div>
-    <div id="snapMsg" style="font-size:12px;color:#6b7280;margin-top:5px"></div>
-  </div>
-  <div id="procProgWrap" style="display:none;margin:6px 0 2px;max-width:520px">
-    <div style="height:9px;background:#e5e7eb;border-radius:5px;overflow:hidden">
-      <div id="procProg" style="height:100%;width:0;background:#0891b2;transition:width .3s"></div>
-    </div>
-    <div id="procMsg" style="font-size:12px;color:#6b7280;margin-top:5px"></div>
+    <div class="signal"><span class="signal-dot"></span>ADB ENGINE READY</div>
+  </section>
+
+  <div class="banner reveal" id="banner" role="status">
+    <span>A monitoring session is already in progress.</span>
+    <a href="/dashboard" onclick="this.href='/dashboard?v='+Date.now()">Resume live dashboard &rarr;</a>
   </div>
 
-  <h2>2 &middot; Configure the run</h2>
-  <div class="panel">
-    <div class="row">
-      <div class="field"><label>Duration (seconds)</label><input type="number" id="duration" value="300" min="1"></div>
-      <div class="field"><label>Sampling interval (seconds)</label><input type="number" id="interval" value="2" min="0.5" step="0.5"></div>
-      <div class="field"><label>App package (optional)</label><input type="text" id="package" placeholder="com.example.tv">
-        <span class="hint">enables PSS, app CPU &amp; media proc tracking</span></div>
-      <div class="field"><label>Run label (optional)</label><input type="text" id="label" placeholder="tunnel-on">
-        <span class="hint">tags folder &amp; PDF — use for tunnel comparisons</span></div>
-      <div class="field" style="flex:1 1 100%"><label>Reports folder</label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="outputDir" placeholder="loading default…" style="flex:1">
-          <button type="button" id="browseBtn" onclick="pickFolder()" style="white-space:nowrap;padding:8px 14px;border:1px solid #c7ccd6;border-radius:8px;background:#f3f4f6;color:#374151;cursor:pointer;font-size:13px">&#128193; Browse…</button>
+  <section class="stage reveal d1" aria-labelledby="device-title">
+    <div class="stage-heading">
+      <div class="title-lockup">
+        <span class="step">01</span>
+        <div><p class="kicker">Target</p><h2 id="device-title">Choose a device</h2><p class="section-copy">Select the Android target you want to inspect.</p></div>
+      </div>
+      <button class="refresh" id="refreshBtn" type="button" onclick="loadDevices()"><span class="refresh-icon" aria-hidden="true">&#8635;</span> Scan devices</button>
+    </div>
+    <div class="device-layout">
+      <div class="devgrid" id="devices" role="listbox" aria-label="Connected ADB devices"><div class="empty">Scanning for authorized ADB devices…</div></div>
+      <aside class="quick-card" id="snapshot-box" aria-labelledby="quick-title">
+        <div class="quick-head"><div><p class="kicker">Independent tools</p><h3 id="quick-title">Quick diagnostics</h3><p class="quick-copy">Capture focused evidence without configuring or starting a monitoring run. Each report is generated locally and remains usable offline.</p></div><div class="diag-context"><span id="diagTarget">Select an authorized target</span></div></div>
+        <div class="tool-stack">
+          <article class="diagnostic-tool">
+            <div class="tool-heading"><span class="tool-icon violet" aria-hidden="true">&#9672;</span><span class="tool-type">System profile</span></div>
+            <h4>Device snapshot</h4><p>Hardware, Android configuration, memory footprint and top services in one portable report.</p>
+            <div class="tool-requirement">Authorized ADB connection</div>
+            <button class="tool-button" type="button" id="snapBtn" onclick="takeSnapshot()" disabled><span class="tool-name">Capture device profile</span><span class="tool-arrow">&rarr;</span></button>
+            <div class="progress-wrap" id="snapProgWrap" aria-live="polite"><div class="progress-track"><div class="progress-bar" id="snapProg" style="background:#9e8cff"></div></div><div class="progress-message" id="snapMsg"></div></div>
+          </article>
+          <article class="diagnostic-tool">
+            <div class="tool-heading"><span class="tool-icon teal" aria-hidden="true">&#9638;</span><span class="tool-type">Process memory</span></div>
+            <h4>Memory snapshot</h4><p>Rank processes by PSS, RSS, USS and VSS with a searchable standalone report.</p>
+            <div class="tool-requirement">Root preferred; safe RSS fallback</div>
+            <button class="tool-button" type="button" id="procBtn" onclick="takeProcrank()" disabled><span class="tool-name">Capture memory profile</span><span class="tool-arrow">&rarr;</span></button>
+            <div class="progress-wrap" id="procProgWrap" aria-live="polite"><div class="progress-track"><div class="progress-bar" id="procProg" style="background:#58d6c7"></div></div><div class="progress-message" id="procMsg"></div></div>
+          </article>
         </div>
-        <span class="hint">where run_* folders (PDF, CSV, logcat) are saved — must be writable</span></div>
+      </aside>
     </div>
-    <div class="toggle">
-      <label class="switch"><input type="checkbox" id="zap"><span class="slider"></span></label>
-      <div><div class="name">Channel zapping (CHANNEL_UP)</div><div class="desc">stress test: send KEYCODE_CHANNEL_UP periodically; each zap is marked on the charts</div></div>
+  </section>
+
+  <div class="workspace reveal d2">
+    <div class="config-stack">
+      <section class="control-card" aria-labelledby="essentials-title">
+        <div class="card-heading">
+          <div class="title-lockup"><span class="step">02</span><div><p class="kicker">Configure</p><h2 id="essentials-title">Run essentials</h2><p class="section-copy">Set the measurement window and where results should be stored.</p></div></div>
+        </div>
+        <div class="field-grid">
+          <div class="field"><label for="duration">Duration</label><input type="number" id="duration" value="300" min="1"><span class="hint">Total run time in seconds</span></div>
+          <div class="field"><label for="interval">Sampling interval</label><input type="number" id="interval" value="2" min="0.5" step="0.5"><span class="hint">Seconds between measurements</span></div>
+          <div class="field"><label for="package">App package <span aria-hidden="true">·</span> optional</label><input type="text" id="package" placeholder="com.example.tv"><span class="hint">Enables app memory, CPU and frame metrics</span></div>
+          <div class="field"><label for="label">Run label <span aria-hidden="true">·</span> optional</label><input type="text" id="label" placeholder="tunnel-on"><span class="hint">Tags the result folder and PDF report</span></div>
+          <div class="field span-2"><label for="outputDir">Reports folder</label><div class="input-action"><input type="text" id="outputDir" placeholder="Loading default location…"><button class="browse" type="button" id="browseBtn" onclick="pickFolder()">Browse…</button></div><span class="hint">Run folders contain the PDF, CSV, logs and captured traces</span></div>
+        </div>
+      </section>
+
+      <section class="control-card" aria-labelledby="capture-title">
+        <button class="disclosure-trigger open" id="captureHdr" type="button" onclick="toggleCapture()" aria-expanded="true" aria-controls="captureCfg">
+          <span class="disclosure-title"><span class="section-glyph" aria-hidden="true">&#9678;</span><span><span class="kicker">Optional instrumentation</span><span id="capture-title" style="display:block;font-size:16px;font-weight:720">Capture tools</span></span></span>
+          <span class="disclosure-actions"><span class="count-pill" id="captureCount">1 on</span><span class="chevron" aria-hidden="true">&#9660;</span></span>
+        </button>
+        <div class="disclosure-body open" id="captureCfg" aria-hidden="false"><div class="disclosure-inner"><div class="disclosure-content">
+          <div class="toggle-grid">
+            <div class="toggle"><label class="switch"><input type="checkbox" id="logcat" aria-label="Logcat capture" checked><span class="slider"></span></label><div><div class="name">Logcat capture</div><div class="desc">Save device logs and detect crashes, ANRs, LMK kills and playback anomalies.</div></div></div>
+            <div class="toggle"><label class="switch"><input type="checkbox" id="zap" aria-label="Channel zapping"><span class="slider"></span></label><div><div class="name">Channel zapping</div><div class="desc">Send CHANNEL_UP on a schedule and mark each zap on the report timeline.</div></div></div>
+            <div class="sub" id="zapcfg" style="display:none"><div class="field"><label for="zapMs">Zap every</label><input type="number" id="zapMs" value="5000" min="100"><span class="hint">Milliseconds</span></div><div class="field"><label for="zapCount">Stop after</label><input type="number" id="zapCount" placeholder="Until duration"><span class="hint">Optional zap count</span></div></div>
+            <div class="toggle"><label class="switch"><input type="checkbox" id="jank" aria-label="UI jank and frame phases"><span class="slider"></span></label><div><div class="name">UI jank and frame phases</div><div class="desc">Measure janky frames and input, animation, layout and draw cost.</div></div></div>
+            <div class="toggle"><label class="switch"><input type="checkbox" id="profile" aria-label="Main-thread profiler"><span class="slider"></span></label><div><div class="name">Main-thread profiler</div><div class="desc">Use ART sampling to identify hot methods in a debuggable app.</div></div></div>
+            <div class="toggle"><label class="switch"><input type="checkbox" id="perfetto" aria-label="Perfetto system trace"><span class="slider"></span></label><div><div class="name">Perfetto system trace</div><div class="desc">Record scheduler, graphics, view and input slices for offline analysis.</div></div></div>
+          </div>
+        </div></div></div>
+      </section>
+
+      <section class="control-card" aria-labelledby="metrics-title">
+        <button class="disclosure-trigger" id="metricsHdr" type="button" onclick="toggleMetrics()" aria-expanded="false" aria-controls="metricsCfg">
+          <span class="disclosure-title"><span class="section-glyph" aria-hidden="true">&#8759;</span><span><span class="kicker">Signal selection</span><span id="metrics-title" style="display:block;font-size:16px;font-weight:720">Performance metrics</span></span></span>
+          <span class="disclosure-actions"><span class="count-pill" id="metricCount">2 on</span><span class="chevron" aria-hidden="true">&#9660;</span></span>
+        </button>
+        <div class="disclosure-body" id="metricsCfg" aria-hidden="true" inert><div class="disclosure-inner"><div class="disclosure-content">
+          <div class="metric-cluster">
+            <div class="mgroup-title">System and compute <span class="mgroup-hint">CPU, load, thermal and network signals</span></div>
+            <div class="metrics-grid">
+              <label class="mcheck"><input type="checkbox" id="m_cpu"><span><span class="mcheck-label">CPU utilization</span><span class="mcheck-cost">Free · /proc/stat</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_cpuidle"><span><span class="mcheck-label">CPU idle</span><span class="mcheck-cost">Free · /proc/stat</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_percore"><span><span class="mcheck-label">Per-core CPU</span><span class="mcheck-cost">Free · /proc/stat cpuN</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_load"><span><span class="mcheck-label">Load average</span><span class="mcheck-cost">Negligible · /proc/loadavg</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_thermal"><span><span class="mcheck-label">CPU temperature</span><span class="mcheck-cost">Low · thermal sysfs</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_freq"><span><span class="mcheck-label">CPU frequency</span><span class="mcheck-cost">Low · scaling_cur_freq</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_network"><span><span class="mcheck-label">Network throughput</span><span class="mcheck-cost">Low · /proc/net/dev</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_topprocs"><span><span class="mcheck-label">Top process CPU</span><span class="mcheck-cost">Medium · process stat reads</span></span></label>
+            </div>
+          </div>
+          <div class="metric-cluster">
+            <div class="mgroup-title">Memory pressure <span class="mgroup-hint">Capacity, stalls, reclaim and top consumers</span></div>
+            <div class="metrics-grid">
+              <label class="mcheck"><input type="checkbox" id="m_mem"><span><span class="mcheck-label">Memory amount</span><span class="mcheck-cost">Free · /proc/meminfo</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_mempct"><span><span class="mcheck-label">Memory used</span><span class="mcheck-cost">Free · /proc/meminfo</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_swap"><span><span class="mcheck-label">Swap used</span><span class="mcheck-cost">Free · /proc/meminfo</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_zone"><span><span class="mcheck-label">Zone watermarks</span><span class="mcheck-cost">Free · /proc/zoneinfo</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_psi" checked><span><span class="mcheck-label">PSI pressure stall</span><span class="mcheck-cost">Low · /proc/pressure</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_pgfault"><span><span class="mcheck-label">Major page faults</span><span class="mcheck-cost">Low · /proc/vmstat</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_reclaim" onchange="if(this.checked){var l=document.getElementById('logcat');if(l)l.checked=true;}"><span><span class="mcheck-label">Direct reclaim</span><span class="mcheck-cost">Logcat · pressure events</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_topmem"><span><span class="mcheck-label">Top process memory</span><span class="mcheck-cost">Low · single ps call</span></span></label>
+            </div>
+          </div>
+          <div class="metric-cluster">
+            <div class="mgroup-title">App and media <span class="mgroup-hint">Package-aware process and playback signals</span></div>
+            <div class="metrics-grid">
+              <label class="mcheck"><input type="checkbox" id="m_pss" checked><span><span class="mcheck-label">App PSS breakdown</span><span class="mcheck-cost">Medium · dumpsys meminfo</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_appcpu"><span><span class="mcheck-label">App process CPU</span><span class="mcheck-cost">Low · process stat</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_maincpu"><span><span class="mcheck-label">Main-thread CPU</span><span class="mcheck-cost">Low · task stat</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_mediacpu"><span><span class="mcheck-label">Media and HAL CPU</span><span class="mcheck-cost">Low · media process PIDs</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_playback" onchange="if(this.checked){var l=document.getElementById('logcat');if(l)l.checked=true;}"><span><span class="mcheck-label">Playback and tunnel</span><span class="mcheck-cost">Logcat · STB video state</span></span></label>
+            </div>
+          </div>
+        </div></div></div>
+      </section>
     </div>
-    <div class="sub row" id="zapcfg" style="display:none">
-      <div class="field"><label>Zap every (ms)</label><input type="number" id="zapMs" value="5000" min="100"></div>
-      <div class="field"><label>Stop after (zaps, optional)</label><input type="number" id="zapCount" placeholder="until duration"></div>
-    </div>
-    <div class="toggle">
-      <label class="switch"><input type="checkbox" id="logcat" checked><span class="slider"></span></label>
-      <div><div class="name">Logcat capture</div><div class="desc">saves logcat.log, flags anomalies (ANR, crashes, LMK kills, jank) with timestamps, extracts app build info from analytics events</div></div>
-    </div>
-    <div class="toggle">
-      <label class="switch"><input type="checkbox" id="jank"><span class="slider"></span></label>
-      <div><div class="name">UI jank &amp; frame phases</div><div class="desc">janky-frame % and input/animation/layout/draw ms per frame from dumpsys gfxinfo framestats &mdash; requires an app package above</div></div>
-    </div>
-    <div class="toggle">
-      <label class="switch"><input type="checkbox" id="profile"><span class="slider"></span></label>
-      <div><div class="name">Main-thread method profiler</div><div class="desc">ART sampling profiler (am profile) &mdash; names the actual methods running on the main thread; report gets a hot-methods table. Requires a debuggable app package</div></div>
-    </div>
-    <div class="toggle">
-      <label class="switch"><input type="checkbox" id="perfetto"><span class="slider"></span></label>
-      <div><div class="name">Perfetto system trace</div><div class="desc">records sched + gfx/view/input slices for the whole run; trace.perfetto-trace saved in the run folder for ui.perfetto.dev</div></div>
-    </div>
-    <div class="metrics-header" id="metricsHdr" onclick="toggleMetrics()">
-      <span>
-        <span class="mh-title">&#128270; Metrics options</span>
-        <span class="mh-hint">disable to reduce device overhead</span>
-      </span>
-      <span class="mh-arrow">&#9660;</span>
-    </div>
-    <div id="metricsCfg" style="display:none">
-      <div class="mgroup-title">System &middot; core <span class="mgroup-hint">essentially free — toggle to show/hide the chart</span></div>
-      <div class="metrics-grid">
-        <div class="mcheck"><input type="checkbox" id="m_cpu">
-          <span><span class="mcheck-label">CPU utilization %</span><span class="mcheck-cost">free · /proc/stat</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_cpuidle">
-          <span><span class="mcheck-label">CPU idle %</span><span class="mcheck-cost">free · /proc/stat</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_percore">
-          <span><span class="mcheck-label">Per-core CPU %</span><span class="mcheck-cost">free · /proc/stat cpuN</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_mem">
-          <span><span class="mcheck-label">Memory (MB)</span><span class="mcheck-cost">free · /proc/meminfo</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_mempct">
-          <span><span class="mcheck-label">Memory used %</span><span class="mcheck-cost">free · /proc/meminfo</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_swap">
-          <span><span class="mcheck-label">Swap used (MB)</span><span class="mcheck-cost">free · /proc/meminfo</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_zone">
-          <span><span class="mcheck-label">Zone watermarks</span><span class="mcheck-cost">free · /proc/zoneinfo — free pages vs min/low/high</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_psi" checked>
-          <span><span class="mcheck-label">PSI pressure stall</span><span class="mcheck-cost">low cost · /proc/pressure/*</span></span></div>
+
+    <aside class="review-card reveal d3" aria-labelledby="review-title">
+      <div class="review-top"><div class="title-lockup"><span class="step">03</span><div><p class="kicker">Review</p><h2 id="review-title">Ready to measure</h2></div></div>
+        <div class="summary-device"><span class="device-glyph" aria-hidden="true"></span><div style="min-width:0"><div class="summary-name" id="sumDevice">Waiting for a device</div><div class="summary-serial" id="sumSerial">Select an authorized target</div></div></div>
       </div>
-      <div class="mgroup-title">System &middot; extra <span class="mgroup-hint">small per-tick device cost</span></div>
-      <div class="metrics-grid">
-        <div class="mcheck"><input type="checkbox" id="m_load">
-          <span><span class="mcheck-label">Load average (1m)</span><span class="mcheck-cost">negligible · /proc/loadavg</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_pgfault">
-          <span><span class="mcheck-label">Page faults (thrash)</span><span class="mcheck-cost">low cost · /proc/vmstat</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_reclaim" onchange="if(this.checked){var l=document.getElementById('logcat');if(l)l.checked=true;}">
-          <span><span class="mcheck-label">Direct reclaim</span><span class="mcheck-cost">logcat · memory-pressure events/s</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_thermal">
-          <span><span class="mcheck-label">CPU temperature</span><span class="mcheck-cost">low cost · /sys/class/thermal/*</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_freq">
-          <span><span class="mcheck-label">CPU frequency</span><span class="mcheck-cost">low cost · scaling_cur_freq</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_network">
-          <span><span class="mcheck-label">Network throughput</span><span class="mcheck-cost">low cost · /proc/net/dev</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_topprocs">
-          <span><span class="mcheck-label">Top process CPU</span><span class="mcheck-cost">medium · reads /proc/*/stat per tick</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_topmem">
-          <span><span class="mcheck-label">Top process memory</span><span class="mcheck-cost">RSS via a single ps call — lightweight, no root, no procrank</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_playback" onchange="if(this.checked){var l=document.getElementById('logcat');if(l)l.checked=true;}">
-          <span><span class="mcheck-label">Playback &amp; tunnel (STB)</span><span class="mcheck-cost">logcat · video state + TUNNELED</span></span></div>
+      <div class="summary-body">
+        <div class="summary-row"><span>Duration</span><strong id="sumDuration">300 sec</strong></div>
+        <div class="summary-row"><span>Sampling</span><strong id="sumInterval">Every 2 sec</strong></div>
+        <div class="summary-row"><span>Package</span><strong id="sumPackage">System-wide</strong></div>
+        <div class="summary-row"><span>Capture tools</span><strong id="sumCaptures">1 enabled</strong></div>
+        <div class="summary-row"><span>Metrics</span><strong id="sumMetrics">2 enabled</strong></div>
+        <button class="start" id="startBtn" type="button" onclick="startRun()" disabled><span class="start-play" aria-hidden="true">&#9654;</span><span id="startLabel">Launch performance run</span></button>
+        <div id="msg" role="status" aria-live="polite"></div>
+        <div class="trust-line">Runs locally over ADB</div>
       </div>
-      <div class="mgroup-title">App metrics <span class="mgroup-hint">require an app package above</span></div>
-      <div class="metrics-grid">
-        <div class="mcheck"><input type="checkbox" id="m_pss" checked>
-          <span><span class="mcheck-label">App PSS breakdown</span><span class="mcheck-cost">medium · dumpsys meminfo</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_appcpu">
-          <span><span class="mcheck-label">App process CPU</span><span class="mcheck-cost">low · /proc + dumpsys fallback</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_maincpu">
-          <span><span class="mcheck-label">App main-thread CPU</span><span class="mcheck-cost">low · /proc task stat</span></span></div>
-        <div class="mcheck"><input type="checkbox" id="m_mediacpu">
-          <span><span class="mcheck-label">Media / HAL process CPU</span><span class="mcheck-cost">low · media pipeline PIDs</span></span></div>
-      </div>
-    </div>
-    <div style="margin-top:16px">
-      <button class="start" id="startBtn" onclick="startRun()">&#9654;&nbsp; Start performance run</button>
-      <span id="msg"></span>
-    </div>
+    </aside>
   </div>
-</div>
+</main>
+<section class="report-viewer" id="reportViewer" role="dialog" aria-modal="true" aria-labelledby="reportViewerTitle" aria-describedby="reportStateText" hidden>
+  <div class="report-toolbar">
+    <button class="viewer-button" id="reportBack" type="button" onclick="closeReport()" aria-label="Back to Studio"><span aria-hidden="true">&#8592;</span><span class="viewer-label">Back to Studio</span></button>
+    <div class="report-toolbar-title" id="reportViewerTitle">Diagnostic report</div>
+    <div class="report-toolbar-actions"><button class="viewer-button" id="reportExternal" type="button" onclick="openReportExternally()" aria-label="Open report externally"><span class="viewer-label">Open externally</span><span aria-hidden="true">&#8599;</span></button></div>
+  </div>
+  <div class="report-body">
+    <div class="report-state" id="reportState" role="status" aria-live="polite"><div class="report-state-card"><div class="viewer-spinner" aria-hidden="true"></div><h3 id="reportStateTitle">Preparing report</h3><p id="reportStateText">Loading the locally generated diagnostic report…</p><button class="viewer-button primary" id="reportRetry" type="button" onclick="retryReport()">Retry report</button></div></div>
+    <iframe class="report-frame" id="reportFrame" title="Diagnostic report" referrerpolicy="no-referrer"></iframe>
+  </div>
+</section>
 <script>
 var selected = null;
+var selectedDevice = null;
+var lastDevices = [];
+var runBusy = false;
+var reportPaths = { '/api/snapshot-report': 'Device Snapshot', '/api/procrank-report': 'Memory Snapshot' };
+var currentReportPath = null;
+var reportTrigger = null;
+var reportTimer = null;
+
+function setReportBackgroundInert(inert) {
+  [document.querySelector('.appbar'), document.querySelector('main')].forEach(function (el) {
+    if (!el) return;
+    el.inert = inert;
+    if (inert) el.setAttribute('aria-hidden', 'true'); else el.removeAttribute('aria-hidden');
+  });
+}
+
+function loadReportFrame() {
+  var viewer = document.getElementById('reportViewer');
+  var frame = document.getElementById('reportFrame');
+  viewer.className = 'report-viewer loading';
+  document.getElementById('reportStateTitle').textContent = 'Preparing report';
+  document.getElementById('reportStateText').textContent = 'Loading the locally generated diagnostic report…';
+  clearTimeout(reportTimer);
+  reportTimer = setTimeout(showReportError, 12000);
+  frame.src = currentReportPath + '?viewer=' + Date.now();
+}
+
+function openReport(path, trigger) {
+  if (!Object.prototype.hasOwnProperty.call(reportPaths, path)) return false;
+  currentReportPath = path;
+  reportTrigger = trigger || document.activeElement;
+  var viewer = document.getElementById('reportViewer');
+  document.getElementById('reportViewerTitle').textContent = reportPaths[path];
+  document.getElementById('reportFrame').title = reportPaths[path] + ' report';
+  viewer.hidden = false;
+  document.body.classList.add('report-open');
+  setReportBackgroundInert(true);
+  loadReportFrame();
+  document.getElementById('reportBack').focus();
+  return true;
+}
+
+function reportLoaded() {
+  var viewer = document.getElementById('reportViewer');
+  if (viewer.hidden || !currentReportPath) return;
+  clearTimeout(reportTimer);
+  viewer.className = 'report-viewer loaded';
+}
+
+function showReportError() {
+  var viewer = document.getElementById('reportViewer');
+  if (viewer.hidden || !currentReportPath) return;
+  viewer.className = 'report-viewer failed';
+  document.getElementById('reportStateTitle').textContent = 'Report did not load';
+  document.getElementById('reportStateText').textContent = 'The local report took too long to open. Retry it or return to Studio.';
+}
+
+function retryReport() { if (currentReportPath) loadReportFrame(); }
+
+function openReportExternally() {
+  if (currentReportPath && Object.prototype.hasOwnProperty.call(reportPaths, currentReportPath)) {
+    window.open(currentReportPath, '_blank', 'noopener');
+  }
+}
+
+function closeReport() {
+  var viewer = document.getElementById('reportViewer');
+  if (viewer.hidden) return;
+  clearTimeout(reportTimer);
+  currentReportPath = null;
+  viewer.hidden = true;
+  viewer.className = 'report-viewer';
+  document.getElementById('reportFrame').src = 'about:blank';
+  document.body.classList.remove('report-open');
+  setReportBackgroundInert(false);
+  var focusTarget = reportTrigger;
+  reportTrigger = null;
+  if (focusTarget && document.contains(focusTarget)) focusTarget.focus();
+}
+
+document.getElementById('reportFrame').addEventListener('load', reportLoaded);
+document.getElementById('reportFrame').addEventListener('error', showReportError);
+document.addEventListener('keydown', function (event) {
+  if (event.key === 'Escape' && !document.getElementById('reportViewer').hidden) closeReport();
+});
 
 var devicesLoading = false;
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, function (ch) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+  });
+}
+
+function deviceName(dev) {
+  var match = /(?:^|\s)model:([^\s]+)/.exec(dev.desc || '');
+  return match ? match[1].replace(/_/g, ' ') : (dev.desc || dev.serial);
+}
+
+function renderDevices(devices) {
+  var grid = document.getElementById('devices');
+  var usable = devices.filter(function (dev) { return dev.state === 'device'; });
+  if (!devices.length) {
+    selected = null;
+    selectedDevice = null;
+    grid.innerHTML = '<div class="empty">No authorized device found.<br>Connect over USB or <b>adb connect &lt;ip&gt;</b>, then scan again.</div>';
+    updateSummary();
+    return;
+  }
+  if (!usable.some(function (dev) { return dev.serial === selected; })) selected = usable.length ? usable[0].serial : null;
+  selectedDevice = devices.filter(function (dev) { return dev.serial === selected; })[0] || null;
+  var html = '';
+  devices.forEach(function (dev) {
+    var ready = dev.state === 'device';
+    var isSelected = ready && dev.serial === selected;
+    var serial = escapeHtml(dev.serial);
+    var state = escapeHtml(dev.state);
+    var model = escapeHtml(deviceName(dev));
+    var android = dev.android ? ('Android ' + escapeHtml(dev.android)) : 'Android version unavailable';
+    var cls = 'dev' + (ready ? '' : ' dead') + (isSelected ? ' selected' : '');
+    var badge = ready ? '<span class="badge ok">ready</span>' : '<span class="badge bad">' + state + '</span>';
+    var rootHtml = '';
+    if (dev.root === 'root') rootHtml = '<span class="rootchip root">&#10003; Root enabled</span>';
+    else if (dev.root === 'available') rootHtml = '<button class="rootbtn" type="button" data-rootserial="' + serial + '">Enable adb root</button>';
+    html += '<div class="' + cls + '" data-serial="' + serial + '" data-usable="' + ready + '" role="option" aria-selected="' + isSelected + '" tabindex="' + (ready ? '0' : '-1') + '">'
+          + '<div class="device-top"><span class="device-glyph" aria-hidden="true"></span>' + badge + '</div>'
+          + '<div class="model">' + model + '</div><div class="serial">' + serial + '</div>'
+          + '<div class="meta">' + android + '</div>' + rootHtml + '</div>';
+  });
+  grid.innerHTML = html;
+  Array.prototype.forEach.call(grid.children, function (el) {
+    if (el.dataset.usable !== 'true') return;
+    var choose = function () { selected = el.dataset.serial; renderDevices(lastDevices); };
+    el.onclick = choose;
+    el.onkeydown = function (event) {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(); }
+    };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.rootbtn'), function (btn) {
+    btn.onclick = function (event) {
+      event.stopPropagation();
+      btn.disabled = true;
+      btn.textContent = 'Restarting adbd…';
+      var p = new URLSearchParams();
+      p.set('serial', btn.dataset.rootserial);
+      fetch('/api/root', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: p.toString() })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) document.getElementById('msg').textContent = d.error || 'adb root failed';
+          setTimeout(loadDevices, 1500);
+        })
+        .catch(function () { document.getElementById('msg').textContent = 'Could not restart adbd.'; setTimeout(loadDevices, 1500); });
+    };
+  });
+  updateSummary();
+}
+
 function loadDevices() {
   if (devicesLoading) return;   // never stack polls behind a slow adb — that exhausts the browser's connections
   devicesLoading = true;
-  fetch('/api/devices').then(function (r) { devicesLoading = false; return r.json(); }, function (e) { devicesLoading = false; throw e; }).then(function (d) {
-    document.getElementById('banner').style.display = d.busy ? 'block' : 'none';
-    var grid = document.getElementById('devices');
-    if (!d.devices.length) {
-      grid.innerHTML = '<div class="empty">No device found. Connect a device via USB (or adb connect &lt;ip&gt;) and make sure USB debugging is authorized.</div>';
-      selected = null;
-      return;
-    }
-    var html = '';
-    d.devices.forEach(function (dev) {
-      var usable = dev.state === 'device';
-      var cls = 'dev' + (usable ? '' : ' dead') + (dev.serial === selected ? ' selected' : '');
-      var badge = usable ? '<span class="badge ok">ready</span>' : '<span class="badge bad">' + dev.state + '</span>';
-      var model = dev.desc || dev.serial;
-      var android = dev.android ? ('Android ' + dev.android) : '';
-      var rootHtml = '';
-      if (dev.root === 'root') {
-        rootHtml = '<span class="rootchip root">&#10003; adbd running as root</span>';
-      } else if (dev.root === 'available') {
-        rootHtml = '<button class="rootbtn" data-rootserial="' + dev.serial + '">&#9889; Enable root (adb root)</button>';
-      }
-      html += '<div class="' + cls + '" data-serial="' + dev.serial + '" data-usable="' + usable + '">'
-            + badge + '<div class="serial">' + dev.serial + '</div>'
-            + '<div class="model">' + model + '</div>'
-            + '<div class="meta">' + android + '</div>' + rootHtml + '</div>';
-    });
-    grid.innerHTML = html;
-    var first = null;
-    Array.prototype.forEach.call(grid.children, function (el) {
-      if (el.dataset.usable === 'true') {
-        if (!first) first = el;
-        el.onclick = function () { selected = el.dataset.serial; loadDevices(); };
-      }
-    });
-    if (!selected && first) { selected = first.dataset.serial; loadDevices(); }
-    Array.prototype.forEach.call(document.querySelectorAll('.rootbtn'), function (btn) {
-      btn.onclick = function (ev) {
-        ev.stopPropagation();
-        btn.disabled = true;
-        btn.textContent = 'Restarting adbd...';
-        var p = new URLSearchParams();
-        p.set('serial', btn.dataset.rootserial);
-        fetch('/api/root', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: p.toString() })
-          .then(function (r) { return r.json(); })
-          .then(function (d) {
-            if (!d.ok) alert(d.error || 'adb root failed');
-            setTimeout(loadDevices, 1500);
-          })
-          .catch(function () { setTimeout(loadDevices, 1500); });
-      };
-    });
-  }).catch(function () {});
+  document.getElementById('refreshBtn').classList.add('loading');
+  fetch('/api/devices').then(function (r) { return r.json(); }).then(function (d) {
+    devicesLoading = false;
+    document.getElementById('refreshBtn').classList.remove('loading');
+    runBusy = !!d.busy;
+    document.getElementById('banner').style.display = runBusy ? 'flex' : 'none';
+    lastDevices = d.devices || [];
+    renderDevices(lastDevices);
+  }).catch(function () {
+    devicesLoading = false;
+    document.getElementById('refreshBtn').classList.remove('loading');
+    if (!lastDevices.length) document.getElementById('devices').innerHTML = '<div class="empty">Device scan failed. Check ADB, then <button class="refresh" type="button" onclick="loadDevices()">try again</button>.</div>';
+    document.getElementById('msg').textContent = 'Could not refresh ADB devices.';
+  });
 }
 
 document.getElementById('zap').onchange = function () {
   document.getElementById('zapcfg').style.display = this.checked ? 'flex' : 'none';
+  updateSummary();
 };
 
-function toggleMetrics() {
-  var hdr = document.getElementById('metricsHdr');
-  var cfg = document.getElementById('metricsCfg');
-  var open = cfg.style.display !== 'none';
-  cfg.style.display = open ? 'none' : 'block';
-  if (open) hdr.classList.remove('open'); else hdr.classList.add('open');
+function togglePanel(headerId, contentId) {
+  var header = document.getElementById(headerId);
+  var content = document.getElementById(contentId);
+  var open = !content.classList.contains('open');
+  content.classList.toggle('open', open);
+  header.classList.toggle('open', open);
+  header.setAttribute('aria-expanded', open ? 'true' : 'false');
+  content.setAttribute('aria-hidden', open ? 'false' : 'true');
+  if (open) content.removeAttribute('inert'); else content.setAttribute('inert', '');
+}
+
+function toggleCapture() { togglePanel('captureHdr', 'captureCfg'); }
+function toggleMetrics() { togglePanel('metricsHdr', 'metricsCfg'); }
+
+var CAPTURE_IDS = ['logcat', 'zap', 'jank', 'profile', 'perfetto'];
+var METRIC_IDS = ['m_cpu', 'm_cpuidle', 'm_percore', 'm_load', 'm_thermal', 'm_freq', 'm_network', 'm_topprocs',
+  'm_mem', 'm_mempct', 'm_swap', 'm_zone', 'm_psi', 'm_pgfault', 'm_reclaim', 'm_topmem',
+  'm_pss', 'm_appcpu', 'm_maincpu', 'm_mediacpu', 'm_playback'];
+
+function checkedCount(ids) {
+  return ids.reduce(function (count, id) { return count + (document.getElementById(id).checked ? 1 : 0); }, 0);
+}
+
+function updateSummary() {
+  var captureCount = checkedCount(CAPTURE_IDS);
+  var metricCount = checkedCount(METRIC_IDS);
+  var duration = document.getElementById('duration').value || '—';
+  var interval = document.getElementById('interval').value || '—';
+  var packageName = document.getElementById('package').value.trim();
+  document.getElementById('sumDevice').textContent = selectedDevice ? deviceName(selectedDevice) : 'Waiting for a device';
+  document.getElementById('sumSerial').textContent = selectedDevice ? selectedDevice.serial : 'Select an authorized target';
+  document.getElementById('diagTarget').textContent = selectedDevice ? ('Target: ' + deviceName(selectedDevice) + ' · ' + selectedDevice.serial) : 'Select an authorized target';
+  document.getElementById('sumDuration').textContent = duration + ' sec';
+  document.getElementById('sumInterval').textContent = 'Every ' + interval + ' sec';
+  document.getElementById('sumPackage').textContent = packageName || 'System-wide';
+  document.getElementById('sumCaptures').textContent = captureCount + ' enabled';
+  document.getElementById('sumMetrics').textContent = metricCount + ' enabled';
+  document.getElementById('captureCount').textContent = captureCount + ' on';
+  document.getElementById('metricCount').textContent = metricCount + ' on';
+  document.getElementById('startBtn').disabled = !selected || runBusy;
+  document.getElementById('snapBtn').disabled = !selected;
+  document.getElementById('procBtn').disabled = !selected;
+}
+
+function setLaunchState(active) {
+  var btn = document.getElementById('startBtn');
+  btn.classList.toggle('loading', active);
+  document.getElementById('startLabel').textContent = active ? 'Starting measurement…' : 'Launch performance run';
+  btn.disabled = active || !selected || runBusy;
 }
 
 function startRun() {
   var msg = document.getElementById('msg');
   msg.textContent = '';
-  if (!selected) { msg.textContent = 'Select a device first.'; return; }
+  if (!selected) { msg.textContent = 'Select a device first.'; document.getElementById('devices').focus(); return; }
   var p = new URLSearchParams();
   p.set('serial', selected);
   p.set('duration', document.getElementById('duration').value);
@@ -327,14 +873,14 @@ function startRun() {
   p.set('appCpu', document.getElementById('m_appcpu').checked);
   p.set('mainCpu', document.getElementById('m_maincpu').checked);
   p.set('mediaCpu', document.getElementById('m_mediacpu').checked);
-  document.getElementById('startBtn').disabled = true;
+  setLaunchState(true);
   fetch('/api/start', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: p.toString() })
     .then(function (r) { return r.json(); })
     .then(function (d) {
       if (d.ok) { window.location = '/dashboard?v=' + Date.now(); }
-      else { msg.textContent = d.error || 'Failed to start'; document.getElementById('startBtn').disabled = false; }
+      else { msg.textContent = d.error || 'Failed to start'; setLaunchState(false); }
     })
-    .catch(function () { msg.textContent = 'Request failed'; document.getElementById('startBtn').disabled = false; });
+    .catch(function () { msg.textContent = 'Request failed'; setLaunchState(false); });
 }
 
 // Device snapshot — one-shot STB capabilities capture → PDF with progress bar.
@@ -343,7 +889,7 @@ function takeSnapshot() {
   var btn = document.getElementById('snapBtn'); btn.disabled = true;
   var wrap = document.getElementById('snapProgWrap'); wrap.style.display = 'block';
   var bar = document.getElementById('snapProg'); var msg = document.getElementById('snapMsg');
-  bar.style.background = '#4f46e5'; bar.style.width = '5%'; msg.textContent = 'Starting capture…';
+  bar.style.background = '#9e8cff'; bar.style.width = '5%'; msg.textContent = 'Starting capture…';
   var p = new URLSearchParams(); p.set('serial', selected);
   fetch('/api/snapshot', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: p.toString() })
     .then(function (r) { return r.json(); })
@@ -356,12 +902,13 @@ function takeSnapshot() {
 function pollSnapshot(btn, bar, msg) {
   fetch('/api/snapshot-status').then(function (r) { return r.json(); }).then(function (d) {
     bar.style.width = Math.max(5, d.progress) + '%';
-    if (d.error) { bar.style.background = '#dc2626'; msg.textContent = 'Error: ' + d.error; btn.disabled = false; return; }
+    if (d.error) { bar.style.background = '#ff7676'; msg.textContent = 'Capture failed: ' + d.error + ' — retry when ready.'; btn.disabled = false; return; }
     if (d.done) {
-      bar.style.width = '100%'; bar.style.background = '#16a34a';
-      msg.innerHTML = '✓ Snapshot ready — <a href="/api/snapshot-report" target="_blank">open the interactive report</a>';
+      bar.style.width = '100%'; bar.style.background = '#61d89c';
+      msg.innerHTML = '✓ Snapshot ready — <a href="/api/snapshot-report">open the interactive report</a>';
+      msg.querySelector('a').onclick = function (event) { event.preventDefault(); openReport('/api/snapshot-report', btn); };
       btn.disabled = false;
-      window.open('/api/snapshot-report', '_blank');   // open interactive HTML in a new tab
+      openReport('/api/snapshot-report', btn);
       return;
     }
     msg.textContent = 'Capturing device capabilities… ' + d.progress + '%';
@@ -375,7 +922,7 @@ function takeProcrank() {
   var btn = document.getElementById('procBtn'); btn.disabled = true;
   var wrap = document.getElementById('procProgWrap'); wrap.style.display = 'block';
   var bar = document.getElementById('procProg'); var msg = document.getElementById('procMsg');
-  bar.style.background = '#0891b2'; bar.style.width = '5%'; msg.textContent = 'Starting capture…';
+  bar.style.background = '#58d6c7'; bar.style.width = '5%'; msg.textContent = 'Starting capture…';
   var p = new URLSearchParams(); p.set('serial', selected);
   fetch('/api/procrank-snapshot', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: p.toString() })
     .then(function (r) { return r.json(); })
@@ -388,12 +935,13 @@ function takeProcrank() {
 function pollProcrank(btn, bar, msg) {
   fetch('/api/procrank-status').then(function (r) { return r.json(); }).then(function (d) {
     bar.style.width = Math.max(5, d.progress) + '%';
-    if (d.error) { bar.style.background = '#dc2626'; msg.textContent = 'Error: ' + d.error; btn.disabled = false; return; }
+    if (d.error) { bar.style.background = '#ff7676'; msg.textContent = 'Capture failed: ' + d.error + ' — retry when ready.'; btn.disabled = false; return; }
     if (d.done) {
-      bar.style.width = '100%'; bar.style.background = '#16a34a';
-      msg.innerHTML = '✓ Procrank ready — <a href="/api/procrank-report" target="_blank">open the interactive report</a>';
+      bar.style.width = '100%'; bar.style.background = '#61d89c';
+      msg.innerHTML = '✓ Procrank ready — <a href="/api/procrank-report">open the interactive report</a>';
+      msg.querySelector('a').onclick = function (event) { event.preventDefault(); openReport('/api/procrank-report', btn); };
       btn.disabled = false;
-      window.open('/api/procrank-report', '_blank');
+      openReport('/api/procrank-report', btn);
       return;
     }
     msg.textContent = 'Capturing per-process memory… ' + d.progress + '%';
@@ -422,8 +970,13 @@ fetch('/api/defaults').then(function (r) { return r.json(); }).then(function (d)
   if (el && d && d.reportsDir) { el.value = d.reportsDir; el.placeholder = d.reportsDir; }
   var b = document.getElementById('buildtag');
   if (b && d && d.build) { b.textContent = d.build; }
+  updateSummary();
 }).catch(function () {});
 
+Array.prototype.forEach.call(document.querySelectorAll('input'), function (input) {
+  input.addEventListener('input', updateSummary);
+});
+updateSummary();
 loadDevices();
 setInterval(loadDevices, 5000);
 </script>

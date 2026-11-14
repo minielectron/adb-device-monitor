@@ -12,6 +12,15 @@ import java.net.InetSocketAddress
 import java.net.URLDecoder
 import java.util.Locale
 
+internal val OFFLINE_WEB_ASSETS = mapOf(
+    "/assets/chart.umd.js" to ("web/chart.umd.js" to "application/javascript"),
+    "/assets/jspdf.umd.min.js" to ("web/jspdf.umd.min.js" to "application/javascript")
+)
+
+internal const val PAGE_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+
+internal fun resolveOfflineAsset(path: String): Pair<String, String>? = OFFLINE_WEB_ASSETS[path]
+
 /**
  * ADB Performance Studio — the web layer.
  *
@@ -56,8 +65,9 @@ class WebApp(
 
     fun start() {
         val s = HttpServer.create(if (bindHost != null) InetSocketAddress(bindHost, port) else InetSocketAddress(port), 0)
-        route(s, "/") { ex -> respond(ex, 200, "text/html", HOME_PAGE.replace("__BUILD__", esc(buildTag())).replace("</head>", CLIENT_LOG_TAG + "</head>")) }
-        route(s, "/dashboard") { ex -> respond(ex, 200, "text/html", DASHBOARD_PAGE.replace("__BUILD__", esc(buildTag())).replace("</head>", CLIENT_LOG_TAG + "</head>")) }
+        route(s, "/") { ex -> respondPage(ex, HOME_PAGE.replace("__BUILD__", esc(buildTag())).replace("</head>", STUDIO_UI_CSS + CLIENT_LOG_TAG + "</head>")) }
+        route(s, "/dashboard") { ex -> respondPage(ex, DASHBOARD_PAGE.replace("__BUILD__", esc(buildTag())).replace("</head>", STUDIO_UI_CSS + CLIENT_LOG_TAG + "</head>")) }
+        OFFLINE_WEB_ASSETS.keys.forEach { path -> route(s, path) { ex -> handleOfflineAsset(ex, path) } }
         route(s, "/api/devices") { ex -> respond(ex, 200, "application/json", devicesJson()) }
         route(s, "/api/defaults") { ex ->
             val dir = MonitorSession.resolveBaseDir(null).absolutePath
@@ -90,7 +100,7 @@ class WebApp(
         route(s, "/api/root") { ex -> handleRoot(ex) }
         route(s, "/api/runs") { ex -> respond(ex, 200, "application/json", runsJson()) }
         route(s, "/api/runcsv") { ex -> handleRunCsv(ex) }
-        route(s, "/compare") { ex -> respond(ex, 200, "text/html", COMPARE_PAGE.replace("</head>", CLIENT_LOG_TAG + "</head>")) }
+        route(s, "/compare") { ex -> respondPage(ex, COMPARE_PAGE.replace("</head>", STUDIO_UI_CSS + CLIENT_LOG_TAG + "</head>")) }
         route(s, "/clientlog.js") { ex -> respond(ex, 200, "application/javascript", CLIENT_LOG_JS) }
         route(s, "/api/clientlog") { ex -> handleClientLog(ex) }
         route(s, "/api/diagnostics") { ex -> handleDiagnostics(ex) }
@@ -681,6 +691,28 @@ class WebApp(
         ex.responseHeaders.add("Cache-Control", "no-store, no-cache, must-revalidate")
         ex.responseHeaders.add("Pragma", "no-cache")
         ex.sendResponseHeaders(code, bytes.size.toLong())
+        ex.responseBody.use { it.write(bytes) }
+    }
+
+    private fun respondPage(ex: HttpExchange, body: String) {
+        ex.responseHeaders.add("Content-Security-Policy", PAGE_CSP)
+        ex.responseHeaders.add("X-Content-Type-Options", "nosniff")
+        respond(ex, 200, "text/html", body)
+    }
+
+    private fun handleOfflineAsset(ex: HttpExchange, expectedPath: String) {
+        if (ex.requestMethod != "GET" || ex.requestURI.path != expectedPath) {
+            respond(ex, 404, "text/plain", "Not found")
+            return
+        }
+        val (resource, type) = resolveOfflineAsset(expectedPath)
+            ?: run { respond(ex, 404, "text/plain", "Not found"); return }
+        val bytes = WebApp::class.java.classLoader.getResourceAsStream(resource)?.use { it.readBytes() }
+            ?: run { Log.error("[http] bundled asset missing: $resource"); respond(ex, 500, "text/plain", "Bundled asset missing"); return }
+        ex.responseHeaders.add("Content-Type", "$type; charset=utf-8")
+        ex.responseHeaders.add("Cache-Control", "public, max-age=31536000, immutable")
+        ex.responseHeaders.add("X-Content-Type-Options", "nosniff")
+        ex.sendResponseHeaders(200, bytes.size.toLong())
         ex.responseBody.use { it.write(bytes) }
     }
 
