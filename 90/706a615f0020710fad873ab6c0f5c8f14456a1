@@ -1,0 +1,21 @@
+desktop/package-lock.json
+  s_6a41e6dc5a6d74::t_93612a21709066 1-220
+desktop/src-tauri/Cargo.lock
+  s_6a41e6dc5a6d74::t_0679cc4ad789fc 1-4458
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "90706a615f0020710fad873ab6c0f5c8f14456a1",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
