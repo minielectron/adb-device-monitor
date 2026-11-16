@@ -1,0 +1,33 @@
+src/main/kotlin/devicemonitor/domain/playerdebug/IncidentModels.kt
+  s_6a41e6dc5a6d74::t_dc1f7c4f653088 1-44
+src/main/kotlin/devicemonitor/domain/playerdebug/PlayerTelemetryProtocol.kt
+  s_6a41e6dc5a6d74::t_406c53a80994ac 1-37
+src/test/kotlin/devicemonitor/PlayerDebugModelTest.kt
+  s_6a41e6dc5a6d74::t_dc1f7c4f653088 1-116
+src/test/kotlin/devicemonitor/PlayerDebugRedactorTest.kt
+  s_6a41e6dc5a6d74::t_aef6e6cf24efef 1-64
+src/main/kotlin/devicemonitor/domain/playerdebug/PlayerDebugModels.kt
+  s_6a41e6dc5a6d74::t_dc1f7c4f653088 1-223
+src/main/kotlin/devicemonitor/data/playerdebug/OptdParser.kt
+  s_6a41e6dc5a6d74::t_406c53a80994ac 1-182
+src/test/kotlin/devicemonitor/OptdParserTest.kt
+  s_6a41e6dc5a6d74::t_406c53a80994ac 1-104
+src/main/kotlin/devicemonitor/data/playerdebug/PlayerDebugRedactor.kt
+  s_6a41e6dc5a6d74::t_aef6e6cf24efef 1-105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d904e463c05cfb074ce662fbb66a578dd254b416",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
