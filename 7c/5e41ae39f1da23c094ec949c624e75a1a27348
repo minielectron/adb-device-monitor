@@ -1,0 +1,57 @@
+src/test/kotlin/devicemonitor/MediaSnapshotCollectorTest.kt
+  s_6a41e6dc5a6d74::t_97771c8118b642 1-51,53-54
+  s_6a41e6dc5a6d74::t_de5644d2fa0250 52
+src/main/kotlin/devicemonitor/data/device/CapabilityProbe.kt
+  s_6a41e6dc5a6d74::t_97771c8118b642 50-52,84-86
+src/main/kotlin/devicemonitor/application/playerdebug/PlayerDebugService.kt
+  s_6a41e6dc5a6d74::t_aed2b22205d3e4 75-78
+  s_6a41e6dc5a6d74::t_96069192c72939 1-74,79-126
+src/test/kotlin/devicemonitor/CapabilityProbeTest.kt
+  s_6a41e6dc5a6d74::t_aed2b22205d3e4 30-31,49-51
+src/test/kotlin/devicemonitor/PassivePlaybackProbeTest.kt
+  s_6a41e6dc5a6d74::t_a356a320726dc4 1-49
+src/main/kotlin/devicemonitor/data/playerdebug/PassivePlaybackProbe.kt
+  s_6a41e6dc5a6d74::t_7a594df632e34d 28-29,77-83,85
+  s_6a41e6dc5a6d74::t_a356a320726dc4 1-27,30-76,84,86-158
+src/main/kotlin/devicemonitor/application/Session.kt
+  s_6a41e6dc5a6d74::t_264b757d0ab8d2 8,10,57,107-108,115,350-352,522,525-529,533-539,692-700
+  s_6a41e6dc5a6d74::t_c7f6c49aef5cbf 9,109,116-119,192-193,198,353,530-532,606-608,614-637
+  s_6a41e6dc5a6d74::t_ed3cb0ba6a2dd1 579
+  s_6a41e6dc5a6d74::t_aed2b22205d3e4 678-680
+  s_6a41e6dc5a6d74::t_31f9a2b0780ef1 75-79
+  s_e32f6b60da929b::t_4bfda9cc00722a 638-639
+src/main/kotlin/devicemonitor/data/logcat/Playback.kt
+  s_6a41e6dc5a6d74::t_a356a320726dc4 119-126
+src/main/kotlin/devicemonitor/data/playerdebug/MediaSnapshotCollector.kt
+  s_6a41e6dc5a6d74::t_6dba4e6b3f98a3 31-34
+  s_6a41e6dc5a6d74::t_97771c8118b642 1-26,28-30,35-105
+  s_6a41e6dc5a6d74::t_de5644d2fa0250 27
+src/test/kotlin/devicemonitor/PlayerDebugServiceTest.kt
+  s_6a41e6dc5a6d74::t_96069192c72939 1-77
+src/main/kotlin/devicemonitor/domain/releaseguard/ReleaseGuardModels.kt
+  s_6a41e6dc5a6d74::t_97771c8118b642 24-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7c5e41ae39f1da23c094ec949c624e75a1a27348",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    },
+    "s_e32f6b60da929b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "481abbc6-6655-44a0-bdf1-8788185db571",
+        "model": "unknown"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
