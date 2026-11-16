@@ -1,0 +1,25 @@
+src/main/kotlin/devicemonitor/application/releaseguard/EvaluationEngine.kt
+  s_6a41e6dc5a6d74::t_60162e5a88aa2b 1-156
+src/test/kotlin/devicemonitor/ReleaseGuardModelTest.kt
+  s_6a41e6dc5a6d74::t_60162e5a88aa2b 1-92
+src/test/kotlin/devicemonitor/ReleaseGuardEvaluationTest.kt
+  s_6a41e6dc5a6d74::t_60162e5a88aa2b 1-131
+src/main/kotlin/devicemonitor/domain/releaseguard/ReleaseGuardModels.kt
+  s_6a41e6dc5a6d74::t_60162e5a88aa2b 1-333
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9c0e5b0548387aee84de760b290e667dfdcc1d90",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
