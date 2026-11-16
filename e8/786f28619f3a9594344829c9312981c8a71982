@@ -1,0 +1,34 @@
+src/main/kotlin/devicemonitor/application/playerdebug/SessionGraphBuilder.kt
+  s_6a41e6dc5a6d74::t_4abcadf7058ab3 212
+  s_6a41e6dc5a6d74::t_370a37b38ca0a9 183-184
+  s_6a41e6dc5a6d74::t_382bf1f60e04e9 1-182,185-211,213-249
+src/test/kotlin/devicemonitor/SessionGraphBuilderTest.kt
+  s_6a41e6dc5a6d74::t_382bf1f60e04e9 1-98,101-104
+  s_6a41e6dc5a6d74::t_6e46146b8e667f 99-100
+src/main/kotlin/devicemonitor/application/playerdebug/EventReplay.kt
+  s_6a41e6dc5a6d74::t_ac277136ae583c 1-30,32-40,42,48-49,51-58,60-71,73-103
+  s_6a41e6dc5a6d74::t_370a37b38ca0a9 72
+  s_6a41e6dc5a6d74::t_74c2770c9a02c2 31
+  s_6a41e6dc5a6d74::t_08dc7c6efe8592 41,43-47,50,59
+src/main/kotlin/devicemonitor/domain/playerdebug/PlayerDebugModels.kt
+  s_6a41e6dc5a6d74::t_ac277136ae583c 224-231
+src/test/kotlin/devicemonitor/PlayerEventReplayTest.kt
+  s_6a41e6dc5a6d74::t_ac277136ae583c 1-46,56-80
+  s_6a41e6dc5a6d74::t_370a37b38ca0a9 47-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e8786f28619f3a9594344829c9312981c8a71982",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
