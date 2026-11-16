@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "offline-smoke",
+  "revision": 1,
+  "name": "Offline smoke",
+  "packageName": "com.fake.app",
+  "repetitions": 1,
+  "warmups": 0,
+  "steps": [
+    {
+      "durationMs": 2500,
+      "type": "wait"
+    }
+  ],
+  "budgets": [
+    {
+      "id": "cpu-max",
+      "name": "CPU maximum",
+      "metric": {
+        "id": "cpu_util_pct",
+        "unit": "%",
+        "normalizedAcrossDevices": true
+      },
+      "aggregation": "MAXIMUM",
+      "direction": "MAXIMUM",
+      "absoluteLimit": 95.0,
+      "severity": "CRITICAL",
+      "required": true
+    }
+  ],
+  "capture": {
+    "metrics": [],
+    "requiredCapabilities": []
+  }
+}

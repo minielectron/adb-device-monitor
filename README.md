@@ -28,6 +28,22 @@ The live dashboard shows all charts updating in real time, a zap/anomaly event f
 
 The home page also has two **one-click deep-dive snapshots** (no run required): **📸 Device Snapshot** — a device capabilities + memory-footprint report (PSS-by-category donut + process table), and **📊 Procrank Snapshot** — per-process VSS/RSS/PSS/USS as a top-15 bar chart and a sortable table. Both are rendered server-side as self-contained interactive HTML. See [docs/device-and-procrank-snapshot.md](docs/device-and-procrank-snapshot.md).
 
+### Offline Performance Release Guard
+
+Release Guard turns repeatable Android journeys into an offline release decision for Dev and QA. It stores versioned scenarios, probes device capabilities instead of relying on manufacturer rules, runs warm-ups and measured repetitions, compares explicit budgets with a promoted baseline, and produces local HTML, PDF, JSON, JUnit XML, and CSV evidence. Open **Release Guard** from Studio; drafts survive navigation and restarts.
+
+For a headless CI run:
+
+```bash
+java -jar build/libs/adb-device-monitor-1.0.0-all.jar \
+  --release-guard ./scenarios/cold-launch.json \
+  --device emulator-5554 \
+  --release-root ./release-guard-results \
+  --release-json
+```
+
+The mode is fully offline. Exit codes are stable: `0` pass, `2` warning, `3` budget failure, `4` invalid scenario/capability configuration, and `5` infrastructure failure. Use `--release-project <id>` for a saved scenario ID, `--apk <file>` to install a candidate build first, and `--allow-compatible-baseline` only when cross-device normalized metrics are intentional.
+
 ## Metrics collected
 
 | Metric | Source | Notes |
@@ -168,7 +184,7 @@ java -jar build/libs/adb-device-monitor-1.0.0-all.jar --duration 600 --interval 
 # then open http://localhost:8080
 ```
 
-`--serve <port>` starts an embedded web server (no extra dependencies) with live charts that update while monitoring runs: CPU, memory, PSI pressure, network, temperature/frequency, load/page-faults, and App PSS when `--package` is set — plus a live event table of zaps and flagged anomalies. The page needs internet access for the Chart.js CDN. When the run finishes the dashboard shows "finished" and stays available until you Ctrl+C; the PDF report and run folder are generated as usual.
+`--serve <port>` starts an embedded web server (no extra dependencies) with live charts that update while monitoring runs: CPU, memory, PSI pressure, network, temperature/frequency, load/page-faults, and App PSS when `--package` is set — plus a live event table of zaps and flagged anomalies. Chart.js and report dependencies are bundled, so the page stays fully offline. When the run finishes the dashboard shows "finished" and stays available until you Ctrl+C; the PDF report and run folder are generated as usual.
 
 ### Zap testing
 

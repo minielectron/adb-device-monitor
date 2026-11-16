@@ -7,6 +7,7 @@ import devicemonitor.data.device.DeviceDriver
 import devicemonitor.data.storage.*
 import devicemonitor.domain.*
 import devicemonitor.domain.releaseguard.*
+import devicemonitor.presentation.report.ReleaseGuardReport
 import java.io.File
 import java.time.Clock
 import java.time.Instant
@@ -253,6 +254,9 @@ class ScenarioRunner(
                 device = identity,
                 message = "Writing result artifacts"
             )
+            val exportManifest = manifest.copy(artifacts = artifactMap.toMap())
+            ReleaseGuardReport.write(location.directory, project, scenario, exportManifest, selectedBaseline)
+                .forEach { (name, file) -> artifactMap[name] = artifacts.relative(file) }
             val terminal = when (evaluation.verdict) {
                 Verdict.PASS -> ExecutionState.PASSED
                 Verdict.WARNING -> ExecutionState.WARNING
@@ -454,4 +458,3 @@ class ScenarioRunner(
 
     private fun now(): String = Instant.now(clock).toString()
 }
-

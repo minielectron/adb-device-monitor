@@ -58,6 +58,31 @@ Key options (full list via `--help`):
 Each run creates `run_<timestamp>_<manufacturer>_<model>/` containing `report.pdf`, `samples.csv`,
 `logcat.log`, `anomalies.log`, `device-info.log`.
 
+## Run — Offline Release Guard (headless CI)
+
+Use a scenario JSON exported from the Release Guard workspace, or a saved scenario ID from the same `--release-root`:
+
+```bash
+java -jar build/libs/adb-device-monitor-1.0.0-all.jar \
+  --release-guard ./scenarios/cold-launch.json \
+  --device emulator-5554 \
+  --release-root ./release-guard-results \
+  --build-label commit-abc123 \
+  --release-json
+```
+
+`--release-json` writes only the absolute evaluation JSON path to stdout; progress stays on stderr. Artifacts under the local root include `report.html`, `report.pdf`, `evaluation.json`, `result.junit.xml`, `summary.csv`, attempt reports, samples, and logs. No network service or cloud account is used.
+
+| Exit | Meaning |
+|------|---------|
+| `0` | all budgets pass |
+| `2` | warning budgets require review |
+| `3` | a release-blocking budget fails |
+| `4` | invalid scenario, missing required capability, or bad CLI configuration |
+| `5` | ADB, capture, storage, export, or cancellation infrastructure failure |
+
+Optional flags: `--release-project <id>` for a saved scenario, `--release-project-name <name>` for a file, `--apk <candidate.apk>` to install before the journey, and `--allow-compatible-baseline` for explicitly normalized cross-device budgets.
+
 ## Logs and diagnostics
 
 Line format: `2026-11-13 22:18:58.132 INFO  [monitor-session] message` (level, thread name).

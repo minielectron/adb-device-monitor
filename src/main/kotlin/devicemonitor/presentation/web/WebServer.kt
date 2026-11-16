@@ -904,6 +904,7 @@ class WebApp(
                 else -> "application/octet-stream"
             }
             val bytes = file.readBytes()
+            if (file.extension.equals("html", ignoreCase = true)) ex.responseHeaders.add("Content-Security-Policy", PAGE_CSP)
             ex.responseHeaders.add("Content-Type", type)
             ex.responseHeaders.add("Content-Disposition", "inline; filename=\"${file.name.replace("\"", "")}\"")
             ex.responseHeaders.add("X-Content-Type-Options", "nosniff")
