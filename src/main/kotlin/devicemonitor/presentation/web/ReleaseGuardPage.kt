@@ -82,7 +82,7 @@ internal val RELEASE_GUARD_PAGE = """<!DOCTYPE html>
   <div class="guard-grid studio-enter">
     <div class="guard-stack">
       <section class="studio-panel guard-card" aria-labelledby="projectTitle">
-        <div class="guard-toolbar"><div><h2 class="studio-section-title" id="projectTitle">Project</h2><p class="studio-section-copy">Group scenarios and baselines by application package.</p></div><div class="guard-toolbar-actions"><button class="studio-button" type="button" onclick="newProject()">New</button><button class="studio-button primary" type="button" onclick="saveProject()">Save project</button></div></div>
+        <div class="guard-toolbar"><div><h2 class="studio-section-title" id="projectTitle">Project</h2><p class="studio-section-copy">Group scenarios and baselines by application package.</p></div><div class="guard-toolbar-actions"><button class="studio-button" type="button" onclick="newProject()">New</button><button class="studio-button primary" type="button" onclick="saveProject().catch(function(){})">Save project</button></div></div>
         <div class="guard-row">
           <div class="guard-field span"><label for="projectSelect">Saved project</label><select id="projectSelect" onchange="selectProject()"><option value="">Create a project</option></select></div>
           <div class="guard-field"><label for="projectName">Project name</label><input id="projectName" placeholder="TV Player"></div>
@@ -92,7 +92,7 @@ internal val RELEASE_GUARD_PAGE = """<!DOCTYPE html>
       </section>
 
       <section class="studio-panel guard-card" aria-labelledby="scenarioTitle">
-        <div class="guard-toolbar"><div><h2 class="studio-section-title" id="scenarioTitle">Scenario</h2><p class="studio-section-copy">A versioned journey. Saving changed content creates a new immutable revision.</p></div><div class="guard-toolbar-actions"><button class="studio-button" type="button" onclick="newScenario()">New</button><button class="studio-button primary" type="button" onclick="saveScenario()">Save scenario</button></div></div>
+        <div class="guard-toolbar"><div><h2 class="studio-section-title" id="scenarioTitle">Scenario</h2><p class="studio-section-copy">A versioned journey. Saving changed content creates a new immutable revision.</p></div><div class="guard-toolbar-actions"><button class="studio-button" type="button" onclick="newScenario()">New</button><button class="studio-button primary" type="button" onclick="saveScenario().catch(function(){})">Save scenario</button></div></div>
         <div class="guard-row three">
           <div class="guard-field span"><label for="scenarioSelect">Saved scenario</label><select id="scenarioSelect" onchange="selectScenario()"><option value="">Create a scenario</option></select></div>
           <div class="guard-field"><label for="scenarioName">Scenario name</label><input id="scenarioName" placeholder="Cold launch and browse"></div>
