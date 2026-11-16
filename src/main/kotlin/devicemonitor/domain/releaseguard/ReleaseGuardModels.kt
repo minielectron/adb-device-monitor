@@ -59,19 +59,21 @@ enum class LogicalKey {
     MEDIA_PLAY_PAUSE
 }
 
-sealed class ScenarioStep(open val name: String?) {
-    data class InstallApk(val path: String, override val name: String? = null) : ScenarioStep(name)
-    data class UninstallPackage(override val name: String? = null) : ScenarioStep(name)
-    data class ClearAppData(override val name: String? = null) : ScenarioStep(name)
-    data class LaunchApp(override val name: String? = null) : ScenarioStep(name)
-    data class ForceStopApp(override val name: String? = null) : ScenarioStep(name)
-    data class GrantPermission(val permission: String, override val name: String? = null) : ScenarioStep(name)
-    data class Wait(val durationMs: Long, override val name: String? = null) : ScenarioStep(name)
-    data class BeginSection(val section: String, override val name: String? = null) : ScenarioStep(name)
-    data class EndSection(val section: String, override val name: String? = null) : ScenarioStep(name)
-    data class PressKey(val key: LogicalKey, override val name: String? = null) : ScenarioStep(name)
-    data class TapElement(val selector: UiSelector, override val name: String? = null) : ScenarioStep(name)
-    data class TapAt(val xPct: Double, val yPct: Double, override val name: String? = null) : ScenarioStep(name)
+sealed class ScenarioStep {
+    abstract val name: String?
+
+    data class InstallApk(val path: String, override val name: String? = null) : ScenarioStep()
+    data class UninstallPackage(override val name: String? = null) : ScenarioStep()
+    data class ClearAppData(override val name: String? = null) : ScenarioStep()
+    data class LaunchApp(override val name: String? = null) : ScenarioStep()
+    data class ForceStopApp(override val name: String? = null) : ScenarioStep()
+    data class GrantPermission(val permission: String, override val name: String? = null) : ScenarioStep()
+    data class Wait(val durationMs: Long, override val name: String? = null) : ScenarioStep()
+    data class BeginSection(val section: String, override val name: String? = null) : ScenarioStep()
+    data class EndSection(val section: String, override val name: String? = null) : ScenarioStep()
+    data class PressKey(val key: LogicalKey, override val name: String? = null) : ScenarioStep()
+    data class TapElement(val selector: UiSelector, override val name: String? = null) : ScenarioStep()
+    data class TapAt(val xPct: Double, val yPct: Double, override val name: String? = null) : ScenarioStep()
     data class Swipe(
         val fromXPct: Double,
         val fromYPct: Double,
@@ -79,30 +81,30 @@ sealed class ScenarioStep(open val name: String?) {
         val toYPct: Double,
         val durationMs: Long = 300,
         override val name: String? = null
-    ) : ScenarioStep(name)
-    data class EnterText(val text: String, override val name: String? = null) : ScenarioStep(name)
+    ) : ScenarioStep()
+    data class EnterText(val text: String, override val name: String? = null) : ScenarioStep()
     data class WaitForElement(
         val selector: UiSelector,
         val timeoutMs: Long = 15_000,
         override val name: String? = null
-    ) : ScenarioStep(name)
+    ) : ScenarioStep()
     data class WaitForActivity(
         val activity: String,
         val timeoutMs: Long = 15_000,
         override val name: String? = null
-    ) : ScenarioStep(name)
+    ) : ScenarioStep()
     data class WaitForLog(
         val pattern: String,
         val timeoutMs: Long = 15_000,
         override val name: String? = null
-    ) : ScenarioStep(name)
-    data class WaitForProcess(val timeoutMs: Long = 15_000, override val name: String? = null) : ScenarioStep(name)
-    data class CaptureScreenshot(val fileName: String, override val name: String? = null) : ScenarioStep(name)
+    ) : ScenarioStep()
+    data class WaitForProcess(val timeoutMs: Long = 15_000, override val name: String? = null) : ScenarioStep()
+    data class CaptureScreenshot(val fileName: String, override val name: String? = null) : ScenarioStep()
     data class Shell(
         val command: String,
         val timeoutMs: Long = 20_000,
         override val name: String? = null
-    ) : ScenarioStep(name)
+    ) : ScenarioStep()
 
     fun requiredCapabilities(): Set<DeviceCapability> = when (this) {
         is InstallApk, is UninstallPackage -> setOf(DeviceCapability.SHELL, DeviceCapability.PACKAGE_INSTALL)
@@ -144,6 +146,22 @@ enum class LimitDirection { MAXIMUM, MINIMUM }
 enum class Severity { CRITICAL, WARNING }
 enum class BudgetStatus { PASS, WARNING, FAIL, NOT_EVALUATED }
 enum class Verdict { PASS, WARNING, FAIL, CANCELLED }
+enum class ExecutionState {
+    DISCOVER,
+    PREFLIGHT,
+    PREPARE,
+    WARM_UP,
+    EXECUTE_AND_CAPTURE,
+    FINALIZE_ARTIFACTS,
+    EVALUATE,
+    EXPORT,
+    PASSED,
+    WARNING,
+    FAILED,
+    CANCELLED;
+
+    fun isTerminal(): Boolean = this in setOf(PASSED, WARNING, FAILED, CANCELLED)
+}
 
 data class PerformanceBudget(
     val id: String,
@@ -330,4 +348,3 @@ data class ReleaseEvaluation(
     val results: List<BudgetResult>,
     val executionErrors: List<String> = emptyList()
 )
-

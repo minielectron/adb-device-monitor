@@ -15,8 +15,10 @@ repositories {
 }
 
 dependencies {
+    implementation("com.google.code.gson:gson:2.15.0")
     implementation("org.jfree:jfreechart:1.5.4")
     implementation("org.apache.pdfbox:pdfbox:2.0.31")
+    implementation("org.xerial:sqlite-jdbc:3.54.1.0")
     testImplementation(kotlin("test"))
 }
 
