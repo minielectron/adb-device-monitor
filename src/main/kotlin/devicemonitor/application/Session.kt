@@ -1,6 +1,7 @@
 package devicemonitor.application
 
 import devicemonitor.domain.*
+import devicemonitor.domain.releaseguard.*
 import devicemonitor.data.adb.*
 import devicemonitor.data.metrics.*
 import devicemonitor.data.logcat.*
@@ -28,6 +29,7 @@ data class SessionConfig(
     val outputDir: String? = null,        // base folder for run_* output (null = auto: cwd if writable, else ~/ADB Device Monitor)
     val outputOverride: File? = null,
     val csvOverride: File? = null,
+    val runDirectoryOverride: File? = null,
     // ── Metric toggles — each maps 1:1 to a chart; disable to hide it (and, where it costs
     //    device time, to skip collecting it). ──
     // Defaults: only CPU pressure (PSI) and App PSS are on; everything else is opt-in.
@@ -92,12 +94,30 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
 
     val samples: MutableList<Sample> = Collections.synchronizedList(mutableListOf())
     val zapTimes: MutableList<Double> = Collections.synchronizedList(mutableListOf())
+    val scenarioMarkers: MutableList<ScenarioMarker> = Collections.synchronizedList(mutableListOf())
+    @Volatile private var captureStartNanos: Long? = null
 
     val logcatFile: File? get() = runDir?.let { File(it, "logcat.log") }
 
     @Volatile private var anomalyScanner: AnomalyScanner.Incremental? = null
     /** Anomalies accumulated incrementally so far (fast — no full re-scan). */
     fun liveAnomalies(): List<Anomaly> = anomalyScanner?.snapshot() ?: emptyList()
+
+    fun addScenarioMarker(
+        attempt: Int,
+        stepIndex: Int,
+        label: String,
+        section: String?,
+        type: ScenarioMarkerType,
+        outcome: ScenarioMarkerOutcome = ScenarioMarkerOutcome.RUNNING,
+        detail: String? = null
+    ): ScenarioMarker {
+        val start = captureStartNanos
+        val elapsed = if (start == null) 0.0 else ((System.nanoTime() - start) / 1e9).coerceAtLeast(0.0)
+        return ScenarioMarker(elapsed, attempt, stepIndex, label, section, type, outcome, detail).also {
+            scenarioMarkers += it
+        }
+    }
 
     // Heavy per-app collectors (dumpsys / procrank) run on a background thread and publish here,
     // so the fixed-interval sampling loop reads them without ever blocking on a slow adb call.
@@ -218,7 +238,8 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
         val labelPart = config.label?.let { "_${sanitize(it)}" } ?: ""
         val baseDir = resolveBaseDir(config.outputDir)
-        val dir = File(baseDir, "run_${stamp}${labelPart}_${sanitize(info.manufacturer)}_${sanitize(info.model)}")
+        val dir = config.runDirectoryOverride
+            ?: File(baseDir, "run_${stamp}${labelPart}_${sanitize(info.manufacturer)}_${sanitize(info.model)}")
         if (!dir.mkdirs() && !dir.isDirectory) {
             throw IllegalStateException(
                 "Cannot create the reports folder at ${dir.absolutePath}. " +
@@ -296,6 +317,7 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
 
         status = Status.RUNNING
         val startNanos = System.nanoTime()
+        captureStartNanos = startNanos
         if (config.zapMs != null) startZapper(startNanos)
 
         var prevSnap: Snapshot? = collector.snapshot()
@@ -682,6 +704,7 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         PdfReport(
             samples.toList(), info, config.target, config.intervalSec,
             config.zapMs, zapTimes.toList(), config.packageName, anomalies, appInfo,
+            scenarioMarkers = scenarioMarkers.toList(),
             label = config.label,
             loadEnabled = config.loadEnabled,
             pageFaultsEnabled = config.pageFaultsEnabled,

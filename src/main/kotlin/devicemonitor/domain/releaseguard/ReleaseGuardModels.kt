@@ -163,6 +163,20 @@ enum class ExecutionState {
     fun isTerminal(): Boolean = this in setOf(PASSED, WARNING, FAILED, CANCELLED)
 }
 
+enum class ScenarioMarkerType { STEP_START, STEP_END, SECTION_START, SECTION_END }
+enum class ScenarioMarkerOutcome { RUNNING, PASS, FAIL, SKIP }
+
+data class ScenarioMarker(
+    val elapsedSec: Double,
+    val attempt: Int,
+    val stepIndex: Int,
+    val label: String,
+    val section: String? = null,
+    val type: ScenarioMarkerType,
+    val outcome: ScenarioMarkerOutcome = ScenarioMarkerOutcome.RUNNING,
+    val detail: String? = null
+)
+
 data class PerformanceBudget(
     val id: String,
     val name: String,
@@ -198,6 +212,8 @@ data class ReleaseScenario(
             add(DeviceCapability.SHELL)
             steps.forEach { addAll(it.requiredCapabilities()) }
             addAll(capture.requiredCapabilities)
+            capture.metrics.forEach { addAll(it.requiredCapabilities()) }
+            budgets.forEach { addAll(it.metric.requiredCapabilities()) }
         }
 
     fun validate(): List<String> {
@@ -301,6 +317,15 @@ data class ReleaseScenario(
     companion object {
         private const val MAX_TIMEOUT_MS = 600_000L
     }
+}
+
+fun MetricDefinition.requiredCapabilities(): Set<DeviceCapability> = when (id.lowercase()) {
+    "jank_pct", "frame_input_ms", "frame_anim_ms", "frame_layout_ms", "frame_draw_ms" -> setOf(DeviceCapability.GFXINFO)
+    "cpu_temp_c" -> setOf(DeviceCapability.THERMAL)
+    "psi_cpu", "psi_memory", "psi_io" -> setOf(DeviceCapability.PSI)
+    "anr_count", "crash_count", "direct_reclaim_per_sec" -> setOf(DeviceCapability.LOGCAT)
+    "playback_state", "tunnel_mode" -> setOf(DeviceCapability.PLAYBACK_DIAGNOSTICS)
+    else -> emptySet()
 }
 
 data class MetricSeries(

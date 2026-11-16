@@ -26,6 +26,7 @@ data class RunManifest(
     val updatedAt: String,
     val device: BaselineIdentity? = null,
     val attempts: List<AttemptSummary> = emptyList(),
+    val markers: List<ScenarioMarker> = emptyList(),
     val evaluation: ReleaseEvaluation? = null,
     val artifacts: Map<String, String> = emptyMap(),
     val error: String? = null,

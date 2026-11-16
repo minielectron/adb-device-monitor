@@ -1,6 +1,7 @@
 package devicemonitor.presentation.report
 
 import devicemonitor.domain.*
+import devicemonitor.domain.releaseguard.*
 import devicemonitor.data.logcat.*
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.PDPage
@@ -39,6 +40,7 @@ class PdfReport(
     private val packageName: String? = null,
     private val anomalies: List<Anomaly> = emptyList(),
     private val appInfo: Map<String, String> = emptyMap(),
+    private val scenarioMarkers: List<ScenarioMarker> = emptyList(),
     private val label: String? = null,
     private val loadEnabled: Boolean = true,
     private val pageFaultsEnabled: Boolean = true,
@@ -563,6 +565,21 @@ class PdfReport(
             val marker = ValueMarker(t)
             marker.paint = Color(200, 60, 60, 140)
             marker.stroke = zapStroke
+            plot.addDomainMarker(marker)
+        }
+
+        for (event in scenarioMarkers) {
+            val marker = ValueMarker(event.elapsedSec)
+            marker.paint = when (event.type) {
+                ScenarioMarkerType.SECTION_START, ScenarioMarkerType.SECTION_END -> Color(125, 92, 210, 170)
+                ScenarioMarkerType.STEP_START, ScenarioMarkerType.STEP_END -> Color(60, 150, 145, 110)
+            }
+            marker.stroke = zapStroke
+            if (event.type == ScenarioMarkerType.SECTION_START) {
+                marker.label = event.section ?: event.label
+                marker.labelFont = java.awt.Font("SansSerif", java.awt.Font.PLAIN, 9)
+                marker.labelPaint = Color(100, 70, 175)
+            }
             plot.addDomainMarker(marker)
         }
 

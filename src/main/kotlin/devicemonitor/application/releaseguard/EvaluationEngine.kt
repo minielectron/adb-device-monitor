@@ -38,7 +38,7 @@ object EvaluationEngine {
         val series = matchingSeries(attempts, budget)
         val value = aggregate(budget.aggregation, series)
         val attemptNumbers = attempts.filter { attempt ->
-            attempt.metrics.any { it.metricId == budget.metric.id && it.section == budget.section && it.values.isNotEmpty() }
+            attempt.metrics.any { it.metricId == budget.metric.id && it.section == budget.section }
         }.map { it.attempt }
         val sampleCount = series.sumOf { it.values.count(Double::isFinite) }
 
@@ -100,11 +100,12 @@ object EvaluationEngine {
 
     private fun matchingSeries(attempts: List<AttemptSummary>, budget: PerformanceBudget): List<MetricSeries> =
         attempts.flatMap { it.metrics }.filter {
-            it.metricId == budget.metric.id && it.section == budget.section && it.values.any(Double::isFinite)
+            it.metricId == budget.metric.id && it.section == budget.section
         }
 
     internal fun aggregate(aggregation: Aggregation, series: List<MetricSeries>): Double? {
         val values = series.flatMap { it.values }.filter(Double::isFinite)
+        if (aggregation == Aggregation.COUNT) return if (series.isEmpty()) null else values.size.toDouble()
         if (values.isEmpty()) return null
         return when (aggregation) {
             Aggregation.MINIMUM -> values.minOrNull()
@@ -113,7 +114,7 @@ object EvaluationEngine {
             Aggregation.MEDIAN -> percentile(values, 50.0)
             Aggregation.P90 -> percentile(values, 90.0)
             Aggregation.P95 -> percentile(values, 95.0)
-            Aggregation.COUNT -> values.size.toDouble()
+            Aggregation.COUNT -> error("COUNT handled before empty-value validation")
             Aggregation.RATE -> {
                 val duration = series.mapNotNull { it.durationSec?.takeIf { seconds -> seconds > 0.0 && seconds.isFinite() } }.sum()
                 if (duration > 0.0) values.size / duration else null
@@ -153,4 +154,3 @@ object EvaluationEngine {
         }
     }
 }
-

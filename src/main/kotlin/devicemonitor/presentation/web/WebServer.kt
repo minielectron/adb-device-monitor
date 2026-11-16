@@ -475,6 +475,8 @@ class WebApp(
         }
         val zaps: List<Double>
         synchronized(s.zapTimes) { zaps = s.zapTimes.toList() }
+        val scenarioMarkers: List<devicemonitor.domain.releaseguard.ScenarioMarker>
+        synchronized(s.scenarioMarkers) { scenarioMarkers = s.scenarioMarkers.toList() }
         val anomalies = liveAnomalies(s)
         val info = s.info
 
@@ -591,6 +593,20 @@ class WebApp(
         }
         sb.append("],")
         sb.append("\"zaps\":[").append(zaps.joinToString(",") { num(it) }).append("],")
+        sb.append("\"scenarioMarkers\":[")
+        scenarioMarkers.forEachIndexed { i, marker ->
+            if (i > 0) sb.append(",")
+            sb.append("{\"t\":").append(num(marker.elapsedSec))
+                .append(",\"attempt\":").append(marker.attempt)
+                .append(",\"step\":").append(marker.stepIndex)
+                .append(",\"label\":\"").append(esc(marker.label))
+                .append("\",\"section\":").append(marker.section?.let { "\"${esc(it)}\"" } ?: "null")
+                .append(",\"type\":\"").append(marker.type.name.lowercase())
+                .append("\",\"outcome\":\"").append(marker.outcome.name.lowercase())
+                .append("\",\"detail\":").append(marker.detail?.let { "\"${esc(it.take(500))}\"" } ?: "null")
+                .append("}")
+        }
+        sb.append("],")
         sb.append("\"anomalies\":[")
         anomalies.forEachIndexed { i, a ->
             if (i > 0) sb.append(",")
