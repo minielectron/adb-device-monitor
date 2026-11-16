@@ -221,3 +221,11 @@ data class PlayerDebugCapture(
         require(!state.isTerminal() || endedAtNs != null) { "Terminal capture requires an end time" }
     }
 }
+
+data class PlayerSessionGraph(
+    val processEpochs: List<ProcessEpoch>,
+    val viewingSessions: List<ViewingSession>,
+    val events: List<PlaybackEvent>,
+    val duplicateEvents: Int = 0,
+    val lateEvents: Int = 0
+)
