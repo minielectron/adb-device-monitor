@@ -39,6 +39,14 @@ class PlayerDebugServiceTest {
         assertNotNull(service.graph)
     }
 
+    @Test fun analyzesIncidentsAfterCapture() {
+        val fake = FakeCapture(events = listOf(event("error.reported", 1, view = "v", player = "p")))
+        val service = PlayerDebugService { fake }
+        service.start(config())
+        awaitDone(service)
+        assertTrue(service.incidents.any { it.ruleId == "playback_error" })
+    }
+
     private fun config() = SessionConfig("device", 1.0, 0.1, packageName = "example.app")
 
     private fun awaitDone(service: PlayerDebugService) {

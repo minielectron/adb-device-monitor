@@ -50,12 +50,14 @@ class PlayerDebugService(private val captureFactory: PlayerMonitorCaptureFactory
     private val stopRequested = AtomicBoolean(false)
     @Volatile var progress = PlayerDebugProgress(); private set
     @Volatile var graph: PlayerSessionGraph? = null; private set
+    @Volatile var incidents: List<PlayerIncident> = emptyList(); private set
 
     @Synchronized fun start(config: SessionConfig) {
         require(worker?.isAlive != true) { "A Player Debugger capture is already active" }
         require(!config.packageName.isNullOrBlank()) { "Player Debugger requires a package name" }
         stopRequested.set(false)
         graph = null
+        incidents = emptyList()
         progress = PlayerDebugProgress(PlayerCaptureState.PROBE, "Preparing Player Debugger capture")
         val active = captureFactory.create(config.copy(logcatEnabled = true, playerDebugEnabled = true))
         capture = active
@@ -90,7 +92,9 @@ class PlayerDebugService(private val captureFactory: PlayerMonitorCaptureFactory
             progress = status(active, PlayerCaptureState.FINALIZING, "Finalizing evidence")
             val events = active.events()
             progress = status(active, PlayerCaptureState.ANALYZING, "Reconstructing player sessions")
-            graph = SessionGraphBuilder().build(EventReplay().replay(events))
+            val built = SessionGraphBuilder().build(EventReplay().replay(events))
+            graph = built
+            incidents = PlayerIncidentEngine().analyze(built)
             val finalState = when {
                 stopRequested.get() -> PlayerCaptureState.CANCELLED
                 active.status == MonitorSession.Status.DONE -> PlayerCaptureState.COMPLETE
