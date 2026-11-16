@@ -1,0 +1,42 @@
+src/test/kotlin/devicemonitor/SqliteRunRepositoryTest.kt
+  s_6a41e6dc5a6d74::t_86343e622093f2 1-53,55-113
+  s_6a41e6dc5a6d74::t_ab4fef8f3bfb66 54
+src/test/kotlin/devicemonitor/ReleaseGuardJsonTest.kt
+  s_6a41e6dc5a6d74::t_98694b00afc4a2 1-86
+src/main/kotlin/devicemonitor/data/storage/ReleaseGuardJson.kt
+  s_6a41e6dc5a6d74::t_86343e622093f2 57-59
+  s_6a41e6dc5a6d74::t_43dbc67d69ce27 81,90,98
+  s_6a41e6dc5a6d74::t_98694b00afc4a2 1-36,38-56,60-80,82-89,91-97,99-123
+  s_6a41e6dc5a6d74::t_5d51c22c4b4a35 37
+src/main/kotlin/devicemonitor/data/storage/SqliteRunRepository.kt
+  s_6a41e6dc5a6d74::t_86343e622093f2 1-385
+src/test/kotlin/devicemonitor/ReleaseGuardArtifactStoreTest.kt
+  s_6a41e6dc5a6d74::t_6e6b3d7e29f237 1-85
+src/main/kotlin/devicemonitor/domain/releaseguard/ReleaseGuardModels.kt
+  s_6a41e6dc5a6d74::t_5d51c22c4b4a35 62-64
+  s_6a41e6dc5a6d74::t_0689c21575978a 65-76,84-85,90,95,100-102,107
+  s_6a41e6dc5a6d74::t_98694b00afc4a2 149-164
+src/main/kotlin/devicemonitor/data/storage/RunRepository.kt
+  s_6a41e6dc5a6d74::t_86343e622093f2 1-27
+build.gradle.kts
+  s_6a41e6dc5a6d74::t_98694b00afc4a2 18,21
+src/main/kotlin/devicemonitor/data/storage/ArtifactStore.kt
+  s_6a41e6dc5a6d74::t_6e6b3d7e29f237 1-9,11-107,109-144
+  s_6a41e6dc5a6d74::t_574ab33a4600e7 10,108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "33392342fe0aa827888cccc67ddd2085a810f2f1",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
