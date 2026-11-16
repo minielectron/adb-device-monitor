@@ -1,0 +1,31 @@
+src/main/kotlin/devicemonitor/data/device/CapabilityProbe.kt
+  s_6a41e6dc5a6d74::t_db33b8c836f9ef 1-115
+src/main/kotlin/devicemonitor/domain/releaseguard/ReleaseGuardModels.kt
+  s_6a41e6dc5a6d74::t_db33b8c836f9ef 254-259
+src/main/kotlin/devicemonitor/data/device/DeviceDriver.kt
+  s_6a41e6dc5a6d74::t_db33b8c836f9ef 1-19
+src/test/kotlin/devicemonitor/AdbDeviceDriverTest.kt
+  s_6a41e6dc5a6d74::t_db33b8c836f9ef 1-2,4,6,8-35,61-62
+  s_6a41e6dc5a6d74::t_4ce9c80800e5e4 3,5,7,36-60
+src/test/kotlin/devicemonitor/CapabilityProbeTest.kt
+  s_6a41e6dc5a6d74::t_db33b8c836f9ef 1-61
+src/main/kotlin/devicemonitor/data/device/AdbDeviceDriver.kt
+  s_6a41e6dc5a6d74::t_db33b8c836f9ef 1-59,61-113,118-173,183-263,266-268
+  s_6a41e6dc5a6d74::t_51504761892d60 60,114-117,174-182,264-265
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b4e8ee155303dbdcff0cf39293117cdaa969433e",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
