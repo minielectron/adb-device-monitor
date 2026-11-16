@@ -251,7 +251,12 @@ data class ReleaseScenario(
                     validateTimeout(step.timeoutMs, prefix, errors)
                 }
                 is ScenarioStep.WaitForProcess -> validateTimeout(step.timeoutMs, prefix, errors)
-                is ScenarioStep.CaptureScreenshot -> if (step.fileName.isBlank()) errors += "$prefix screenshot file name is required"
+                is ScenarioStep.CaptureScreenshot -> {
+                    if (step.fileName.isBlank()) errors += "$prefix screenshot file name is required"
+                    else if (java.io.File(step.fileName).name != step.fileName || step.fileName in setOf(".", "..")) {
+                        errors += "$prefix screenshot file name must not contain a path"
+                    }
+                }
                 is ScenarioStep.Shell -> {
                     if (step.command.isBlank()) errors += "$prefix shell command is required"
                     validateTimeout(step.timeoutMs, prefix, errors)
