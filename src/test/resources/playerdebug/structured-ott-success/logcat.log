@@ -1,0 +1,4 @@
+11-17 10:00:00.000  100  101 I OPTD: {"schema":"optd/1","type":"session.started","timeNs":1000000000,"viewSessionId":"view","eventId":"e1","data":{}}
+11-17 10:00:00.100  100  101 I OPTD: {"schema":"optd/1","type":"player.created","timeNs":1100000000,"viewSessionId":"view","instanceId":"ott","eventId":"e2","data":{"delivery":"ott","role":"primary"}}
+11-17 10:00:01.000  100  101 I OPTD: {"schema":"optd/1","type":"state.changed","timeNs":2000000000,"viewSessionId":"view","instanceId":"ott","eventId":"e3","data":{"to":"playing"}}
+11-17 10:00:02.000  100  101 I OPTD: {"schema":"optd/1","type":"render.first_frame","timeNs":3000000000,"viewSessionId":"view","instanceId":"ott","eventId":"e4","data":{}}

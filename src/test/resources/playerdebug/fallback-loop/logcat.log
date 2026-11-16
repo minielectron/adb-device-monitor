@@ -1,0 +1,5 @@
+11-17 10:00:00.000  100  101 I OPTD: {"schema":"optd/1","type":"player.created","timeNs":1000000000,"viewSessionId":"view","instanceId":"a","eventId":"e1","data":{"delivery":"custom-a"}}
+11-17 10:00:00.100  100  101 I OPTD: {"schema":"optd/1","type":"player.created","timeNs":1100000000,"viewSessionId":"view","instanceId":"b","eventId":"e2","data":{"delivery":"custom-b"}}
+11-17 10:00:01.000  100  101 I OPTD: {"schema":"optd/1","type":"handoff.completed","timeNs":2000000000,"viewSessionId":"view","eventId":"e3","data":{"handoffId":"h1","fromInstanceId":"a","toInstanceId":"b","result":"succeeded","sourceReleased":"true"}}
+11-17 10:00:02.000  100  101 I OPTD: {"schema":"optd/1","type":"handoff.completed","timeNs":3000000000,"viewSessionId":"view","eventId":"e4","data":{"handoffId":"h2","fromInstanceId":"b","toInstanceId":"a","result":"succeeded","sourceReleased":"true"}}
+11-17 10:00:03.000  100  101 I OPTD: {"schema":"optd/1","type":"handoff.completed","timeNs":4000000000,"viewSessionId":"view","eventId":"e5","data":{"handoffId":"h3","fromInstanceId":"a","toInstanceId":"b","result":"succeeded","sourceReleased":"true"}}
