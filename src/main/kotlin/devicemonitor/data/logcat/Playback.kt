@@ -116,6 +116,14 @@ object Playback {
             if (buildTunnel == null && st.buildTunnel != null) buildTunnel = st.buildTunnel
         }
 
+        /** Latch values found only in newly appended lines; absent values keep their prior state. */
+        fun updateIncremental(lines: List<String>) {
+            val st = scan(lines)
+            if (st.videoState != null) videoState = st.videoState
+            if (st.tunnelMode != null) tunnelMode = st.tunnelMode
+            if (buildTunnel == null && st.buildTunnel != null) buildTunnel = st.buildTunnel
+        }
+
         val isPlaying: Boolean get() = isPlayingState(videoState)
 
         /** (videoState, tunnelMode-for-this-tick). Tunnel is "n/a" while not in an active session. */

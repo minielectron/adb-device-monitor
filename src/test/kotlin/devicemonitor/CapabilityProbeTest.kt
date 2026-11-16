@@ -27,7 +27,8 @@ class CapabilityProbeTest {
                 echo "procrank=0"; echo "screencap=1"; echo "logcat=1"
                 ;;
               *"dumpsys gfxinfo"*)
-                echo "gfxinfo=1"; echo "psi=1"; echo "thermal=0"; echo "battery=1"; echo "playback=1"; echo "root=0"
+                echo "gfxinfo=1"; echo "psi=1"; echo "thermal=0"; echo "battery=1"; echo "playback=1"
+                echo "codec=1"; echo "audio=1"; echo "surface=1"; echo "root=0"
                 ;;
             esac
             """.trimIndent()
@@ -45,6 +46,9 @@ class CapabilityProbeTest {
         assertEquals("QA Box", first.properties["model"])
         assertTrue(DeviceCapability.PERFETTO in first.capabilities)
         assertTrue(DeviceCapability.PLAYBACK_DIAGNOSTICS in first.capabilities)
+        assertTrue(DeviceCapability.MEDIA_CODEC_DIAGNOSTICS in first.capabilities)
+        assertTrue(DeviceCapability.AUDIO_DIAGNOSTICS in first.capabilities)
+        assertTrue(DeviceCapability.SURFACE_DIAGNOSTICS in first.capabilities)
         assertFalse(DeviceCapability.PROCRANK in first.capabilities)
         assertFalse(DeviceCapability.ROOT in first.capabilities)
     }
@@ -58,4 +62,3 @@ class CapabilityProbeTest {
         assertEquals(Transport.USB, CapabilityProbe.transport("R58M123"))
     }
 }
-

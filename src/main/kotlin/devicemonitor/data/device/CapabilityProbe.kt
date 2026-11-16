@@ -47,6 +47,9 @@ class CapabilityProbe(private val adb: Adb) {
             if (signalAvailable(signals, "thermal")) capabilities += DeviceCapability.THERMAL
             if (signalAvailable(signals, "battery")) capabilities += DeviceCapability.BATTERY_STATS
             if (signalAvailable(signals, "playback")) capabilities += DeviceCapability.PLAYBACK_DIAGNOSTICS
+            if (signalAvailable(signals, "codec")) capabilities += DeviceCapability.MEDIA_CODEC_DIAGNOSTICS
+            if (signalAvailable(signals, "audio")) capabilities += DeviceCapability.AUDIO_DIAGNOSTICS
+            if (signalAvailable(signals, "surface")) capabilities += DeviceCapability.SURFACE_DIAGNOSTICS
             if (signalAvailable(signals, "root")) capabilities += DeviceCapability.ROOT
         }
         return TargetDevice(
@@ -78,6 +81,9 @@ class CapabilityProbe(private val adb: Adb) {
                 "ls /sys/class/thermal/thermal_zone* >/dev/null 2>&1 && echo thermal=1 || echo thermal=0; " +
                 "dumpsys battery >/dev/null 2>&1 && echo battery=1 || echo battery=0; " +
                 "dumpsys media.player >/dev/null 2>&1 && echo playback=1 || echo playback=0; " +
+                "dumpsys media.codec >/dev/null 2>&1 && echo codec=1 || echo codec=0; " +
+                "dumpsys media.audio_flinger >/dev/null 2>&1 && echo audio=1 || echo audio=0; " +
+                "dumpsys SurfaceFlinger >/dev/null 2>&1 && echo surface=1 || echo surface=0; " +
                 "id | grep -q 'uid=0' && echo root=1 || echo root=0"
 
         internal fun parseProperties(raw: String): Map<String, String> = raw.lineSequence()
@@ -112,4 +118,3 @@ class CapabilityProbe(private val adb: Adb) {
             raw.lineSequence().any { it.trim() == "$signal=1" }
     }
 }
-

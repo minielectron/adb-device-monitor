@@ -5,6 +5,9 @@ import devicemonitor.domain.releaseguard.*
 import devicemonitor.data.adb.*
 import devicemonitor.data.metrics.*
 import devicemonitor.data.logcat.*
+import devicemonitor.data.playerdebug.*
+import devicemonitor.data.device.CapabilityProbe
+import devicemonitor.domain.playerdebug.*
 import devicemonitor.presentation.report.*
 import devicemonitor.common.Log
 import java.io.File
@@ -51,6 +54,7 @@ data class SessionConfig(
     val topMemEnabled: Boolean = false,     // top processes by memory (PSS) — procrank (root) / dumpsys (non-root)
     val fpsEnabled: Boolean = false,        // device FPS (screen + video) via SurfaceFlinger --latency
     val playbackEnabled: Boolean = false,   // STB: tunnel mode + video player state from logcat tail
+    val playerDebugEnabled: Boolean = false, // normalized passive + optional OPTD events from the shared logcat stream
     // App metrics (require a package)
     val appPssEnabled: Boolean = true,      // dumpsys meminfo — PSS total + breakdown (default ON)
     val appProcCpuEnabled: Boolean = false, // whole-process CPU%
@@ -68,6 +72,11 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
     enum class Status { STARTING, RUNNING, DONE, FAILED }
 
     companion object {
+        private val SNAPSHOT_TRIGGER_EVENTS = setOf(
+            "app.anr", "app.crash", "app.native_crash", "codec.error", "drm.error",
+            "audio.error", "error.reported", "buffer.started", "handoff.requested"
+        )
+
         /** Default place for reports when the working directory isn't writable (e.g. a Finder-launched .app). */
         fun defaultReportsDir(): File = File(System.getProperty("user.home"), "ADB Device Monitor")
 
@@ -95,11 +104,19 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
     val samples: MutableList<Sample> = Collections.synchronizedList(mutableListOf())
     val zapTimes: MutableList<Double> = Collections.synchronizedList(mutableListOf())
     val scenarioMarkers: MutableList<ScenarioMarker> = Collections.synchronizedList(mutableListOf())
+    val playerDebugEvents: MutableList<PlaybackEvent> = Collections.synchronizedList(mutableListOf())
+    val playerDebugDiagnostics: MutableList<OptdParseDiagnostic> = Collections.synchronizedList(mutableListOf())
+    val playerDebugSnapshots: MutableList<MediaSnapshot> = Collections.synchronizedList(mutableListOf())
     @Volatile private var captureStartNanos: Long? = null
 
     val logcatFile: File? get() = runDir?.let { File(it, "logcat.log") }
 
     @Volatile private var anomalyScanner: AnomalyScanner.Incremental? = null
+    @Volatile private var passivePlaybackProbe: PassivePlaybackProbe? = null
+    @Volatile private var mediaSnapshotCollector: MediaSnapshotCollector? = null
+    @Volatile private var mediaSnapshotRun = false
+    @Volatile private var mediaSnapshotThread: Thread? = null
+    @Volatile private var pendingSnapshotReason: String? = null
     /** Anomalies accumulated incrementally so far (fast — no full re-scan). */
     fun liveAnomalies(): List<Anomaly> = anomalyScanner?.snapshot() ?: emptyList()
 
@@ -172,11 +189,13 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         stopRequested = true
         slowCollectorRun = false
         slowThread?.interrupt()
+        mediaSnapshotRun = false
+        mediaSnapshotThread?.interrupt()
         // Enter abort mode: force-kill the adb command currently blocking the loop/collector AND make
         // every subsequent adb call return instantly, so the remaining reads in the in-progress tick
         // (pss, gfxinfo, top-CPU, media…) don't each run to completion before the loop can break.
         // The gate is scoped to this run's own threads, so the device list and UI snapshots keep working.
-        if (!finalizing) try { adb.beginAbort(listOfNotNull(sessionThread, slowThread, zapperThread)) } catch (_: Exception) {}
+        if (!finalizing) try { adb.beginAbort(listOfNotNull(sessionThread, slowThread, mediaSnapshotThread, zapperThread)) } catch (_: Exception) {}
         // NOTE: we deliberately do NOT interrupt the sampling thread. Interrupting it could surface as
         // an InterruptedException out of an unrelated blocking call (join/waitFor), which would mark
         // the run FAILED and hide the report button. The loop instead polls stopRequested during a
@@ -328,7 +347,10 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         var prevAppTicks: Long? = null
         var prevMediaTicks: Map<String, Long?> = emptyMap()
         var prevProcTicks: Map<Int, Pair<String, Long>>? = null
-        val playbackTracker = if (config.playbackEnabled && config.logcatEnabled) Playback.Tracker() else null
+        passivePlaybackProbe = if (config.logcatEnabled && (config.playbackEnabled || config.playerDebugEnabled)) {
+            PassivePlaybackProbe(config.packageName, startNanos)
+        } else null
+        if (config.playerDebugEnabled) startMediaSnapshots(dir)
         val reclaimCounter = if (config.logcatEnabled && config.directReclaimEnabled) GrowTailCounter(LogMetrics.DIRECT_RECLAIM) else null
         val fpsCollector = if (config.fpsEnabled) FpsCollector(adb, config.target, config.packageName) else null
 
@@ -497,17 +519,24 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
                 prevProcTicks = curProcTicks
             }
 
-            // STB playback: replay logcat tail → current video state + tunnel mode (no extra adb)
+            // Playback and Player Debugger share one incremental read of the existing logcat file.
             var videoState: String? = null
             var tunnelMode: String? = null
-            if (playbackTracker != null) {
-                val lf = File(dir, "logcat.log")
-                playbackTracker.update(Playback.readLogTail(lf))
-                val snapPb = playbackTracker.snapshot()
-                videoState = snapPb.first
-                tunnelMode = snapPb.second
-                if (buildTunnelEnabled == null && playbackTracker.buildTunnel != null)
-                    buildTunnelEnabled = playbackTracker.buildTunnel
+            passivePlaybackProbe?.let { probe ->
+                val found = probe.scanNew(File(dir, "logcat.log"))
+                if (config.playerDebugEnabled) {
+                    playerDebugEvents += found.events
+                    playerDebugDiagnostics += found.diagnostics
+                    found.events.firstOrNull { it.type in SNAPSHOT_TRIGGER_EVENTS }?.let {
+                        pendingSnapshotReason = it.type
+                    }
+                }
+                if (config.playbackEnabled) {
+                    videoState = found.videoState
+                    tunnelMode = found.tunnelMode
+                    if (buildTunnelEnabled == null && found.buildTunnelEnabled != null)
+                        buildTunnelEnabled = found.buildTunnelEnabled
+                }
             }
 
             // Kernel direct-reclaim events/s from the growing logcat file (memory pressure)
@@ -547,7 +576,7 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
             val appText = appCpu?.let { "  app %.0f%%".format(it) } ?: ""
             val totalMedia = mediaCpus.values.filterNotNull().takeIf { it.isNotEmpty() }?.sum()
             val mediaText = totalMedia?.let { "  media %.0f%%".format(it) } ?: ""
-            val playText = if (playbackTracker != null) {
+            val playText = if (config.playbackEnabled && passivePlaybackProbe != null) {
                 buildString {
                     if (videoState != null) append("  vid=$videoState")
                     if (tunnelMode != null && tunnelMode != "n/a") append("  tunnel=$tunnelMode")
@@ -574,9 +603,38 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         slowCollectorRun = false
         slowThread?.interrupt()
         slowThread?.join(2000)   // give the collector up to 2s to unwind; it's a daemon regardless
+        mediaSnapshotRun = false
+        mediaSnapshotThread?.interrupt()
+        mediaSnapshotThread?.join(2000)
         println("[loop] sampling finished (${samples.size} samples); building report…")
 
         if (samples.size < 2) throw IllegalStateException("Not enough samples collected to build a report")
+    }
+
+    private fun startMediaSnapshots(dir: File) {
+        val capabilities = try { CapabilityProbe(adb).probe(config.target).capabilities } catch (_: Exception) { emptySet() }
+        mediaSnapshotCollector = MediaSnapshotCollector(
+            adb, config.target, File(dir, "player-debug-snapshots"), capabilities
+        )
+        mediaSnapshotRun = true
+        mediaSnapshotThread = Thread {
+            while (mediaSnapshotRun && !stopRequested) {
+                val now = System.nanoTime()
+                try {
+                    val reason = pendingSnapshotReason
+                    val found = if (reason != null) {
+                        pendingSnapshotReason = null
+                        mediaSnapshotCollector?.collectTriggered(reason, now).orEmpty()
+                    } else {
+                        mediaSnapshotCollector?.collectPeriodic(now).orEmpty()
+                    }
+                    playerDebugSnapshots += found.filter {
+                        it.status !in setOf(MediaSnapshotStatus.BACKED_OFF, MediaSnapshotStatus.RATE_LIMITED)
+                    }
+                } catch (_: Exception) { /* provider failures are recorded by the collector */ }
+                try { Thread.sleep(1000) } catch (_: InterruptedException) { break }
+            }
+        }.apply { isDaemon = true; name = "player-media-snapshots"; start() }
     }
 
     /** Daemon thread sending CHANNEL_UP every zapMs; honors zapCount and stop requests. */
@@ -617,6 +675,9 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         finalizing = true
         phase = "finalize"; beat()
         try { adb.endAbort() } catch (_: Exception) {}
+        mediaSnapshotRun = false
+        mediaSnapshotThread?.interrupt()
+        mediaSnapshotThread?.join(2000)
         if (outputsWritten || samples.size < 2) return
         outputsWritten = true
         val dir = runDir ?: return
@@ -628,6 +689,15 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         }
 
         val lf = File(dir, "logcat.log")
+        passivePlaybackProbe?.scanNew(lf)?.let { found ->
+            if (config.playerDebugEnabled) {
+                playerDebugEvents += found.events
+                playerDebugDiagnostics += found.diagnostics
+            }
+            if (config.playbackEnabled && buildTunnelEnabled == null && found.buildTunnelEnabled != null) {
+                buildTunnelEnabled = found.buildTunnelEnabled
+            }
+        }
         // Reuse the incrementally-scanned anomalies (one final catch-up pass) — avoids a full
         // re-scan of a possibly-huge logcat at stop.
         val anomalies = if (config.logcatEnabled) {
