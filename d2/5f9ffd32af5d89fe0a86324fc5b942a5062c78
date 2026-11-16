@@ -1,0 +1,29 @@
+src/main/kotlin/devicemonitor/application/playerdebug/PlayerIncidentEngine.kt
+  s_6a41e6dc5a6d74::t_2c30111eb2a613 1-265
+src/test/kotlin/devicemonitor/PlayerIncidentEngineTest.kt
+  s_6a41e6dc5a6d74::t_ffd9faaef8081a 1-136
+src/main/kotlin/devicemonitor/application/playerdebug/PlayerDebugService.kt
+  s_6a41e6dc5a6d74::t_119cbe5671b5a0 53,60,95-97
+src/test/kotlin/devicemonitor/PlayerDebugServiceTest.kt
+  s_6a41e6dc5a6d74::t_119cbe5671b5a0 42-49
+src/main/kotlin/devicemonitor/application/playerdebug/PlayerIncidentRules.kt
+  s_6a41e6dc5a6d74::t_2c30111eb2a613 1-32
+src/test/kotlin/devicemonitor/PlayerDebugFixtureTest.kt
+  s_6a41e6dc5a6d74::t_650eb205c6d044 1-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d25f9ffd32af5d89fe0a86324fc5b942a5062c78",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
