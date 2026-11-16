@@ -1,0 +1,19 @@
+docs/superpowers/plans/2026-11-16-player-debugger-implementation.md
+  s_6a41e6dc5a6d74::t_9dc62c71532f7a 1-636
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b4f6f6b7a10856e076510070483401d4cb782af5",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
