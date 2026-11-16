@@ -1,0 +1,45 @@
+src/main/kotlin/devicemonitor/application/releaseguard/ScenarioRunner.kt
+  s_6a41e6dc5a6d74::t_d168fa86aec58b 10,257-259
+docs/build-run-package.md
+  s_6a41e6dc5a6d74::t_d712bd8c3372bd 61-85
+README.md
+  s_6a41e6dc5a6d74::t_d712bd8c3372bd 31-46,187
+src/test/kotlin/devicemonitor/ReleaseGuardCliTest.kt
+  s_6a41e6dc5a6d74::t_07acbcd9247cba 1-37
+src/test/kotlin/devicemonitor/ReleaseGuardExportTest.kt
+  s_6a41e6dc5a6d74::t_49dd6e8ab14245 1-114
+src/main/kotlin/devicemonitor/Main.kt
+  s_6a41e6dc5a6d74::t_6066ef8aa926d9 9-12,15,34-46,83,85-92,190,349-416,418-459,572-573
+  s_6a41e6dc5a6d74::t_75c1a5bb67aefd 154,157-158,191-193,348,417
+  s_6a41e6dc5a6d74::t_6aa73c91f493bb 155-156,548,557,565-566,575,582,584
+  s_6a41e6dc5a6d74::t_dd7a0fa6bb815b 84
+  s_6a41e6dc5a6d74::t_66db703928799c 460
+src/main/kotlin/devicemonitor/presentation/report/JunitExporter.kt
+  s_6a41e6dc5a6d74::t_d36967b082831e 1-40
+src/main/kotlin/devicemonitor/presentation/report/ReleaseGuardReport.kt
+  s_6a41e6dc5a6d74::t_d36967b082831e 1-155
+scripts/fake-adb.sh
+  s_6a41e6dc5a6d74::t_136924293b4b3c 26-33
+src/main/kotlin/devicemonitor/presentation/web/ReleaseGuardPage.kt
+  s_6a41e6dc5a6d74::t_e7480f21d9f2f7 59-63,133,140,224-226
+src/main/kotlin/devicemonitor/presentation/web/WebServer.kt
+  s_6a41e6dc5a6d74::t_e7480f21d9f2f7 907
+scripts/release-guard-smoke-scenario.json
+  s_6a41e6dc5a6d74::t_136924293b4b3c 1-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f4f729ec4ae3b60370f5c8f0420d9e4e200469a1",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
