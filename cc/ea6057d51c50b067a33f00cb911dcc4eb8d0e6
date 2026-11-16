@@ -1,0 +1,19 @@
+docs/superpowers/plans/2026-11-16-offline-release-guard-implementation.md
+  s_6a41e6dc5a6d74::t_3374a7f85f639d 1-422
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ccea6057d51c50b067a33f00cb911dcc4eb8d0e6",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
