@@ -64,6 +64,8 @@ object ReleaseGuardJson {
         object : TypeToken<List<AttemptSummary>>() {}.type
     )
 
+    fun json(value: Any?): String = gson.toJson(value)
+
     private fun <T> checked(value: T): T {
         val version = when (value) {
             is ReleaseScenario -> value.schemaVersion

@@ -3,8 +3,12 @@ package devicemonitor.presentation.web
 import devicemonitor.domain.*
 import devicemonitor.data.adb.*
 import devicemonitor.application.*
+import devicemonitor.application.releaseguard.*
+import devicemonitor.data.device.*
+import devicemonitor.data.storage.*
 import devicemonitor.presentation.report.*
 import devicemonitor.common.*
+import com.google.gson.JsonParser
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import java.io.File
@@ -36,11 +40,27 @@ class WebApp(
     private val port: Int,
     private val adb: Adb,
     initialSession: MonitorSession? = null,
-    private val bindHost: String? = null   // null = all interfaces (browser mode); "127.0.0.1" for the desktop shell
+    private val bindHost: String? = null,   // null = all interfaces (browser mode); "127.0.0.1" for the desktop shell
+    releaseGuardRoot: File = File(MonitorSession.defaultReportsDir(), "ReleaseGuard")
 ) {
     @Volatile var session: MonitorSession? = initialSession
 
     private var server: HttpServer? = null
+    @Volatile var actualPort: Int = port; private set
+
+    private val releaseArtifacts = ArtifactStore(releaseGuardRoot)
+    private val releaseRepository = SqliteRunRepository(File(releaseGuardRoot, "release-guard.db"))
+    private val releaseService = ReleaseGuardService {
+        ScenarioRunner(
+            releaseRepository,
+            releaseArtifacts,
+            CaptureSessionFactory { config ->
+                val monitor = MonitorSession(adb, config)
+                session = monitor
+                MonitorCaptureSession(monitor)
+            }
+        )
+    }
 
     // Base folder that runs are written to (the UI "Reports folder"). Tracked so the Run Comparison
     // page lists runs from the SAME place they were saved — not just the process cwd, which is "/"
@@ -67,6 +87,7 @@ class WebApp(
         val s = HttpServer.create(if (bindHost != null) InetSocketAddress(bindHost, port) else InetSocketAddress(port), 0)
         route(s, "/") { ex -> respondPage(ex, HOME_PAGE.replace("__BUILD__", esc(buildTag())).replace("</head>", STUDIO_UI_CSS + CLIENT_LOG_TAG + "</head>")) }
         route(s, "/dashboard") { ex -> respondPage(ex, DASHBOARD_PAGE.replace("__BUILD__", esc(buildTag())).replace("</head>", STUDIO_UI_CSS + CLIENT_LOG_TAG + "</head>")) }
+        route(s, "/release-guard") { ex -> respondPage(ex, RELEASE_GUARD_PAGE.replace("__BUILD__", esc(buildTag())).replace("</head>", STUDIO_UI_CSS + CLIENT_LOG_TAG + "</head>")) }
         OFFLINE_WEB_ASSETS.keys.forEach { path -> route(s, path) { ex -> handleOfflineAsset(ex, path) } }
         route(s, "/api/devices") { ex -> respond(ex, 200, "application/json", devicesJson()) }
         route(s, "/api/defaults") { ex ->
@@ -92,6 +113,7 @@ class WebApp(
         route(s, "/api/procrank-report") { ex -> handleProcrankReport(ex) }
         route(s, "/api/start") { ex -> handleStart(ex) }
         route(s, "/api/stop") { ex ->
+            if (releaseService.isRunning()) releaseService.cancel()
             session?.requestStop()
             respond(ex, 200, "application/json", "{\"ok\":true}")
         }
@@ -104,6 +126,15 @@ class WebApp(
         route(s, "/clientlog.js") { ex -> respond(ex, 200, "application/javascript", CLIENT_LOG_JS) }
         route(s, "/api/clientlog") { ex -> handleClientLog(ex) }
         route(s, "/api/diagnostics") { ex -> handleDiagnostics(ex) }
+        route(s, "/api/release/projects") { ex -> handleReleaseProjects(ex) }
+        route(s, "/api/release/scenarios") { ex -> handleReleaseScenarios(ex) }
+        route(s, "/api/release/capabilities") { ex -> handleReleaseCapabilities(ex) }
+        route(s, "/api/release/start") { ex -> handleReleaseStart(ex) }
+        route(s, "/api/release/stop") { ex -> handleReleaseStop(ex) }
+        route(s, "/api/release/status") { ex -> handleReleaseStatus(ex) }
+        route(s, "/api/release/result") { ex -> handleReleaseResult(ex) }
+        route(s, "/api/release/baseline") { ex -> handleReleaseBaseline(ex) }
+        route(s, "/api/release/artifact") { ex -> handleReleaseArtifact(ex) }
         // Unbounded named daemon pool: a slow handler (unresponsive device, native folder dialog)
         // can no longer starve the dashboard poll the way the old fixed pool of 4 did.
         val n = java.util.concurrent.atomic.AtomicInteger()
@@ -113,10 +144,13 @@ class WebApp(
         startHttpWatchdog()
         s.start()
         server = s
+        actualPort = s.address.port
     }
 
     fun stop() {
+        releaseService.cancel()
         server?.stop(0)
+        try { releaseRepository.close() } catch (_: Exception) {}
     }
 
     // ---------- request plumbing: timing, error capture, stall detection ----------
@@ -356,6 +390,9 @@ class WebApp(
 
     private fun handleStart(ex: HttpExchange) {
         if (ex.requestMethod != "POST") { respond(ex, 405, "application/json", err("POST only")); return }
+        if (releaseService.isRunning()) {
+            respond(ex, 409, "application/json", err("A Release Guard check is already running")); return
+        }
         val active = session
         if (active != null && active.status in listOf(MonitorSession.Status.STARTING, MonitorSession.Status.RUNNING)) {
             respond(ex, 409, "application/json", err("A session is already running")); return
@@ -687,7 +724,235 @@ class WebApp(
         ex.responseBody.use { it.write(bytes) }
     }
 
+    // ---------- Offline Release Guard ----------
+
+    private fun handleReleaseProjects(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/release/projects")) return
+        when (ex.requestMethod) {
+            "GET" -> respond(
+                ex, 200, "application/json",
+                "{\"projects\":${ReleaseGuardJson.json(releaseRepository.projects())}}"
+            )
+            "POST" -> {
+                val body = requestBody(ex) ?: return
+                try {
+                    val obj = JsonParser.parseString(body).asJsonObject
+                    val id = requiredString(obj, "id")
+                    val existing = releaseRepository.project(id)
+                    val now = java.time.Instant.now().toString()
+                    val project = ProjectRecord(
+                        id = id,
+                        name = requiredString(obj, "name"),
+                        packageName = requiredString(obj, "packageName"),
+                        createdAt = existing?.createdAt ?: now,
+                        updatedAt = now,
+                        metadata = existing?.metadata ?: emptyMap()
+                    )
+                    releaseRepository.saveProject(project)
+                    respond(ex, 200, "application/json", "{\"ok\":true,\"project\":${ReleaseGuardJson.project(project)}}")
+                } catch (e: Exception) {
+                    respond(ex, 400, "application/json", err(e.message ?: "Invalid project"))
+                }
+            }
+            else -> methodNotAllowed(ex, "GET, POST")
+        }
+    }
+
+    private fun handleReleaseScenarios(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/release/scenarios")) return
+        when (ex.requestMethod) {
+            "GET" -> {
+                val projectId = queryParam(ex, "projectId")
+                    ?: run { respond(ex, 400, "application/json", err("Missing projectId")); return }
+                val scenarios = releaseRepository.scenarios(projectId)
+                respond(ex, 200, "application/json", "{\"scenarios\":${ReleaseGuardJson.json(scenarios)}}")
+            }
+            "POST" -> {
+                val projectId = queryParam(ex, "projectId")
+                    ?: run { respond(ex, 400, "application/json", err("Missing projectId")); return }
+                val body = requestBody(ex) ?: return
+                try {
+                    val scenario = ReleaseGuardJson.parseScenario(body)
+                    releaseRepository.saveScenario(projectId, scenario)
+                    respond(ex, 200, "application/json", "{\"ok\":true,\"scenario\":${ReleaseGuardJson.scenario(scenario)}}")
+                } catch (e: Exception) {
+                    respond(ex, 400, "application/json", err(e.message ?: "Invalid scenario"))
+                }
+            }
+            else -> methodNotAllowed(ex, "GET, POST")
+        }
+    }
+
+    private fun handleReleaseCapabilities(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/release/capabilities")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val serial = queryParam(ex, "serial")
+            ?: run { respond(ex, 400, "application/json", err("Missing serial")); return }
+        try {
+            val target = AdbDeviceDriver(adb, serial).target(refresh = queryParam(ex, "refresh") == "true")
+            respond(ex, 200, "application/json", "{\"target\":${ReleaseGuardJson.json(target)}}")
+        } catch (e: Exception) {
+            respond(ex, 400, "application/json", err(e.message ?: "Capability probe failed"))
+        }
+    }
+
+    private fun handleReleaseStart(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/release/start")) return
+        if (ex.requestMethod != "POST") { methodNotAllowed(ex, "POST"); return }
+        if (releaseService.isRunning()) {
+            respond(ex, 409, "application/json", err("A Release Guard check is already running")); return
+        }
+        val active = session
+        if (active != null && active.status in listOf(MonitorSession.Status.STARTING, MonitorSession.Status.RUNNING)) {
+            respond(ex, 409, "application/json", err("A performance session is already running")); return
+        }
+        val body = requestBody(ex) ?: return
+        try {
+            val obj = JsonParser.parseString(body).asJsonObject
+            val projectId = requiredString(obj, "projectId")
+            val scenarioId = requiredString(obj, "scenarioId")
+            val serial = requiredString(obj, "serial")
+            val project = releaseRepository.project(projectId) ?: error("Unknown project '$projectId'")
+            val scenario = releaseRepository.scenario(scenarioId) ?: error("Unknown scenario '$scenarioId'")
+            require(scenario.packageName == project.packageName) {
+                "Scenario package '${scenario.packageName}' does not match project package '${project.packageName}'"
+            }
+            releaseService.start(
+                project,
+                scenario,
+                AdbDeviceDriver(adb, serial),
+                releaseRepository.activeBaseline(projectId, scenarioId),
+                obj.get("allowCompatibleDeviceBaseline")?.asBoolean == true
+            )
+            respond(ex, 202, "application/json", "{\"ok\":true}")
+        } catch (e: Exception) {
+            respond(ex, 400, "application/json", err(e.message ?: "Could not start Release Guard"))
+        }
+    }
+
+    private fun handleReleaseStop(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/release/stop")) return
+        if (ex.requestMethod != "POST") { methodNotAllowed(ex, "POST"); return }
+        releaseService.cancel()
+        session?.requestStop()
+        respond(ex, 200, "application/json", "{\"ok\":true}")
+    }
+
+    private fun handleReleaseStatus(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/release/status")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        respond(
+            ex, 200, "application/json",
+            "{\"running\":${releaseService.isRunning()}," +
+                "\"progress\":${ReleaseGuardJson.json(releaseService.progress())}," +
+                "\"manifest\":${ReleaseGuardJson.json(releaseService.latestManifest())}}"
+        )
+    }
+
+    private fun handleReleaseResult(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/release/result")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val runId = queryParam(ex, "runId")
+            ?: run { respond(ex, 400, "application/json", err("Missing runId")); return }
+        val run = releaseRepository.run(runId)
+            ?: run { respond(ex, 404, "application/json", err("Run not found")); return }
+        respond(ex, 200, "application/json", "{\"manifest\":${ReleaseGuardJson.manifest(run.manifest)}}")
+    }
+
+    private fun handleReleaseBaseline(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/release/baseline")) return
+        if (ex.requestMethod != "POST") { methodNotAllowed(ex, "POST"); return }
+        val body = requestBody(ex) ?: return
+        try {
+            val obj = JsonParser.parseString(body).asJsonObject
+            val runId = requiredString(obj, "runId")
+            val run = releaseRepository.run(runId)?.manifest ?: error("Run '$runId' was not found")
+            val identity = run.device ?: error("Run has no device identity")
+            require(run.state in setOf(
+                devicemonitor.domain.releaseguard.ExecutionState.PASSED,
+                devicemonitor.domain.releaseguard.ExecutionState.WARNING,
+                devicemonitor.domain.releaseguard.ExecutionState.FAILED
+            )) { "Only a completed run can become a baseline" }
+            require(run.attempts.any { it.successful }) { "Run has no successful attempt" }
+            val baseline = devicemonitor.domain.releaseguard.BaselineRevision("baseline-$runId", identity, run.attempts)
+            releaseRepository.promoteBaseline(run.projectId, baseline)
+            respond(ex, 200, "application/json", "{\"ok\":true,\"baseline\":${ReleaseGuardJson.baseline(baseline)}}")
+        } catch (e: Exception) {
+            respond(ex, 400, "application/json", err(e.message ?: "Could not promote baseline"))
+        }
+    }
+
+    private fun handleReleaseArtifact(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/release/artifact")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val runId = queryParam(ex, "runId")
+            ?: run { respond(ex, 400, "application/json", err("Missing runId")); return }
+        val key = queryParam(ex, "key")
+            ?: run { respond(ex, 400, "application/json", err("Missing artifact key")); return }
+        try {
+            val run = releaseRepository.run(runId)?.manifest ?: error("Run not found")
+            val relative = run.artifacts[key] ?: error("Artifact not found")
+            val file = releaseArtifacts.resolve(relative)
+            require(file.isFile) { "Artifact not found" }
+            val type = when (file.extension.lowercase()) {
+                "html" -> "text/html"
+                "json" -> "application/json"
+                "xml" -> "application/xml"
+                "csv", "log", "txt" -> "text/plain"
+                "pdf" -> "application/pdf"
+                "png" -> "image/png"
+                else -> "application/octet-stream"
+            }
+            val bytes = file.readBytes()
+            ex.responseHeaders.add("Content-Type", type)
+            ex.responseHeaders.add("Content-Disposition", "inline; filename=\"${file.name.replace("\"", "")}\"")
+            ex.responseHeaders.add("X-Content-Type-Options", "nosniff")
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        } catch (e: Exception) {
+            respond(ex, 404, "application/json", err(e.message ?: "Artifact not found"))
+        }
+    }
+
     // ---------- helpers ----------
+
+    private fun exactPath(ex: HttpExchange, expected: String): Boolean {
+        if (ex.requestURI.path == expected) return true
+        respond(ex, 404, "application/json", err("Not found"))
+        return false
+    }
+
+    private fun methodNotAllowed(ex: HttpExchange, allow: String) {
+        ex.responseHeaders.add("Allow", allow)
+        respond(ex, 405, "application/json", err("Method not allowed"))
+    }
+
+    private fun requestBody(ex: HttpExchange, maxBytes: Int = 1_048_576): String? {
+        val declared = ex.requestHeaders.getFirst("Content-Length")?.toLongOrNull()
+        if (declared != null && declared > maxBytes) {
+            respond(ex, 413, "application/json", err("Request body is too large"))
+            return null
+        }
+        val bytes = ex.requestBody.readNBytes(maxBytes + 1)
+        if (bytes.size > maxBytes) {
+            respond(ex, 413, "application/json", err("Request body is too large"))
+            return null
+        }
+        return bytes.toString(Charsets.UTF_8)
+    }
+
+    private fun queryParam(ex: HttpExchange, name: String): String? = ex.requestURI.rawQuery
+        ?.split('&')
+        ?.mapNotNull { part ->
+            val split = part.split('=', limit = 2)
+            if (split.size == 2) URLDecoder.decode(split[0], "UTF-8") to URLDecoder.decode(split[1], "UTF-8") else null
+        }
+        ?.firstOrNull { it.first == name }
+        ?.second
+
+    private fun requiredString(obj: com.google.gson.JsonObject, name: String): String =
+        obj.get(name)?.takeUnless { it.isJsonNull }?.asString?.trim()?.takeIf { it.isNotEmpty() }
+            ?: throw IllegalArgumentException("Missing $name")
 
     private fun parseForm(ex: HttpExchange): Map<String, String> =
         ex.requestBody.bufferedReader().readText()

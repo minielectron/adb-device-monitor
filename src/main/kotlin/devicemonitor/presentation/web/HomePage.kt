@@ -443,6 +443,7 @@ internal val HOME_PAGE = """<!DOCTYPE html>
     </div>
   </div>
   <nav class="nav-actions" aria-label="Application">
+    <a class="nav-link" href="/release-guard" title="Open the offline performance release gate"><b aria-hidden="true">&#9670;</b><span>Release Guard</span></a>
     <a class="nav-link" href="/compare" title="Compare previous runs"><b aria-hidden="true">&#8644;</b><span>Compare runs</span></a>
     <a class="nav-link" href="/api/diagnostics" title="Download logs and thread diagnostics"><b aria-hidden="true">&#8595;</b><span>Diagnostics</span></a>
   </nav>
@@ -602,6 +603,8 @@ internal val HOME_PAGE = """<!DOCTYPE html>
   </div>
 </section>
 <script>
+var HOME_DRAFT_KEY = 'aps.home.draft.v1';
+var homeDraftValues = {};
 var selected = null;
 var selectedDevice = null;
 var lastDevices = [];
@@ -610,6 +613,46 @@ var reportPaths = { '/api/snapshot-report': 'Device Snapshot', '/api/procrank-re
 var currentReportPath = null;
 var reportTrigger = null;
 var reportTimer = null;
+
+function saveHomeDraft() {
+  var values = {};
+  Array.prototype.forEach.call(document.querySelectorAll('input[id]'), function (input) {
+    values[input.id] = input.type === 'checkbox' ? input.checked : input.value;
+  });
+  localStorage.setItem(HOME_DRAFT_KEY, JSON.stringify({
+    values: values,
+    selected: selected,
+    captureOpen: document.getElementById('captureCfg').classList.contains('open'),
+    metricsOpen: document.getElementById('metricsCfg').classList.contains('open')
+  }));
+}
+
+function setPanelState(headerId, contentId, open) {
+  var header = document.getElementById(headerId);
+  var content = document.getElementById(contentId);
+  content.classList.toggle('open', open);
+  header.classList.toggle('open', open);
+  header.setAttribute('aria-expanded', open ? 'true' : 'false');
+  content.setAttribute('aria-hidden', open ? 'false' : 'true');
+  if (open) content.removeAttribute('inert'); else content.setAttribute('inert', '');
+}
+
+function restoreHomeDraft() {
+  try {
+    var draft = JSON.parse(localStorage.getItem(HOME_DRAFT_KEY) || 'null');
+    if (!draft) return;
+    homeDraftValues = draft.values || {};
+    Object.keys(homeDraftValues).forEach(function (id) {
+      var input = document.getElementById(id);
+      if (!input) return;
+      if (input.type === 'checkbox') input.checked = !!homeDraftValues[id]; else input.value = homeDraftValues[id];
+    });
+    selected = draft.selected || null;
+    setPanelState('captureHdr', 'captureCfg', draft.captureOpen !== false);
+    setPanelState('metricsHdr', 'metricsCfg', draft.metricsOpen === true);
+    document.getElementById('zapcfg').style.display = document.getElementById('zap').checked ? 'flex' : 'none';
+  } catch (_) {}
+}
 
 function setReportBackgroundInert(inert) {
   [document.querySelector('.appbar'), document.querySelector('main')].forEach(function (el) {
@@ -734,7 +777,7 @@ function renderDevices(devices) {
   grid.innerHTML = html;
   Array.prototype.forEach.call(grid.children, function (el) {
     if (el.dataset.usable !== 'true') return;
-    var choose = function () { selected = el.dataset.serial; renderDevices(lastDevices); };
+    var choose = function () { selected = el.dataset.serial; renderDevices(lastDevices); saveHomeDraft(); };
     el.onclick = choose;
     el.onkeydown = function (event) {
       if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(); }
@@ -781,17 +824,14 @@ function loadDevices() {
 document.getElementById('zap').onchange = function () {
   document.getElementById('zapcfg').style.display = this.checked ? 'flex' : 'none';
   updateSummary();
+  saveHomeDraft();
 };
 
 function togglePanel(headerId, contentId) {
-  var header = document.getElementById(headerId);
   var content = document.getElementById(contentId);
   var open = !content.classList.contains('open');
-  content.classList.toggle('open', open);
-  header.classList.toggle('open', open);
-  header.setAttribute('aria-expanded', open ? 'true' : 'false');
-  content.setAttribute('aria-hidden', open ? 'false' : 'true');
-  if (open) content.removeAttribute('inert'); else content.setAttribute('inert', '');
+  setPanelState(headerId, contentId, open);
+  saveHomeDraft();
 }
 
 function toggleCapture() { togglePanel('captureHdr', 'captureCfg'); }
@@ -959,7 +999,7 @@ function pickFolder() {
   var cur = encodeURIComponent(document.getElementById('outputDir').value || '');
   fetch('/api/pick-folder?initial=' + cur).then(function (r) { return r.json(); }).then(function (d) {
     btn.disabled = false; btn.innerHTML = orig;
-    if (d && d.path) { document.getElementById('outputDir').value = d.path; }
+    if (d && d.path) { document.getElementById('outputDir').value = d.path; saveHomeDraft(); updateSummary(); }
     else if (d && d.supported === false) { alert('The folder picker isn’t available here — type the path manually.'); }
   }).catch(function () { btn.disabled = false; btn.innerHTML = orig; });
 }
@@ -967,15 +1007,18 @@ function pickFolder() {
 // Prefill the Reports folder with the server's default (writable) location.
 fetch('/api/defaults').then(function (r) { return r.json(); }).then(function (d) {
   var el = document.getElementById('outputDir');
-  if (el && d && d.reportsDir) { el.value = d.reportsDir; el.placeholder = d.reportsDir; }
+  if (el && d && d.reportsDir) { if (!Object.prototype.hasOwnProperty.call(homeDraftValues, 'outputDir')) el.value = d.reportsDir; el.placeholder = d.reportsDir; }
   var b = document.getElementById('buildtag');
   if (b && d && d.build) { b.textContent = d.build; }
   updateSummary();
 }).catch(function () {});
 
 Array.prototype.forEach.call(document.querySelectorAll('input'), function (input) {
-  input.addEventListener('input', updateSummary);
+  input.addEventListener('input', function () { updateSummary(); saveHomeDraft(); });
+  input.addEventListener('change', function () { updateSummary(); saveHomeDraft(); });
 });
+window.addEventListener('beforeunload', saveHomeDraft);
+restoreHomeDraft();
 updateSummary();
 loadDevices();
 setInterval(loadDevices, 5000);

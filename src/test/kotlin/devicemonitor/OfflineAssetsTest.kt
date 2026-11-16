@@ -6,6 +6,7 @@ import devicemonitor.presentation.web.DASHBOARD_PAGE
 import devicemonitor.presentation.web.HOME_PAGE
 import devicemonitor.presentation.web.OFFLINE_WEB_ASSETS
 import devicemonitor.presentation.web.PAGE_CSP
+import devicemonitor.presentation.web.RELEASE_GUARD_PAGE
 import devicemonitor.presentation.web.resolveOfflineAsset
 import java.nio.file.Files
 import kotlin.test.Test
@@ -24,9 +25,21 @@ class OfflineAssetsTest {
         assertContains(COMPARE_PAGE, "src=\"/assets/jspdf.umd.min.js\"")
         assertFalse(remoteAsset.containsMatchIn(DASHBOARD_PAGE))
         assertFalse(remoteAsset.containsMatchIn(COMPARE_PAGE))
+        assertFalse(remoteAsset.containsMatchIn(RELEASE_GUARD_PAGE))
         OFFLINE_WEB_ASSETS.values.forEach { (resource, _) ->
             assertNotNull(javaClass.classLoader.getResource(resource), "missing bundled resource: $resource")
         }
+    }
+
+    @Test fun releaseGuardIsOfflineAndHomeNavigationPreservesDrafts() {
+        assertContains(HOME_PAGE, "href=\"/release-guard\"")
+        assertContains(HOME_PAGE, "aps.home.draft.v1")
+        assertContains(HOME_PAGE, "beforeunload', saveHomeDraft")
+        assertContains(RELEASE_GUARD_PAGE, "aps.releaseGuard.draft.v1")
+        assertContains(RELEASE_GUARD_PAGE, "/api/release/start")
+        assertContains(RELEASE_GUARD_PAGE, "/api/release/status")
+        assertContains(RELEASE_GUARD_PAGE, "/api/release/baseline")
+        assertFalse("window.open(" in RELEASE_GUARD_PAGE)
     }
 
     @Test fun diagnosticReportsOpenInTheStatePreservingViewer() {
