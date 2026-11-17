@@ -107,6 +107,7 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
     val playerDebugEvents: MutableList<PlaybackEvent> = Collections.synchronizedList(mutableListOf())
     val playerDebugDiagnostics: MutableList<OptdParseDiagnostic> = Collections.synchronizedList(mutableListOf())
     val playerDebugSnapshots: MutableList<MediaSnapshot> = Collections.synchronizedList(mutableListOf())
+    private var playerEventSequence = 0L
     @Volatile private var captureStartNanos: Long? = null
 
     val logcatFile: File? get() = runDir?.let { File(it, "logcat.log") }
@@ -525,7 +526,7 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
             passivePlaybackProbe?.let { probe ->
                 val found = probe.scanNew(File(dir, "logcat.log"))
                 if (config.playerDebugEnabled) {
-                    playerDebugEvents += found.events
+                    appendPlayerEvents(found.events)
                     playerDebugDiagnostics += found.diagnostics
                     found.events.firstOrNull { it.type in SNAPSHOT_TRIGGER_EVENTS }?.let {
                         pendingSnapshotReason = it.type
@@ -562,7 +563,11 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
             val topMem = if (config.topMemEnabled) latestTopMem else emptyList()
             if (config.topMemEnabled && i <= 4) println("[loop] sample #$i: memprocs attached = ${topMem.size} rows (latestTopMem=${latestTopMem.size})")
 
-            samples += collector.toSample(prevSnap, dtSec, snap, elapsed, pss, jankPct, mainCpu, phases, appCpu, mediaCpus, topProcs, videoState, tunnelMode, directReclaim, topActivity, topMem, screenFps, videoFps)
+            val sample = collector.toSample(prevSnap, dtSec, snap, elapsed, pss, jankPct, mainCpu, phases, appCpu, mediaCpus, topProcs, videoState, tunnelMode, directReclaim, topActivity, topMem, screenFps, videoFps)
+            samples += sample
+            if (config.playerDebugEnabled) sampleToPlayerDebugEvent(sample, config, startNanos + (elapsed * 1_000_000_000L).toLong())?.let {
+                appendPlayerEvents(listOf(it))
+            }
             prevSnap = snap
             prevElapsed = elapsed
 
@@ -628,9 +633,11 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
                     } else {
                         mediaSnapshotCollector?.collectPeriodic(now).orEmpty()
                     }
-                    playerDebugSnapshots += found.filter {
+                    val retained = found.filter {
                         it.status !in setOf(MediaSnapshotStatus.BACKED_OFF, MediaSnapshotStatus.RATE_LIMITED)
                     }
+                    playerDebugSnapshots += retained
+                    if (config.playerDebugEnabled) appendPlayerEvents(retained.map { snapshotEvent(it, dir) })
                 } catch (_: Exception) { /* provider failures are recorded by the collector */ }
                 try { Thread.sleep(1000) } catch (_: InterruptedException) { break }
             }
@@ -691,7 +698,7 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         val lf = File(dir, "logcat.log")
         passivePlaybackProbe?.scanNew(lf)?.let { found ->
             if (config.playerDebugEnabled) {
-                playerDebugEvents += found.events
+                appendPlayerEvents(found.events)
                 playerDebugDiagnostics += found.diagnostics
             }
             if (config.playbackEnabled && buildTunnelEnabled == null && found.buildTunnelEnabled != null) {
@@ -794,6 +801,29 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         if (config.logcatEnabled) println("  logcat.log, anomalies.log, device-info.log")
     }
 
+    @Synchronized private fun appendPlayerEvents(events: List<PlaybackEvent>) {
+        playerDebugEvents += events.map { it.copy(sequence = playerEventSequence++) }
+    }
+
+    private fun snapshotEvent(snapshot: MediaSnapshot, dir: File) = PlaybackEvent(
+        sequence = 0,
+        schema = "passive/1",
+        type = "snapshot.${snapshot.provider.fileStem}",
+        timeNs = snapshot.atNs,
+        packageName = config.packageName,
+        attributes = mapOf(
+            "provider" to snapshot.provider.name.lowercase(),
+            "reason" to snapshot.reason,
+            "status" to snapshot.status.name.lowercase(),
+            "bytes" to snapshot.bytes.toString()
+        ),
+        source = EvidenceSource.DEVICE_MEASURED,
+        confidence = if (snapshot.status == MediaSnapshotStatus.CAPTURED) 1.0 else 0.6,
+        evidence = snapshot.artifact?.let { file ->
+            listOf(EvidenceReference(file.relativeTo(dir).invariantSeparatorsPath, description = "Bounded ${snapshot.provider.name.lowercase()} snapshot"))
+        }.orEmpty()
+    )
+
     private fun writeDeviceInfo(file: File, info: DeviceInfo) {
         val fingerprint = try {
             adb.shell(config.target, "getprop ro.build.fingerprint").lines().firstOrNull { it.isNotBlank() } ?: "?"
@@ -814,6 +844,72 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         )
         file.writeText(lines.joinToString("\n") + "\n")
     }
+}
+
+/** Turns enabled monitor samples into device-measured Player Debugger evidence. */
+internal fun sampleToPlayerDebugEvent(sample: Sample, config: SessionConfig, timeNs: Long): PlaybackEvent? {
+    val values = linkedMapOf<String, Double>()
+    fun put(name: String, value: Double?) { if (value != null && value.isFinite()) values[name] = value }
+
+    if (config.cpuUtilEnabled) put("cpuUtilPct", sample.cpuUtilPct)
+    if (config.cpuIdleEnabled) put("cpuIdlePct", sample.cpuIdlePct)
+    if (config.perCoreEnabled) sample.perCoreUtilPct?.forEachIndexed { index, value -> put("cpuCore${index}Pct", value) }
+    if (config.psiEnabled) {
+        put("psiCpu", sample.cpuPsiSomeAvg10)
+        put("psiMemory", sample.memPsiSomeAvg10)
+        put("psiMemoryFull", sample.memPsiFullAvg10)
+        put("psiIo", sample.ioPsiSomeAvg10)
+    }
+    if (config.memoryMbEnabled) {
+        put("memoryTotalMb", sample.memTotalMb)
+        put("memoryUsedMb", sample.memUsedMb)
+        put("memoryAvailableMb", sample.memAvailableMb)
+        put("memoryCachedMb", sample.cachedMb)
+    }
+    if (config.memoryPctEnabled) put("memoryUsedPct", sample.memUsedPct)
+    if (config.swapEnabled) put("swapUsedMb", sample.swapUsedMb)
+    if (config.loadEnabled) put("load1", sample.load1)
+    if (config.networkEnabled) {
+        put("networkRxKbps", sample.netRxKbps)
+        put("networkTxKbps", sample.netTxKbps)
+    }
+    if (config.thermalEnabled) put("cpuTempC", sample.cpuTempC)
+    if (config.cpuFreqEnabled) put("cpuFreqMhz", sample.cpuFreqMhz)
+    if (config.pageFaultsEnabled) put("majorFaultsPerSec", sample.majorFaultsPerSec)
+    if (config.directReclaimEnabled) put("directReclaimPerSec", sample.directReclaimPerSec)
+    if (config.zoneInfoEnabled) {
+        put("zoneFreePages", sample.zoneFreePages)
+        put("zoneMinPages", sample.zoneWmMinPages)
+        put("zoneLowPages", sample.zoneWmLowPages)
+        put("zoneHighPages", sample.zoneWmHighPages)
+    }
+    if (config.appPssEnabled) put("appPssMb", sample.pss?.totalMb)
+    if (config.jankEnabled) put("jankPct", sample.jankPct)
+    if (config.mainThreadCpuEnabled) put("mainThreadCpuPct", sample.mainThreadCpuPct)
+    if (config.appProcCpuEnabled) put("appCpuPct", sample.appCpuPct)
+    if (config.mediaCpuEnabled) sample.mediaProcs.forEach { (name, value) -> put("mediaCpu.$name", value) }
+    if (config.topProcsEnabled) put("topProcessCpuPct", sample.topProcs.maxOfOrNull { it.cpuPct })
+    if (config.topMemEnabled) put("topProcessMemoryMb", sample.topMemProcs.maxOfOrNull { it.pssMb })
+    if (config.fpsEnabled) {
+        put("screenFps", sample.screenFps)
+        put("videoFps", sample.videoFps)
+    }
+    if (values.isEmpty()) return null
+
+    return PlaybackEvent(
+        sequence = 0,
+        schema = "passive/1",
+        type = "metric.sample",
+        timeNs = timeNs,
+        packageName = config.packageName,
+        attributes = buildMap {
+            sample.videoState?.let { put("videoState", it) }
+            sample.tunnelMode?.let { put("tunnelMode", it) }
+        },
+        measurements = values,
+        source = EvidenceSource.DEVICE_MEASURED,
+        confidence = 1.0
+    )
 }
 
 internal fun sanitize(s: String): String =

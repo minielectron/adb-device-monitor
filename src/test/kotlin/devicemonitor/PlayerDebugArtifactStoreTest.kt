@@ -60,11 +60,16 @@ class PlayerDebugArtifactStoreTest {
         val location = store.createCapture("app")
         val file = store.writeEvents(location, (0L..5L).map { event().copy(sequence = it, timeNs = it) })
         val first = store.readEventPage(file, 0, 2)
+        assertEquals(0, first.offset)
         assertEquals(listOf(0L, 1L), first.events.map { it.sequence })
         assertEquals(2, first.nextOffset)
         val last = store.readEventPage(file, 4, 2)
         assertEquals(listOf(4L, 5L), last.events.map { it.sequence })
         assertNull(last.nextOffset)
+
+        val anchored = store.readEventWindow(file, 3, 3)
+        assertEquals(listOf(2L, 3L, 4L), anchored.events.map { it.sequence })
+        assertEquals(2, anchored.offset)
     }
 
     private fun store(): PlayerDebugArtifactStore {

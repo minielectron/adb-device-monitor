@@ -17,7 +17,7 @@ data class RecoveredPlayerCapture(
     val status: PlayerCaptureRecoveryStatus,
     val error: String? = null
 )
-data class PlayerEventPage(val events: List<PlaybackEvent>, val nextOffset: Long?, val totalRead: Long)
+data class PlayerEventPage(val offset: Long, val events: List<PlaybackEvent>, val nextOffset: Long?, val totalRead: Long)
 
 class PlayerDebugArtifactStore(
     root: File,
@@ -80,7 +80,48 @@ class PlayerDebugArtifactStore(
                 events += PlayerDebugJson.parseEvent(line)
             }
         }
-        return PlayerEventPage(events, if (hasMore) offset + events.size else null, index)
+        return PlayerEventPage(offset, events, if (hasMore) offset + events.size else null, index)
+    }
+
+    fun readEventWindow(file: File, anchorSequence: Long, limit: Int): PlayerEventPage {
+        require(anchorSequence >= 0) { "Timeline sequence cannot be negative" }
+        require(limit in 1..500) { "Timeline limit must be between 1 and 500" }
+        val target = ensureInside(file.toPath())
+        require(Files.isRegularFile(target)) { "Event artifact does not exist" }
+        val before = ArrayDeque<Pair<Long, PlaybackEvent>>()
+        val events = ArrayList<PlaybackEvent>(limit)
+        val preceding = limit / 2
+        var index = 0L
+        var startOffset = 0L
+        var found = false
+        var hasMore = false
+        Files.newBufferedReader(target).useLines { lines ->
+            val iterator = lines.iterator()
+            while (iterator.hasNext()) {
+                val line = iterator.next()
+                val lineOffset = index++
+                if (line.isBlank()) continue
+                val event = PlayerDebugJson.parseEvent(line)
+                if (!found) {
+                    if (event.sequence == anchorSequence) {
+                        startOffset = before.firstOrNull()?.first ?: lineOffset
+                        events += before.map { it.second }
+                        events += event
+                        found = true
+                    } else if (preceding > 0) {
+                        before.addLast(lineOffset to event)
+                        if (before.size > preceding) before.removeFirst()
+                    }
+                } else if (events.size == limit) {
+                    hasMore = true
+                    break
+                } else {
+                    events += event
+                }
+            }
+        }
+        require(found) { "Timeline event sequence was not found" }
+        return PlayerEventPage(startOffset, events, if (hasMore) startOffset + events.size else null, index)
     }
 
     fun register(location: PlayerCaptureLocation, name: String, source: File): File {

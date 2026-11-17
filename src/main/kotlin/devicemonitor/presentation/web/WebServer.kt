@@ -1083,13 +1083,15 @@ class WebApp(
         if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
         val indexed = requirePlayerCapture(ex) ?: return
         val offset = queryParam(ex, "offset")?.toLongOrNull() ?: 0L
+        val sequence = queryParam(ex, "sequence")?.toLongOrNull()
         val limit = queryParam(ex, "limit")?.toIntOrNull() ?: 200
         try {
             val file = playerArtifact(indexed, "events", "events.ndjson")
                 ?: error("Timeline is unavailable")
-            val page = playerArtifacts.readEventPage(file, offset, limit)
+            val page = if (sequence == null) playerArtifacts.readEventPage(file, offset, limit)
+                else playerArtifacts.readEventWindow(file, sequence, limit)
             respond(ex, 200, "application/json", "{\"events\":[${page.events.joinToString(",") { PlayerDebugJson.event(it) }}]," +
-                "\"nextOffset\":${page.nextOffset ?: "null"},\"totalRead\":${page.totalRead}}")
+                "\"offset\":${page.offset},\"nextOffset\":${page.nextOffset ?: "null"},\"totalRead\":${page.totalRead}}")
         } catch (e: IllegalArgumentException) {
             playerError(ex, 400, "invalid_window", e.message ?: "Invalid timeline window")
         } catch (e: Exception) {
