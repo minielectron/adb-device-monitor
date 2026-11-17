@@ -1,0 +1,36 @@
+src/test/kotlin/devicemonitor/LayoutInspectorTest.kt
+  s_6a41e6dc5a6d74::t_78bea9c3298ad8 1-92
+src/main/kotlin/devicemonitor/presentation/web/WebServer.kt
+  s_6a41e6dc5a6d74::t_544500d95059e5 52-53,464
+  s_6a41e6dc5a6d74::t_29fda147ec282b 111-116,146-153,218,448-463,465-486,489
+  s_6a41e6dc5a6d74::t_9dd4a161f9ef2f 487-488
+  s_6a41e6dc5a6d74::t_c76250e8964b1b 490
+src/main/kotlin/devicemonitor/presentation/web/HomePage.kt
+  s_6a41e6dc5a6d74::t_e6d7443bf02251 210,239,496-502,621,877,1002-1030
+  s_6a41e6dc5a6d74::t_d293ed7789a02b 1031
+src/main/kotlin/devicemonitor/presentation/report/LayoutInspectorReport.kt
+  s_6a41e6dc5a6d74::t_de8a2448bacff6 68,71-73
+  s_6a41e6dc5a6d74::t_a8ba868f5a1a26 1-67,69-70,74-77
+src/test/kotlin/devicemonitor/LayoutInspectorApiTest.kt
+  s_6a41e6dc5a6d74::t_3e03d098b9b369 1-111
+src/test/kotlin/devicemonitor/OfflineAssetsTest.kt
+  s_6a41e6dc5a6d74::t_78bea9c3298ad8 80,84-86
+src/main/kotlin/devicemonitor/data/device/LayoutInspectorCapture.kt
+  s_6a41e6dc5a6d74::t_785a6a4f3eb09e 1-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3adb1569fe5fef6cc7905fb8c7c2f97c87b1f5c8",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
