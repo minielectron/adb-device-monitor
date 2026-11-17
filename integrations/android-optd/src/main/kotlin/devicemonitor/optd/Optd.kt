@@ -25,6 +25,7 @@ class Optd(
         validateId("instanceId", instanceId)
         validateId("eventId", eventId)
         require(data.size <= MAX_DATA_FIELDS) { "OPTD data has too many fields" }
+        data.forEach { (key, value) -> if (value != null) validateData(key, value) }
 
         val timeNs = maxOf(0L, monotonicNanos(), lastTimeNs + 1)
         lastTimeNs = timeNs
@@ -37,7 +38,6 @@ class Optd(
             var first = true
             data.forEach { (key, value) ->
                 if (value == null) return@forEach
-                validateData(key, value)
                 if (!first) append(',')
                 first = false
                 append(jsonString(key)).append(':').append(jsonValue(value))

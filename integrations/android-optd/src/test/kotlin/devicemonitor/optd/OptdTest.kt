@@ -52,7 +52,7 @@ class OptdTest {
     @Test fun enforcesMonotonicTimeAndRejectsUnsafeOrOversizedData() {
         val lines = mutableListOf<String>()
         val times = ArrayDeque(listOf(50L, 40L, 40L))
-        val optd = Optd(true, { _, payload -> lines += payload }, { times.removeFirst() })
+        val optd = Optd(true, { _, payload -> lines += payload }, { times.removeFirstOrNull() ?: 40L })
         repeat(3) { optd.sessionStarted("view") }
         assertEquals(listOf(50L, 51L, 52L), lines.map { Regex("\"timeNs\":(\\d+)").find(it)!!.groupValues[1].toLong() })
 
