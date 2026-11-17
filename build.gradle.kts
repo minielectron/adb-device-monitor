@@ -26,6 +26,11 @@ kotlin {
     jvmToolchain(11)
 }
 
+sourceSets {
+    main { kotlin.srcDir("integrations/android-optd/src/main/kotlin") }
+    test { kotlin.srcDir("integrations/android-optd/src/test/kotlin") }
+}
+
 tasks.test {
     useJUnitPlatform()
 }
