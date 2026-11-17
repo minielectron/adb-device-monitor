@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-11-17-default-performance-metrics-design.md
+  s_6a41e6dc5a6d74::t_56a2b1f94d0c73 1-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "380f24c2abe2abc15c32de99a3c55d1ecf428019",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
