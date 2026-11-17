@@ -1,0 +1,21 @@
+src/test/kotlin/devicemonitor/OfflineAssetsTest.kt
+  s_6a41e6dc5a6d74::t_7ef6cc404c0a15 66-77
+src/main/kotlin/devicemonitor/presentation/web/HomePage.kt
+  s_6a41e6dc5a6d74::t_6b071a80174293 541,543,548,555,561,567
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0a74352e22d730479db7ea9395de924e1a1a65df",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
