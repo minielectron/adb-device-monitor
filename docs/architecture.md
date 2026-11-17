@@ -17,7 +17,9 @@ devicemonitor/
 │   ├── MetricModels.kt             #   Sample, CpuTicks, PssSample, ProcessSample, ProcMemSample,
 │   │                               #   FramePhases, GfxData, DeviceInfo
 │   ├── Anomaly.kt                  #   Anomaly (a flagged logcat event)
-│   └── TraceModels.kt              #   MethodStat, JankMethodStat, TraceAnalysis
+│   ├── TraceModels.kt              #   MethodStat, JankMethodStat, TraceAnalysis
+│   ├── playerdebug/                #   normalized events, session graph, incidents, OPTD contract
+│   └── releaseguard/               #   scenarios, attempts, budgets, baselines, verdicts
 │
 ├── data/                           # everything that talks to the device / OS / files
 │   ├── adb/
@@ -31,19 +33,28 @@ devicemonitor/
 │       ├── LogMetrics.kt           #   GrowTailCounter + LogMetrics (direct-reclaim etc.)
 │       ├── Playback.kt             #   STB video-player state + tunnel-mode tracking
 │       └── TraceParser.kt          #   ART method-trace / jank analysis
+│   ├── playerdebug/                # passive probe, OPTD parser, snapshots, artifacts, SQLite index
+│   ├── device/                     # capability-based device driver used by Release Guard
+│   └── storage/                    # Release Guard artifacts and run repository
 │
 ├── application/                    # orchestration / use-cases
-│   └── Session.kt                  #   SessionConfig + MonitorSession (the run lifecycle) + CSV writer
+│   ├── Session.kt                  #   SessionConfig + MonitorSession (the run lifecycle) + CSV writer
+│   ├── playerdebug/                # capture, replay, graph reconstruction, rules, support bundles
+│   └── releaseguard/               # scenario runner, evaluator, service
 │
 ├── presentation/                   # user-facing output
 │   ├── web/
 │   │   ├── WebServer.kt            #   WebApp: HTTP server, endpoints, session JSON serialization
 │   │   ├── HomePage.kt             #   HOME_PAGE  (device picker + run config)
 │   │   ├── DashboardPage.kt        #   DASHBOARD_PAGE (live charts)
-│   │   └── ComparePage.kt          #   COMPARE_PAGE (two-run comparison)
+│   │   ├── ComparePage.kt          #   COMPARE_PAGE (two-run comparison)
+│   │   ├── PlayerDebuggerPage.kt   #   capture cockpit, handoff map, recorder, incident lens
+│   │   └── ReleaseGuardPage.kt     #   offline scenario editor and result viewer
 │   └── report/
 │       ├── Report.kt               #   PdfReport: PDF generation with JFreeChart images
-│       └── Capabilities.kt         #   one-shot Device / Procrank snapshot HTML
+│       ├── Capabilities.kt         #   one-shot Device / Procrank snapshot HTML
+│       ├── PlayerDebugReport.kt    #   sanitized, script-free playback report
+│       └── ReleaseGuardReport.kt   #   release evidence exporters
 ```
 
 ## Dependency direction
@@ -78,6 +89,40 @@ devicemonitor/
 - **presentation** is the output adapter — it consumes domain models and the session.
 - **Main** is the composition root: it parses CLI flags, builds an `Adb`, a `SessionConfig`, and either
   starts a `WebApp` or runs a headless `MonitorSession`.
+
+## Player Debugger evidence pipeline
+
+Player Debugger does not depend on a named player SDK or device manufacturer. Its stable boundary is
+the normalized `PlaybackEvent` model:
+
+```
+logcat / dumpsys / metrics ──> passive probe ──┐
+                                               ├─> ordered PlaybackEvent stream
+app OPTD log events ─────────> strict parser ──┘              │
+                                                              ▼
+                                              session graph + handoff graph
+                                                              │
+                                                              ▼
+                                               deterministic incident rules
+                                                              │
+                                                              ▼
+                                       local UI / HTML / sanitized support zip
+```
+
+Passive capture works on ordinary Android devices and labels observations as log-parsed or
+device-measured. An app can opt into the dependency-free OPTD helper for high-confidence session,
+player, state, buffer, render, error, quality, and handoff events. Engine-created relationships are
+never presented as app facts: they are labelled inferred and carry confidence.
+
+The graph model permits arbitrary player families and delivery labels. Multicast → OTT fallback,
+OTT ↔ DVB switching, overlapping players, loops, failed transitions, and missing endpoints are data,
+not hard-coded special cases. The Retail Android project was inspected as architecture reference
+only; none of its source, player SDKs, names, rules, or assets are bundled into this repository.
+
+Capture artifacts are written atomically and indexed in a local SQLite database. Interrupted runs
+are recovered as partial evidence. The report renderer and support-bundle sanitizer consume stored
+artifacts, so analysis is deterministic and can be re-run without reconnecting the device. See
+[player-debugger.md](player-debugger.md) for the artifact and privacy contract.
 
 ## How a Sample flows (the hot path)
 

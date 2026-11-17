@@ -26,6 +26,23 @@ The home page shows every adb-connected device as a card (serial, model, Android
 
 The live dashboard shows all charts updating in real time, a zap/anomaly event feed, live **health verdict badges** (CPU, Memory, Thermal incl. throttling detection, UI Jank, Stability), a Stop button, and a PDF download button when the run finishes. Only one session runs at a time; everything is still written to the run folder. The terminal keeps printing progress, and Ctrl+C in the terminal shuts the studio down (a running session still writes its report).
 
+### Offline Player Debugger
+
+Player Debugger reconstructs concurrent player instances, playback state, buffer/render/A/V events,
+delivery changes and arbitrary handoffs from Android evidence. It works passively with logcat,
+dumpsys and device metrics on standard Android devices; apps can optionally emit the open **OPTD/1**
+line protocol for precise session and player identity. It does not import or depend on CastLabs,
+MediaKind, multicast, DVB, ExoPlayer or any other player SDK.
+
+The first-use diagnostic set is enabled by default and user changes are restored after navigation and
+restart. Captures, reports and the index stay under `~/ADB Device Monitor/PlayerDebugger/`. The
+Handoff Map, synchronized Flight Recorder and Incident Lens remain usable offline, and static HTML
+evidence opens inside the desktop application. Sanitized support bundles hash identifiers, redact
+sensitive text, omit raw JSON, screenshots, media, traces and DRM material, and can be previewed
+before export. Integration and QA details are in
+[docs/player-debugger.md](docs/player-debugger.md); the optional zero-dependency Android emitter is in
+[`integrations/android-optd/`](integrations/android-optd/).
+
 The home page also has two **one-click deep-dive snapshots** (no run required): **📸 Device Snapshot** — a device capabilities + memory-footprint report (PSS-by-category donut + process table), and **📊 Procrank Snapshot** — per-process VSS/RSS/PSS/USS as a top-15 bar chart and a sortable table. Both are rendered server-side as self-contained interactive HTML. See [docs/device-and-procrank-snapshot.md](docs/device-and-procrank-snapshot.md).
 
 ### Offline Performance Release Guard
