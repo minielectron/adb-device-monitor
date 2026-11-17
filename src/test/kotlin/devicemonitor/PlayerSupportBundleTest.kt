@@ -78,6 +78,19 @@ class PlayerSupportBundleTest {
         assertFalse(File(setup.root, "outside.txt").exists())
     }
 
+    @Test fun rejectsUnsafeImportedManifestIdentifiers() {
+        val setup = setup()
+        val malicious = File(setup.root, "bad-id.zip")
+        ZipOutputStream(malicious.outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("manifest.json"))
+            zip.write(PlayerDebugJson.manifest(manifest(setup).copy(captureId = "bad'id")).toByteArray())
+            zip.closeEntry()
+        }
+        assertFailsWith<IllegalArgumentException> {
+            SupportBundleService(setup.store).importBundle(malicious, File(setup.root, "imports"))
+        }
+    }
+
     private data class Setup(val root: File, val store: PlayerDebugArtifactStore, val location: PlayerCaptureLocation)
     private fun setup(): Setup {
         val root = createTempDirectory("support-bundle").toFile()

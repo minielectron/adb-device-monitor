@@ -6,6 +6,7 @@ import devicemonitor.presentation.web.DASHBOARD_PAGE
 import devicemonitor.presentation.web.HOME_PAGE
 import devicemonitor.presentation.web.OFFLINE_WEB_ASSETS
 import devicemonitor.presentation.web.PAGE_CSP
+import devicemonitor.presentation.web.PLAYER_DEBUGGER_PAGE
 import devicemonitor.presentation.web.RELEASE_GUARD_PAGE
 import devicemonitor.presentation.web.resolveOfflineAsset
 import java.nio.file.Files
@@ -26,6 +27,7 @@ class OfflineAssetsTest {
         assertFalse(remoteAsset.containsMatchIn(DASHBOARD_PAGE))
         assertFalse(remoteAsset.containsMatchIn(COMPARE_PAGE))
         assertFalse(remoteAsset.containsMatchIn(RELEASE_GUARD_PAGE))
+        assertFalse(remoteAsset.containsMatchIn(PLAYER_DEBUGGER_PAGE))
         OFFLINE_WEB_ASSETS.values.forEach { (resource, _) ->
             assertNotNull(javaClass.classLoader.getResource(resource), "missing bundled resource: $resource")
         }
@@ -40,6 +42,22 @@ class OfflineAssetsTest {
         assertContains(RELEASE_GUARD_PAGE, "/api/release/status")
         assertContains(RELEASE_GUARD_PAGE, "/api/release/baseline")
         assertFalse("window.open(" in RELEASE_GUARD_PAGE)
+    }
+
+    @Test fun playerDebuggerUsesOfflineApisSavedDraftAndRequestedDefaults() {
+        assertContains(HOME_PAGE, "href=\"/player-debugger\"")
+        assertContains(PLAYER_DEBUGGER_PAGE, "aps.playerDebugger.draft.v1")
+        assertContains(PLAYER_DEBUGGER_PAGE, "beforeunload',saveDraft")
+        assertContains(PLAYER_DEBUGGER_PAGE, "/api/player/start")
+        assertContains(PLAYER_DEBUGGER_PAGE, "/api/player/status")
+        assertContains(PLAYER_DEBUGGER_PAGE, "/api/player/timeline")
+        listOf("cpuUtil", "perCoreCpu", "topProcessCpu", "memoryUsed", "psiPressure", "topProcessMemory").forEach { id ->
+            assertContains(PLAYER_DEBUGGER_PAGE, "id=\"$id\" type=\"checkbox\" checked")
+        }
+        assertContains(PLAYER_DEBUGGER_PAGE, "Reported")
+        assertContains(PLAYER_DEBUGGER_PAGE, "Measured")
+        assertContains(PLAYER_DEBUGGER_PAGE, "Inferred")
+        assertContains(PLAYER_DEBUGGER_PAGE, "Adapter unknown")
     }
 
     @Test fun diagnosticReportsOpenInTheStatePreservingViewer() {

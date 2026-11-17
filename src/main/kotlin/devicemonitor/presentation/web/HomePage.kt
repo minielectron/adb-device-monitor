@@ -443,6 +443,7 @@ internal val HOME_PAGE = """<!DOCTYPE html>
     </div>
   </div>
   <nav class="nav-actions" aria-label="Application">
+    <a class="nav-link" href="/player-debugger" title="Debug multi-player playback and fallbacks"><b aria-hidden="true">&#9654;</b><span>Player Debugger</span></a>
     <a class="nav-link" href="/release-guard" title="Open the offline performance release gate"><b aria-hidden="true">&#9670;</b><span>Release Guard</span></a>
     <a class="nav-link" href="/compare" title="Compare previous runs"><b aria-hidden="true">&#8644;</b><span>Compare runs</span></a>
     <a class="nav-link" href="/api/diagnostics" title="Download logs and thread diagnostics"><b aria-hidden="true">&#8595;</b><span>Diagnostics</span></a>

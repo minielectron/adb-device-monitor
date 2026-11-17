@@ -70,7 +70,7 @@ internal val RELEASE_GUARD_PAGE = """<!DOCTYPE html>
 <header class="studio-appbar">
   <a class="studio-brand" href="/" style="text-decoration:none"><span class="studio-brand-mark">APS</span><span class="studio-brand-copy"><span class="studio-brand-name">ADB Performance Studio</span><span class="studio-brand-meta">Release Guard · __BUILD__</span></span></a>
   <div class="studio-appbar-context"></div>
-  <nav class="studio-actions" aria-label="Application"><a class="studio-link" href="/">Home</a><a class="studio-link" href="/dashboard">Live dashboard</a><a class="studio-link" href="/compare">Compare</a></nav>
+  <nav class="studio-actions" aria-label="Application"><a class="studio-link" href="/">Home</a><a class="studio-link" href="/player-debugger">Player Debugger</a><a class="studio-link" href="/dashboard">Live dashboard</a><a class="studio-link" href="/compare">Compare</a></nav>
 </header>
 <main class="studio-shell">
   <section class="studio-enter">

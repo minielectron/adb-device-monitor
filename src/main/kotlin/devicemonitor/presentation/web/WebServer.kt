@@ -112,6 +112,7 @@ class WebApp(
         route(s, "/") { ex -> respondPage(ex, HOME_PAGE.replace("__BUILD__", esc(buildTag())).replace("</head>", STUDIO_UI_CSS + CLIENT_LOG_TAG + "</head>")) }
         route(s, "/dashboard") { ex -> respondPage(ex, DASHBOARD_PAGE.replace("__BUILD__", esc(buildTag())).replace("</head>", STUDIO_UI_CSS + CLIENT_LOG_TAG + "</head>")) }
         route(s, "/release-guard") { ex -> respondPage(ex, RELEASE_GUARD_PAGE.replace("__BUILD__", esc(buildTag())).replace("</head>", STUDIO_UI_CSS + CLIENT_LOG_TAG + "</head>")) }
+        route(s, "/player-debugger") { ex -> respondPage(ex, PLAYER_DEBUGGER_PAGE.replace("__BUILD__", esc(buildTag())).replace("</head>", STUDIO_UI_CSS + CLIENT_LOG_TAG + "</head>")) }
         OFFLINE_WEB_ASSETS.keys.forEach { path -> route(s, path) { ex -> handleOfflineAsset(ex, path) } }
         route(s, "/api/devices") { ex -> respond(ex, 200, "application/json", devicesJson()) }
         route(s, "/api/defaults") { ex ->

@@ -20,9 +20,9 @@ data class PlayerDebugManifest(
 ) {
     fun validate() {
         require(schemaVersion == PLAYER_DEBUG_SCHEMA_VERSION) { "Unsupported Player Debugger schema version $schemaVersion" }
-        require(captureId.isNotBlank()) { "Capture id is required" }
-        require(deviceId.isNotBlank()) { "Device id is required" }
-        require(packageName.isNotBlank()) { "Package name is required" }
+        require(captureId.matches(Regex("[A-Za-z0-9._-]{1,200}"))) { "Capture id contains unsafe characters" }
+        require(deviceId.matches(Regex("[A-Za-z0-9._:-]{1,300}"))) { "Device id contains unsafe characters" }
+        require(packageName.matches(Regex("[A-Za-z0-9._-]{1,300}"))) { "Package name contains unsafe characters" }
         require(startedAt.isNotBlank() && updatedAt.isNotBlank()) { "Capture timestamps are required" }
         require(eventCount >= 0 && sessionCount >= 0 && incidentCount >= 0) { "Capture counts cannot be negative" }
         require(artifacts.values.all(::safeRelativePath)) {
