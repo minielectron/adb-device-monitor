@@ -63,6 +63,18 @@ class OfflineAssetsTest {
         assertContains(PLAYER_DEBUGGER_PAGE, "Adapter unknown")
     }
 
+    @Test fun homeAndPlayerDebuggerShareBalancedFirstUseMetricDefaults() {
+        listOf("m_cpu", "m_percore", "m_topprocs", "m_mempct", "m_psi", "m_topmem").forEach { id ->
+            assertContains(HOME_PAGE, "id=\"$id\" checked")
+        }
+        assertContains(HOME_PAGE, "id=\"m_pss\"><span>")
+        assertFalse(HOME_PAGE.contains("id=\"m_pss\" checked"))
+
+        listOf("cpuUtil", "perCoreCpu", "topProcessCpu", "memoryUsed", "psiPressure", "topProcessMemory").forEach { id ->
+            assertContains(PLAYER_DEBUGGER_PAGE, "id=\"$id\" type=\"checkbox\" checked")
+        }
+    }
+
     @Test fun diagnosticReportsOpenInTheStatePreservingViewer() {
         assertContains(HOME_PAGE, "id=\"reportViewer\"")
         assertContains(HOME_PAGE, "var reportPaths = { '/api/snapshot-report': 'Device Snapshot', '/api/procrank-report': 'Memory Snapshot' }")

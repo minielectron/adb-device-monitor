@@ -538,33 +538,33 @@ internal val HOME_PAGE = """<!DOCTYPE html>
           <div class="metric-cluster">
             <div class="mgroup-title">System and compute <span class="mgroup-hint">CPU, load, thermal and network signals</span></div>
             <div class="metrics-grid">
-              <label class="mcheck"><input type="checkbox" id="m_cpu"><span><span class="mcheck-label">CPU utilization</span><span class="mcheck-cost">Free · /proc/stat</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_cpu" checked><span><span class="mcheck-label">CPU utilization</span><span class="mcheck-cost">Free · /proc/stat</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_cpuidle"><span><span class="mcheck-label">CPU idle</span><span class="mcheck-cost">Free · /proc/stat</span></span></label>
-              <label class="mcheck"><input type="checkbox" id="m_percore"><span><span class="mcheck-label">Per-core CPU</span><span class="mcheck-cost">Free · /proc/stat cpuN</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_percore" checked><span><span class="mcheck-label">Per-core CPU</span><span class="mcheck-cost">Free · /proc/stat cpuN</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_load"><span><span class="mcheck-label">Load average</span><span class="mcheck-cost">Negligible · /proc/loadavg</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_thermal"><span><span class="mcheck-label">CPU temperature</span><span class="mcheck-cost">Low · thermal sysfs</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_freq"><span><span class="mcheck-label">CPU frequency</span><span class="mcheck-cost">Low · scaling_cur_freq</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_network"><span><span class="mcheck-label">Network throughput</span><span class="mcheck-cost">Low · /proc/net/dev</span></span></label>
-              <label class="mcheck"><input type="checkbox" id="m_topprocs"><span><span class="mcheck-label">Top process CPU</span><span class="mcheck-cost">Medium · process stat reads</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_topprocs" checked><span><span class="mcheck-label">Top process CPU</span><span class="mcheck-cost">Medium · process stat reads</span></span></label>
             </div>
           </div>
           <div class="metric-cluster">
             <div class="mgroup-title">Memory pressure <span class="mgroup-hint">Capacity, stalls, reclaim and top consumers</span></div>
             <div class="metrics-grid">
               <label class="mcheck"><input type="checkbox" id="m_mem"><span><span class="mcheck-label">Memory amount</span><span class="mcheck-cost">Free · /proc/meminfo</span></span></label>
-              <label class="mcheck"><input type="checkbox" id="m_mempct"><span><span class="mcheck-label">Memory used</span><span class="mcheck-cost">Free · /proc/meminfo</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_mempct" checked><span><span class="mcheck-label">Memory used</span><span class="mcheck-cost">Free · /proc/meminfo</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_swap"><span><span class="mcheck-label">Swap used</span><span class="mcheck-cost">Free · /proc/meminfo</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_zone"><span><span class="mcheck-label">Zone watermarks</span><span class="mcheck-cost">Free · /proc/zoneinfo</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_psi" checked><span><span class="mcheck-label">PSI pressure stall</span><span class="mcheck-cost">Low · /proc/pressure</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_pgfault"><span><span class="mcheck-label">Major page faults</span><span class="mcheck-cost">Low · /proc/vmstat</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_reclaim" onchange="if(this.checked){var l=document.getElementById('logcat');if(l)l.checked=true;}"><span><span class="mcheck-label">Direct reclaim</span><span class="mcheck-cost">Logcat · pressure events</span></span></label>
-              <label class="mcheck"><input type="checkbox" id="m_topmem"><span><span class="mcheck-label">Top process memory</span><span class="mcheck-cost">Low · single ps call</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_topmem" checked><span><span class="mcheck-label">Top process memory</span><span class="mcheck-cost">Low · single ps call</span></span></label>
             </div>
           </div>
           <div class="metric-cluster">
             <div class="mgroup-title">App and media <span class="mgroup-hint">Package-aware process and playback signals</span></div>
             <div class="metrics-grid">
-              <label class="mcheck"><input type="checkbox" id="m_pss" checked><span><span class="mcheck-label">App PSS breakdown</span><span class="mcheck-cost">Medium · dumpsys meminfo</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_pss"><span><span class="mcheck-label">App PSS breakdown</span><span class="mcheck-cost">Medium · dumpsys meminfo</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_appcpu"><span><span class="mcheck-label">App process CPU</span><span class="mcheck-cost">Low · process stat</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_maincpu"><span><span class="mcheck-label">Main-thread CPU</span><span class="mcheck-cost">Low · task stat</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_mediacpu"><span><span class="mcheck-label">Media and HAL CPU</span><span class="mcheck-cost">Low · media process PIDs</span></span></label>
