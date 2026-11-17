@@ -1,0 +1,39 @@
+src/test/kotlin/devicemonitor/PlayerDebuggerApiTest.kt
+  s_6a41e6dc5a6d74::t_cafc05359d3c77 52-54
+src/main/kotlin/devicemonitor/data/playerdebug/PlayerDebugArtifactStore.kt
+  s_6a41e6dc5a6d74::t_cafc05359d3c77 20,83-124
+src/main/kotlin/devicemonitor/presentation/web/PlayerDebuggerPage.kt
+  s_6a41e6dc5a6d74::t_e24c62fb09b9ab 104-125
+  s_6a41e6dc5a6d74::t_9c3b9185dfe61c 38-43,45
+  s_6a41e6dc5a6d74::t_e3e54420685829 150-171
+  s_6a41e6dc5a6d74::t_c1b1c2b7300839 174-177,179-237,239,241
+  s_6a41e6dc5a6d74::t_ede5c584a5dc8c 178,240
+  s_6a41e6dc5a6d74::t_a0f539af4b50f0 46,238
+  s_6a41e6dc5a6d74::t_9aed7610bd5e9a 131,133
+src/test/kotlin/devicemonitor/PlayerDebuggerFlightRecorderTest.kt
+  s_6a41e6dc5a6d74::t_9cfe4fcebb542f 1-112
+src/test/kotlin/devicemonitor/PlayerDebugArtifactStoreTest.kt
+  s_6a41e6dc5a6d74::t_cafc05359d3c77 63,69-72
+src/main/kotlin/devicemonitor/presentation/web/WebServer.kt
+  s_6a41e6dc5a6d74::t_cafc05359d3c77 1086,1091-1092,1094
+src/main/kotlin/devicemonitor/application/Session.kt
+  s_6a41e6dc5a6d74::t_ede5c584a5dc8c 849-914
+  s_6a41e6dc5a6d74::t_66dd802f66be65 110,529,566-570,636,639-640,701,804-825
+  s_6a41e6dc5a6d74::t_d54a8bfdfb17c2 826
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "acedeb162884c98551974d4d6aa050d3d2e860df",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
