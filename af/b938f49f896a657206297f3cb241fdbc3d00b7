@@ -1,0 +1,28 @@
+integrations/android-optd/src/test/kotlin/devicemonitor/optd/OptdTest.kt
+  s_6a41e6dc5a6d74::t_aece6b6ee95c48 1-63,67-77
+  s_6a41e6dc5a6d74::t_36cd38f9f9cbc8 64-66
+build.gradle.kts
+  s_6a41e6dc5a6d74::t_aece6b6ee95c48 29-33
+integrations/android-optd/src/main/kotlin/devicemonitor/optd/Optd.kt
+  s_6a41e6dc5a6d74::t_aece6b6ee95c48 1-202
+integrations/android-optd/README.md
+  s_6a41e6dc5a6d74::t_aece6b6ee95c48 1-32
+integrations/android-optd/sample/README.md
+  s_6a41e6dc5a6d74::t_aece6b6ee95c48 1-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "afb938f49f896a657206297f3cb241fdbc3d00b7",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
