@@ -1,0 +1,44 @@
+src/main/kotlin/devicemonitor/application/playerdebug/PlayerDebugService.kt
+  s_6a41e6dc5a6d74::t_c1e75851fac828 92,138,141,151-167
+  s_6a41e6dc5a6d74::t_b71efe1c8b86a2 142-147
+  s_6a41e6dc5a6d74::t_6797a4ca5c5789 47-57,65,73,124-133
+  s_6a41e6dc5a6d74::t_0ed9acb71a59ee 168-169
+src/main/kotlin/devicemonitor/data/playerdebug/PlayerDebugJson.kt
+  s_6a41e6dc5a6d74::t_fef12c61761be6 56
+src/test/kotlin/devicemonitor/PlayerDebugArtifactStoreTest.kt
+  s_6a41e6dc5a6d74::t_6797a4ca5c5789 58-69
+src/main/kotlin/devicemonitor/data/playerdebug/PlayerDebugArtifactStore.kt
+  s_6a41e6dc5a6d74::t_6797a4ca5c5789 20,66-84
+  s_6a41e6dc5a6d74::t_6becea989f2d40 85
+src/main/kotlin/devicemonitor/application/playerdebug/SupportBundleService.kt
+  s_6a41e6dc5a6d74::t_3c1237c752d826 165
+src/test/kotlin/devicemonitor/PlayerDebuggerApiTest.kt
+  s_6a41e6dc5a6d74::t_21c556044822c7 43-45
+  s_6a41e6dc5a6d74::t_0b53003b9c0b1d 1-42,46-62,64-126,128-167
+  s_6a41e6dc5a6d74::t_d8e5622d4e7c98 127
+  s_6a41e6dc5a6d74::t_404b2268d5511d 63
+src/main/kotlin/devicemonitor/presentation/web/WebServer.kt
+  s_6a41e6dc5a6d74::t_5c97e1421cba24 4,958-1051,1054-1069,1078-1295,1306-1343
+  s_6a41e6dc5a6d74::t_b6fa33ca795130 1052-1053,1070-1077,1296-1305
+  s_6a41e6dc5a6d74::t_3c1237c752d826 30
+  s_6a41e6dc5a6d74::t_fef12c61761be6 8,10,20-21,50-52,72-87,162-175,190,193
+  s_6a41e6dc5a6d74::t_c148691ca7f44c 1344
+src/test/kotlin/devicemonitor/PlayerDebugServiceTest.kt
+  s_6a41e6dc5a6d74::t_6797a4ca5c5789 20-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "75c8e6a53d0dd005dc97ae0da527dd377645dbf2",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
