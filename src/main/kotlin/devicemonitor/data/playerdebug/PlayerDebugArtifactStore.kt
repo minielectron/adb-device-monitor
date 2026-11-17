@@ -17,6 +17,7 @@ data class RecoveredPlayerCapture(
     val status: PlayerCaptureRecoveryStatus,
     val error: String? = null
 )
+data class PlayerEventPage(val events: List<PlaybackEvent>, val nextOffset: Long?, val totalRead: Long)
 
 class PlayerDebugArtifactStore(
     root: File,
@@ -61,6 +62,26 @@ class PlayerDebugArtifactStore(
 
     fun writeParserDiagnostics(location: PlayerCaptureLocation, diagnostics: List<OptdParseDiagnostic>): File =
         writeNamed(location, "parser-diagnostics.json", com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(diagnostics))
+
+    fun readEventPage(file: File, offset: Long, limit: Int): PlayerEventPage {
+        require(offset >= 0) { "Timeline offset cannot be negative" }
+        require(limit in 1..500) { "Timeline limit must be between 1 and 500" }
+        val target = ensureInside(file.toPath())
+        require(Files.isRegularFile(target)) { "Event artifact does not exist" }
+        val events = ArrayList<PlaybackEvent>(limit)
+        var index = 0L
+        var hasMore = false
+        Files.newBufferedReader(target).useLines { lines ->
+            val iterator = lines.iterator()
+            while (iterator.hasNext()) {
+                val line = iterator.next()
+                if (index++ < offset || line.isBlank()) continue
+                if (events.size == limit) { hasMore = true; break }
+                events += PlayerDebugJson.parseEvent(line)
+            }
+        }
+        return PlayerEventPage(events, if (hasMore) offset + events.size else null, index)
+    }
 
     fun register(location: PlayerCaptureLocation, name: String, source: File): File {
         require(source.isFile) { "Artifact does not exist: ${source.absolutePath}" }

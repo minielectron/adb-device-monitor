@@ -162,7 +162,7 @@ class SupportBundleService(
         private const val MAX_PREVIEW_CHARS = 2 * 1024 * 1024
         private val STANDARD_FILES = setOf("manifest.json", "events.ndjson", "session-graph.json", "incidents.json", "parser-diagnostics.json", "metrics.csv", "logcat.log", "report.html")
         private val TEXT_EXTENSIONS = setOf("json", "ndjson", "csv", "log", "txt", "html")
-        private val EXCLUDED_EXTENSIONS = setOf(".png", ".jpg", ".jpeg", ".webp", ".mp4", ".ts", ".trace", ".bin")
+        private val EXCLUDED_EXTENSIONS = setOf(".png", ".jpg", ".jpeg", ".webp", ".mp4", ".ts", ".trace", ".bin", ".pdf")
         private val EXCLUDED_WORDS = setOf("screenshot", "protected", "segment", "license_challenge", "drm_payload")
     }
 }

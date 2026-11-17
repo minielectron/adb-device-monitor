@@ -53,4 +53,5 @@ object PlayerDebugJson {
     )
     fun event(value: PlaybackEvent): String = compact.toJson(value)
     fun parseEvent(json: String): PlaybackEvent = compact.fromJson(json, PlaybackEvent::class.java)
+    fun json(value: Any?): String = gson.toJson(value)
 }

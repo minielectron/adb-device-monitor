@@ -55,6 +55,18 @@ class PlayerDebugArtifactStoreTest {
         assertNotEquals(store.createCapture("app").captureId, store.createCapture("app").captureId)
     }
 
+    @Test fun streamsBoundedTimelinePages() {
+        val store = store()
+        val location = store.createCapture("app")
+        val file = store.writeEvents(location, (0L..5L).map { event().copy(sequence = it, timeNs = it) })
+        val first = store.readEventPage(file, 0, 2)
+        assertEquals(listOf(0L, 1L), first.events.map { it.sequence })
+        assertEquals(2, first.nextOffset)
+        val last = store.readEventPage(file, 4, 2)
+        assertEquals(listOf(4L, 5L), last.events.map { it.sequence })
+        assertNull(last.nextOffset)
+    }
+
     private fun store(): PlayerDebugArtifactStore {
         var id = 0
         return PlayerDebugArtifactStore(createTempDirectory("player-store").toFile(), fixedClock()) { "fixed-${id++}" }

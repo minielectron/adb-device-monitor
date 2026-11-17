@@ -44,6 +44,17 @@ data class PlayerDebugProgress(
     val error: String? = null
 )
 
+data class PlayerDebugCaptureResult(
+    val state: PlayerCaptureState,
+    val events: List<PlaybackEvent>,
+    val diagnostics: List<OptdParseDiagnostic>,
+    val snapshots: List<MediaSnapshot>,
+    val graph: PlayerSessionGraph,
+    val incidents: List<PlayerIncident>,
+    val runDirectory: File?,
+    val error: String? = null
+)
+
 class PlayerDebugService(private val captureFactory: PlayerMonitorCaptureFactory) {
     @Volatile private var capture: PlayerMonitorCapture? = null
     @Volatile private var worker: Thread? = null
@@ -51,6 +62,7 @@ class PlayerDebugService(private val captureFactory: PlayerMonitorCaptureFactory
     @Volatile var progress = PlayerDebugProgress(); private set
     @Volatile var graph: PlayerSessionGraph? = null; private set
     @Volatile var incidents: List<PlayerIncident> = emptyList(); private set
+    @Volatile var result: PlayerDebugCaptureResult? = null; private set
 
     @Synchronized fun start(config: SessionConfig) {
         require(worker?.isAlive != true) { "A Player Debugger capture is already active" }
@@ -58,6 +70,7 @@ class PlayerDebugService(private val captureFactory: PlayerMonitorCaptureFactory
         stopRequested.set(false)
         graph = null
         incidents = emptyList()
+        result = null
         progress = PlayerDebugProgress(PlayerCaptureState.PROBE, "Preparing Player Debugger capture")
         val active = captureFactory.create(config.copy(logcatEnabled = true, playerDebugEnabled = true))
         capture = active
@@ -76,6 +89,7 @@ class PlayerDebugService(private val captureFactory: PlayerMonitorCaptureFactory
             progress = progress.copy(state = PlayerCaptureState.READY, message = "Starting capture")
             if (stopRequested.get()) {
                 progress = status(active, PlayerCaptureState.CANCELLED, "Capture stopped")
+                result = recoveredResult(active, PlayerCaptureState.CANCELLED, active.error)
                 return
             }
             active.start()
@@ -107,14 +121,50 @@ class PlayerDebugService(private val captureFactory: PlayerMonitorCaptureFactory
                 PlayerCaptureState.PARTIAL -> "Partial evidence recovered"
                 else -> "Capture failed"
             })
+            result = PlayerDebugCaptureResult(
+                finalState,
+                events,
+                active.diagnostics(),
+                active.snapshots(),
+                built,
+                incidents,
+                active.runDirectory,
+                active.error
+            )
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
             active.stop()
             progress = status(active, PlayerCaptureState.CANCELLED, "Capture interrupted")
+            result = recoveredResult(active, PlayerCaptureState.CANCELLED, "Capture interrupted")
         } catch (e: Exception) {
             active.stop()
-            progress = status(active, PlayerCaptureState.FAILED, "Capture failed", e.message ?: e.toString())
+            result = recoveredResult(active, PlayerCaptureState.PARTIAL, e.message ?: e.toString())
+            progress = status(
+                active,
+                result!!.state,
+                if (result!!.state == PlayerCaptureState.PARTIAL) "Partial evidence recovered" else "Capture failed",
+                e.message ?: e.toString()
+            )
         }
+    }
+
+    private fun recoveredResult(active: PlayerMonitorCapture, state: PlayerCaptureState, error: String?): PlayerDebugCaptureResult {
+        val events = active.events()
+        val built = runCatching { SessionGraphBuilder().build(EventReplay().replay(events)) }
+            .getOrElse { PlayerSessionGraph(emptyList(), emptyList(), events) }
+        val findings = runCatching { PlayerIncidentEngine().analyze(built) }.getOrDefault(emptyList())
+        graph = built
+        incidents = findings
+        return PlayerDebugCaptureResult(
+            if (state == PlayerCaptureState.PARTIAL && events.isEmpty()) PlayerCaptureState.FAILED else state,
+            events,
+            active.diagnostics(),
+            active.snapshots(),
+            built,
+            findings,
+            active.runDirectory,
+            error
+        )
     }
 
     private fun status(active: PlayerMonitorCapture, state: PlayerCaptureState, message: String, error: String? = active.error) =

@@ -1,10 +1,13 @@
 package devicemonitor.presentation.web
 
 import devicemonitor.domain.*
+import devicemonitor.domain.playerdebug.*
 import devicemonitor.data.adb.*
 import devicemonitor.application.*
 import devicemonitor.application.releaseguard.*
+import devicemonitor.application.playerdebug.*
 import devicemonitor.data.device.*
+import devicemonitor.data.playerdebug.*
 import devicemonitor.data.storage.*
 import devicemonitor.presentation.report.*
 import devicemonitor.common.*
@@ -14,6 +17,8 @@ import com.sun.net.httpserver.HttpServer
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.URLDecoder
+import java.nio.file.Files
+import java.time.Instant
 import java.util.Locale
 
 internal val OFFLINE_WEB_ASSETS = mapOf(
@@ -22,6 +27,7 @@ internal val OFFLINE_WEB_ASSETS = mapOf(
 )
 
 internal const val PAGE_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+private val PLAYER_TEXT_EXTENSIONS = setOf("json", "ndjson", "csv", "log", "txt", "html")
 
 internal fun resolveOfflineAsset(path: String): Pair<String, String>? = OFFLINE_WEB_ASSETS[path]
 
@@ -41,7 +47,9 @@ class WebApp(
     private val adb: Adb,
     initialSession: MonitorSession? = null,
     private val bindHost: String? = null,   // null = all interfaces (browser mode); "127.0.0.1" for the desktop shell
-    releaseGuardRoot: File = File(MonitorSession.defaultReportsDir(), "ReleaseGuard")
+    releaseGuardRoot: File = File(MonitorSession.defaultReportsDir(), "ReleaseGuard"),
+    playerDebuggerRoot: File = File(MonitorSession.defaultReportsDir(), "PlayerDebugger"),
+    playerCaptureFactory: PlayerMonitorCaptureFactory? = null
 ) {
     @Volatile var session: MonitorSession? = initialSession
 
@@ -60,6 +68,22 @@ class WebApp(
                 MonitorCaptureSession(monitor)
             }
         )
+    }
+    private val playerArtifacts = PlayerDebugArtifactStore(File(playerDebuggerRoot, "captures"))
+    private val playerRepository = SqlitePlayerDebugRepository(File(playerDebuggerRoot, "player-debugger.db"), playerArtifacts)
+    private val playerSupport = SupportBundleService(playerArtifacts)
+    private val playerService = PlayerDebugService(playerCaptureFactory ?: PlayerMonitorCaptureFactory { config ->
+        MonitorPlayerCapture(MonitorSession(adb, config).also { session = it })
+    })
+    @Volatile private var playerLocation: PlayerCaptureLocation? = null
+    @Volatile private var playerDeviceId: String? = null
+    @Volatile private var playerPackageName: String? = null
+    @Volatile private var playerStartedAt: String? = null
+    @Volatile private var playerPersistedId: String? = null
+
+    init {
+        runCatching { playerRepository.rebuildFromArtifacts() }
+            .onFailure { Log.warn("[player-debug] index rebuild failed: ${it.message}") }
     }
 
     // Base folder that runs are written to (the UI "Reports folder"). Tracked so the Run Comparison
@@ -135,6 +159,20 @@ class WebApp(
         route(s, "/api/release/result") { ex -> handleReleaseResult(ex) }
         route(s, "/api/release/baseline") { ex -> handleReleaseBaseline(ex) }
         route(s, "/api/release/artifact") { ex -> handleReleaseArtifact(ex) }
+        route(s, "/api/player/capabilities") { ex -> handlePlayerCapabilities(ex) }
+        route(s, "/api/player/start") { ex -> handlePlayerStart(ex) }
+        route(s, "/api/player/stop") { ex -> handlePlayerStop(ex) }
+        route(s, "/api/player/status") { ex -> handlePlayerStatus(ex) }
+        route(s, "/api/player/captures") { ex -> handlePlayerCaptures(ex) }
+        route(s, "/api/player/graph") { ex -> handlePlayerGraph(ex) }
+        route(s, "/api/player/timeline") { ex -> handlePlayerTimeline(ex) }
+        route(s, "/api/player/incidents") { ex -> handlePlayerIncidents(ex) }
+        route(s, "/api/player/evidence") { ex -> handlePlayerEvidence(ex) }
+        route(s, "/api/player/rules") { ex -> handlePlayerRules(ex) }
+        route(s, "/api/player/export-preview") { ex -> handlePlayerExportPreview(ex) }
+        route(s, "/api/player/export") { ex -> handlePlayerExport(ex) }
+        route(s, "/api/player/import") { ex -> handlePlayerImport(ex) }
+        route(s, "/api/player/reanalyze") { ex -> handlePlayerReanalyze(ex) }
         // Unbounded named daemon pool: a slow handler (unresponsive device, native folder dialog)
         // can no longer starve the dashboard poll the way the old fixed pool of 4 did.
         val n = java.util.concurrent.atomic.AtomicInteger()
@@ -149,8 +187,10 @@ class WebApp(
 
     fun stop() {
         releaseService.cancel()
+        playerService.stop()
         server?.stop(0)
         try { releaseRepository.close() } catch (_: Exception) {}
+        try { playerRepository.close() } catch (_: Exception) {}
     }
 
     // ---------- request plumbing: timing, error capture, stall detection ----------
@@ -913,6 +953,393 @@ class WebApp(
         } catch (e: Exception) {
             respond(ex, 404, "application/json", err(e.message ?: "Artifact not found"))
         }
+    }
+
+    // ---------- Offline Player Debugger ----------
+
+    private fun handlePlayerCapabilities(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/capabilities")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val serial = queryParam(ex, "serial")
+            ?: run { playerError(ex, 400, "missing_serial", "Missing serial"); return }
+        if (!validDeviceId(serial)) { playerError(ex, 400, "invalid_serial", "Invalid device serial"); return }
+        try {
+            val target = CapabilityProbe(adb).probe(serial, queryParam(ex, "refresh") == "true")
+            respond(ex, 200, "application/json", "{\"target\":${ReleaseGuardJson.json(target)}}")
+        } catch (e: Exception) {
+            playerError(ex, 400, "probe_failed", e.message ?: "Capability probe failed")
+        }
+    }
+
+    private fun handlePlayerStart(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/start")) return
+        if (ex.requestMethod != "POST") { methodNotAllowed(ex, "POST"); return }
+        if (playerService.isRunning()) { playerError(ex, 409, "capture_conflict", "A Player Debugger capture is already running"); return }
+        if (releaseService.isRunning()) { playerError(ex, 409, "capture_conflict", "A Release Guard check is already running"); return }
+        val active = session
+        if (active != null && active.status in listOf(MonitorSession.Status.STARTING, MonitorSession.Status.RUNNING)) {
+            playerError(ex, 409, "capture_conflict", "A performance session is already running"); return
+        }
+        val body = requestBody(ex) ?: return
+        try {
+            val obj = JsonParser.parseString(body).asJsonObject
+            val serial = requiredString(obj, "serial")
+            val packageName = requiredString(obj, "packageName")
+            require(validDeviceId(serial)) { "Invalid device serial" }
+            require(packageName.matches(Regex("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+"))) { "Invalid Android package name" }
+            val duration = obj.get("durationSec")?.asDouble ?: 300.0
+            val interval = obj.get("intervalSec")?.asDouble ?: 1.0
+            require(duration in 1.0..86_400.0) { "Duration must be between 1 and 86400 seconds" }
+            require(interval in 0.25..60.0) { "Interval must be between 0.25 and 60 seconds" }
+
+            val location = playerArtifacts.createCapture(packageName)
+            val now = Instant.now().toString()
+            val initial = PlayerDebugManifest(
+                captureId = location.captureId,
+                deviceId = serial,
+                packageName = packageName,
+                state = PlayerCaptureState.PROBE,
+                startedAt = now,
+                updatedAt = now
+            )
+            playerArtifacts.writeManifest(location, initial)
+            playerRepository.upsert(initial, playerArtifacts.relative(location.manifestFile))
+            playerLocation = location
+            playerDeviceId = serial
+            playerPackageName = packageName
+            playerStartedAt = now
+            playerPersistedId = null
+            playerService.start(
+                SessionConfig(
+                    target = serial,
+                    durationSec = duration,
+                    intervalSec = interval,
+                    packageName = packageName,
+                    runDirectoryOverride = location.directory,
+                    cpuUtilEnabled = bool(obj, "cpuUtil", true),
+                    perCoreEnabled = bool(obj, "perCoreCpu", true),
+                    topProcsEnabled = bool(obj, "topProcessCpu", true),
+                    memoryMbEnabled = bool(obj, "memoryUsed", true),
+                    psiEnabled = bool(obj, "psiPressure", true),
+                    topMemEnabled = bool(obj, "topProcessMemory", true),
+                    playbackEnabled = true,
+                    appPssEnabled = bool(obj, "appPss", true),
+                    appProcCpuEnabled = bool(obj, "appProcessCpu", true)
+                )
+            )
+            watchPlayerCapture()
+            respond(ex, 202, "application/json", "{\"ok\":true,\"captureId\":\"${esc(location.captureId)}\"}")
+        } catch (e: Exception) {
+            playerError(ex, 400, "invalid_capture", e.message ?: "Could not start Player Debugger")
+        }
+    }
+
+    private fun handlePlayerStop(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/stop")) return
+        if (ex.requestMethod != "POST") { methodNotAllowed(ex, "POST"); return }
+        playerService.stop()
+        respond(ex, 200, "application/json", "{\"ok\":true}")
+    }
+
+    private fun handlePlayerStatus(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/status")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        if (!playerService.isRunning()) persistPlayerResult()
+        respond(ex, 200, "application/json", PlayerDebugJson.json(mapOf(
+            "running" to playerService.isRunning(),
+            "captureId" to playerLocation?.captureId,
+            "progress" to playerService.progress,
+            "graph" to playerService.graph?.let(::playerGraphSummary),
+            "highestSeverity" to playerService.incidents.maxByOrNull { it.severity.ordinal }?.severity
+        )))
+    }
+
+    private fun handlePlayerCaptures(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/captures")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val packageName = queryParam(ex, "packageName")
+        respond(ex, 200, "application/json", "{\"captures\":${PlayerDebugJson.json(playerRepository.captures(packageName).map { it.manifest })}}")
+    }
+
+    private fun handlePlayerGraph(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/graph")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val indexed = requirePlayerCapture(ex) ?: return
+        val file = playerArtifact(indexed, "graph", "session-graph.json")
+            ?: run { playerError(ex, 404, "graph_unavailable", "Session graph is unavailable"); return }
+        val graph = PlayerDebugJson.parseGraph(file.readText())
+        respond(ex, 200, "application/json", PlayerDebugJson.json(mapOf(
+            "summary" to playerGraphSummary(graph),
+            "processEpochs" to graph.processEpochs,
+            "viewingSessions" to graph.viewingSessions,
+            "duplicateEvents" to graph.duplicateEvents,
+            "lateEvents" to graph.lateEvents
+        )))
+    }
+
+    private fun handlePlayerTimeline(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/timeline")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val indexed = requirePlayerCapture(ex) ?: return
+        val offset = queryParam(ex, "offset")?.toLongOrNull() ?: 0L
+        val limit = queryParam(ex, "limit")?.toIntOrNull() ?: 200
+        try {
+            val file = playerArtifact(indexed, "events", "events.ndjson")
+                ?: error("Timeline is unavailable")
+            val page = playerArtifacts.readEventPage(file, offset, limit)
+            respond(ex, 200, "application/json", "{\"events\":[${page.events.joinToString(",") { PlayerDebugJson.event(it) }}]," +
+                "\"nextOffset\":${page.nextOffset ?: "null"},\"totalRead\":${page.totalRead}}")
+        } catch (e: IllegalArgumentException) {
+            playerError(ex, 400, "invalid_window", e.message ?: "Invalid timeline window")
+        } catch (e: Exception) {
+            playerError(ex, 404, "timeline_unavailable", e.message ?: "Timeline is unavailable")
+        }
+    }
+
+    private fun handlePlayerIncidents(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/incidents")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val indexed = requirePlayerCapture(ex) ?: return
+        val file = playerArtifact(indexed, "incidents", "incidents.json")
+            ?: run { playerError(ex, 404, "incidents_unavailable", "Incidents are unavailable"); return }
+        respond(ex, 200, "application/json", file.readText())
+    }
+
+    private fun handlePlayerEvidence(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/evidence")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val indexed = requirePlayerCapture(ex) ?: return
+        val key = queryParam(ex, "artifact")
+            ?: run { playerError(ex, 400, "missing_artifact", "Missing artifact"); return }
+        val relative = indexed.manifest.artifacts[key]
+            ?: run { playerError(ex, 404, "artifact_not_found", "Artifact not found"); return }
+        try {
+            val file = playerArtifacts.resolve(relative)
+            require(file.isFile && file.extension.lowercase() in PLAYER_TEXT_EXTENSIONS) { "Artifact is not safe text evidence" }
+            val startLine = (queryParam(ex, "line")?.toIntOrNull() ?: 1).coerceAtLeast(1)
+            val lines = file.useLines { sequence -> sequence.drop(startLine - 1).take(200).toList() }
+            respond(ex, 200, "application/json", PlayerDebugJson.json(mapOf(
+                "artifact" to key,
+                "line" to startLine,
+                "text" to lines.joinToString("\n").take(64 * 1024)
+            )))
+        } catch (e: Exception) {
+            playerError(ex, 404, "artifact_not_found", e.message ?: "Artifact not found")
+        }
+    }
+
+    private fun handlePlayerRules(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/rules")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        respond(ex, 200, "application/json", PlayerDebugJson.json(PlayerRuleProfile()))
+    }
+
+    private fun handlePlayerExportPreview(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/export-preview")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val indexed = requirePlayerCapture(ex) ?: return
+        try {
+            respond(ex, 200, "application/json", PlayerDebugJson.json(playerSupport.preview(playerLocation(indexed), indexed.manifest)))
+        } catch (e: Exception) {
+            playerError(ex, 400, "preview_failed", e.message ?: "Could not preview support bundle")
+        }
+    }
+
+    private fun handlePlayerExport(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/export")) return
+        if (ex.requestMethod != "POST") { methodNotAllowed(ex, "POST"); return }
+        val indexed = requirePlayerCapture(ex) ?: return
+        val temp = Files.createTempFile("player-support-", ".zip").toFile()
+        try {
+            playerSupport.export(playerLocation(indexed), indexed.manifest, temp)
+            val bytes = temp.readBytes()
+            ex.responseHeaders.add("Content-Type", "application/zip")
+            ex.responseHeaders.add("Content-Disposition", "attachment; filename=\"player-support-${safeFileName(indexed.manifest.captureId)}.zip\"")
+            ex.responseHeaders.add("X-Content-Type-Options", "nosniff")
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        } catch (e: Exception) {
+            playerError(ex, 400, "export_failed", e.message ?: "Could not export support bundle")
+        } finally {
+            temp.delete()
+        }
+    }
+
+    private fun handlePlayerImport(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/import")) return
+        if (ex.requestMethod != "POST") { methodNotAllowed(ex, "POST"); return }
+        val upload = receivePlayerBundle(ex) ?: return
+        try {
+            val imported = playerSupport.importBundle(upload, playerArtifacts.root)
+            var captureId = imported.manifest.captureId
+            var suffix = 2
+            while (playerRepository.capture(captureId) != null) captureId = "${imported.manifest.captureId}-import-${suffix++}"
+            val artifacts = imported.manifest.artifacts.mapValues { (_, local) ->
+                playerArtifacts.relative(File(imported.directory, local))
+            }
+            val location = PlayerCaptureLocation(captureId, imported.directory, File(imported.directory, "manifest.json"))
+            val rewritten = imported.manifest.copy(captureId = captureId, artifacts = artifacts, updatedAt = Instant.now().toString())
+            val analyzed = reanalyzePlayerCapture(location, rewritten)
+            respond(ex, 201, "application/json", "{\"ok\":true,\"manifest\":${PlayerDebugJson.manifest(analyzed)}}")
+        } catch (e: Exception) {
+            playerError(ex, 400, "invalid_bundle", e.message ?: "Could not import support bundle")
+        } finally {
+            upload.delete()
+        }
+    }
+
+    private fun handlePlayerReanalyze(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/reanalyze")) return
+        if (ex.requestMethod != "POST") { methodNotAllowed(ex, "POST"); return }
+        val indexed = requirePlayerCapture(ex) ?: return
+        try {
+            val manifest = reanalyzePlayerCapture(playerLocation(indexed), indexed.manifest)
+            respond(ex, 200, "application/json", "{\"ok\":true,\"manifest\":${PlayerDebugJson.manifest(manifest)}}")
+        } catch (e: Exception) {
+            playerError(ex, 400, "reanalyze_failed", e.message ?: "Could not re-analyze capture")
+        }
+    }
+
+    private fun watchPlayerCapture() {
+        Thread {
+            while (playerService.isRunning()) try { Thread.sleep(100) } catch (_: InterruptedException) { return@Thread }
+            persistPlayerResult()
+        }.apply { isDaemon = true; name = "player-debug-persist"; start() }
+    }
+
+    @Synchronized private fun persistPlayerResult() {
+        val location = playerLocation ?: return
+        if (playerPersistedId == location.captureId) return
+        val result = playerService.result ?: return
+        try {
+            playerArtifacts.writeEvents(location, result.events)
+            playerArtifacts.writeGraph(location, result.graph)
+            playerArtifacts.writeIncidents(location, result.incidents)
+            playerArtifacts.writeParserDiagnostics(location, result.diagnostics)
+            val artifacts = linkedMapOf<String, String>()
+            location.directory.walkTopDown().filter { it.isFile && it != location.manifestFile }.forEach { file ->
+                val local = file.relativeTo(location.directory).invariantSeparatorsPath
+                val key = when (local) {
+                    "events.ndjson" -> "events"
+                    "session-graph.json" -> "graph"
+                    "incidents.json" -> "incidents"
+                    "parser-diagnostics.json" -> "diagnostics"
+                    else -> local
+                }
+                artifacts[key] = playerArtifacts.relative(file)
+            }
+            val manifest = PlayerDebugManifest(
+                captureId = location.captureId,
+                deviceId = playerDeviceId ?: "unknown",
+                packageName = playerPackageName ?: "unknown.package",
+                state = result.state,
+                startedAt = playerStartedAt ?: Instant.now().toString(),
+                updatedAt = Instant.now().toString(),
+                eventCount = result.events.size,
+                sessionCount = result.graph.viewingSessions.size,
+                incidentCount = result.incidents.size,
+                artifacts = artifacts,
+                error = result.error
+            )
+            playerArtifacts.writeManifest(location, manifest)
+            playerRepository.upsert(manifest, playerArtifacts.relative(location.manifestFile), result.graph, result.incidents)
+            playerPersistedId = location.captureId
+        } catch (e: Exception) {
+            Log.error("[player-debug] failed to persist ${location.captureId}", e)
+        }
+    }
+
+    private fun reanalyzePlayerCapture(location: PlayerCaptureLocation, manifest: PlayerDebugManifest): PlayerDebugManifest {
+        val eventsPath = manifest.artifacts["events"]
+            ?: manifest.artifacts.values.firstOrNull { it.endsWith("events.ndjson") }
+            ?: error("Capture has no event timeline")
+        val events = playerArtifacts.resolve(eventsPath).useLines { lines ->
+            lines.filter { it.isNotBlank() }.map(PlayerDebugJson::parseEvent).toList()
+        }
+        val graph = SessionGraphBuilder().build(EventReplay().replay(events))
+        val incidents = PlayerIncidentEngine().analyze(graph)
+        val graphFile = playerArtifacts.writeGraph(location, graph)
+        val incidentFile = playerArtifacts.writeIncidents(location, incidents)
+        val updated = manifest.copy(
+            updatedAt = Instant.now().toString(),
+            eventCount = events.size,
+            sessionCount = graph.viewingSessions.size,
+            incidentCount = incidents.size,
+            artifacts = manifest.artifacts + mapOf(
+                "graph" to playerArtifacts.relative(graphFile),
+                "incidents" to playerArtifacts.relative(incidentFile)
+            )
+        )
+        playerArtifacts.writeManifest(location, updated)
+        playerRepository.upsert(updated, playerArtifacts.relative(location.manifestFile), graph, incidents)
+        return updated
+    }
+
+    private fun requirePlayerCapture(ex: HttpExchange): IndexedPlayerCapture? {
+        val captureId = queryParam(ex, "captureId")
+            ?: run { playerError(ex, 400, "missing_capture", "Missing captureId"); return null }
+        return playerRepository.capture(captureId)
+            ?: run { playerError(ex, 404, "capture_not_found", "Capture not found"); null }
+    }
+
+    private fun playerLocation(indexed: IndexedPlayerCapture): PlayerCaptureLocation {
+        val manifestFile = playerArtifacts.resolve(indexed.manifestPath)
+        return PlayerCaptureLocation(indexed.manifest.captureId, manifestFile.parentFile, manifestFile)
+    }
+
+    private fun playerArtifact(indexed: IndexedPlayerCapture, key: String, fileName: String): File? {
+        val relative = indexed.manifest.artifacts[key]
+            ?: indexed.manifest.artifacts.values.firstOrNull { it.endsWith(fileName) }
+            ?: return null
+        return runCatching { playerArtifacts.resolve(relative).takeIf(File::isFile) }.getOrNull()
+    }
+
+    private fun playerGraphSummary(graph: PlayerSessionGraph): Map<String, Any> = mapOf(
+        "processEpochs" to graph.processEpochs.size,
+        "viewingSessions" to graph.viewingSessions.size,
+        "players" to graph.viewingSessions.sumOf { it.playerInstances.size },
+        "handoffs" to graph.viewingSessions.sumOf { it.handoffs.size },
+        "events" to graph.events.size,
+        "duplicateEvents" to graph.duplicateEvents,
+        "lateEvents" to graph.lateEvents
+    )
+
+    private fun receivePlayerBundle(ex: HttpExchange): File? {
+        val maxBytes = 100L * 1024 * 1024
+        val declared = ex.requestHeaders.getFirst("Content-Length")?.toLongOrNull()
+        if (declared != null && declared > maxBytes) {
+            playerError(ex, 413, "bundle_too_large", "Support bundle is too large")
+            return null
+        }
+        val temp = Files.createTempFile("player-upload-", ".zip").toFile()
+        return try {
+            var total = 0L
+            ex.requestBody.use { input -> temp.outputStream().use { output ->
+                val buffer = ByteArray(8192)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    total += read
+                    if (total > maxBytes) throw IllegalArgumentException("Support bundle is too large")
+                    output.write(buffer, 0, read)
+                }
+            } }
+            temp
+        } catch (e: Exception) {
+            temp.delete()
+            playerError(ex, 413, "bundle_too_large", e.message ?: "Support bundle is too large")
+            null
+        }
+    }
+
+    private fun bool(obj: com.google.gson.JsonObject, name: String, default: Boolean): Boolean =
+        obj.get(name)?.takeUnless { it.isJsonNull }?.asBoolean ?: default
+
+    private fun validDeviceId(value: String): Boolean = value.matches(Regex("[A-Za-z0-9._:-]{1,200}"))
+    private fun safeFileName(value: String): String = value.replace(Regex("[^A-Za-z0-9._-]"), "_").take(100)
+
+    private fun playerError(ex: HttpExchange, status: Int, code: String, message: String) {
+        respond(ex, status, "application/json", "{\"ok\":false,\"code\":\"${esc(code)}\",\"error\":\"${esc(message)}\"}")
     }
 
     // ---------- helpers ----------

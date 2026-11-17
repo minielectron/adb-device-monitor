@@ -17,6 +17,8 @@ class PlayerDebugServiceTest {
         assertTrue(received.playerDebugEnabled)
         assertEquals(PlayerCaptureState.COMPLETE, service.progress.state)
         assertEquals(1, service.graph?.viewingSessions?.size)
+        assertEquals(2, service.result?.events?.size)
+        assertEquals(PlayerCaptureState.COMPLETE, service.result?.state)
     }
 
     @Test fun rejectsMissingPackageAndConcurrentCapture() {
