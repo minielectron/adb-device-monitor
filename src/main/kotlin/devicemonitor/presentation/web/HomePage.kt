@@ -207,7 +207,7 @@ internal val HOME_PAGE = """<!DOCTYPE html>
   .diag-context { flex: none; display: flex; align-items: center; gap: 8px; max-width: 330px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); background: rgba(0,0,0,.22); font-size: 10px; }
   .diag-context:before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 4px rgba(232,182,109,.08); }
   #diagTarget { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tool-stack { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+  .tool-stack { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
   .diagnostic-tool { position: relative; overflow: hidden; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(0,0,0,.19); transition: transform .24s cubic-bezier(.2,.8,.2,1), border-color .24s, background .24s; }
   .diagnostic-tool:hover { transform: translateY(-2px); border-color: var(--line-strong); background: rgba(255,255,255,.028); }
   .tool-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -236,6 +236,7 @@ internal val HOME_PAGE = """<!DOCTYPE html>
   .tool-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; font-size: 15px; }
   .tool-icon.violet { color: #c3b8ff; background: rgba(158,140,255,.12); }
   .tool-icon.teal { color: #8df1e5; background: rgba(88,214,199,.11); }
+  .tool-icon.gold { color: #ffd798; background: rgba(232,182,109,.12); }
   .tool-name { display: block; font-size: 10px; font-weight: 760; }
   .tool-arrow { color: var(--quiet); font-size: 14px; }
   .progress-wrap { display: none; margin-top: 12px; }
@@ -492,6 +493,13 @@ internal val HOME_PAGE = """<!DOCTYPE html>
             <button class="tool-button" type="button" id="procBtn" onclick="takeProcrank()" disabled><span class="tool-name">Capture memory profile</span><span class="tool-arrow">&rarr;</span></button>
             <div class="progress-wrap" id="procProgWrap" aria-live="polite"><div class="progress-track"><div class="progress-bar" id="procProg" style="background:#58d6c7"></div></div><div class="progress-message" id="procMsg"></div></div>
           </article>
+          <article class="diagnostic-tool">
+            <div class="tool-heading"><span class="tool-icon gold" aria-hidden="true">&#8862;</span><span class="tool-type">UI structure</span></div>
+            <h4>Layout Inspector</h4><p>Match visible Android elements with resource IDs, types, states and exact screen positions.</p>
+            <div class="tool-requirement">Captures screen imagery and visible UI text</div>
+            <button class="tool-button" type="button" id="layoutBtn" onclick="takeLayoutInspector()" disabled><span class="tool-name">Inspect current screen</span><span class="tool-arrow">&rarr;</span></button>
+            <div class="progress-wrap" id="layoutProgWrap" aria-live="polite"><div class="progress-track"><div class="progress-bar" id="layoutProg" style="background:#e8b66d"></div></div><div class="progress-message" id="layoutMsg"></div></div>
+          </article>
         </div>
       </aside>
     </div>
@@ -610,7 +618,7 @@ var selected = null;
 var selectedDevice = null;
 var lastDevices = [];
 var runBusy = false;
-var reportPaths = { '/api/snapshot-report': 'Device Snapshot', '/api/procrank-report': 'Memory Snapshot' };
+var reportPaths = { '/api/snapshot-report': 'Device Snapshot', '/api/procrank-report': 'Memory Snapshot', '/api/layout-inspector-report': 'Layout Inspector' };
 var currentReportPath = null;
 var reportTrigger = null;
 var reportTimer = null;
@@ -866,6 +874,7 @@ function updateSummary() {
   document.getElementById('startBtn').disabled = !selected || runBusy;
   document.getElementById('snapBtn').disabled = !selected;
   document.getElementById('procBtn').disabled = !selected;
+  document.getElementById('layoutBtn').disabled = !selected;
 }
 
 function setLaunchState(active) {
@@ -988,6 +997,36 @@ function pollProcrank(btn, bar, msg) {
     msg.textContent = 'Capturing per-process memory… ' + d.progress + '%';
     setTimeout(function () { pollProcrank(btn, bar, msg); }, 600);
   }).catch(function () { setTimeout(function () { pollProcrank(btn, bar, msg); }, 1000); });
+}
+
+// Layout Inspector — current UI hierarchy + screenshot in a standalone interactive HTML file.
+function takeLayoutInspector() {
+  if (!selected) { document.getElementById('msg').textContent = 'Select a device first.'; return; }
+  var btn = document.getElementById('layoutBtn'); btn.disabled = true;
+  var wrap = document.getElementById('layoutProgWrap'); wrap.style.display = 'block';
+  var bar = document.getElementById('layoutProg'); var msg = document.getElementById('layoutMsg');
+  bar.style.background = '#e8b66d'; bar.style.width = '5%'; msg.textContent = 'Capturing screen structure…';
+  var p = new URLSearchParams(); p.set('serial', selected);
+  fetch('/api/layout-inspector', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: p.toString() })
+    .then(function (r) { return r.json().then(function (body) { if (!r.ok || body.ok === false) throw new Error(body.error || 'Failed to start'); return body; }); })
+    .then(function () { pollLayoutInspector(btn, bar, msg); })
+    .catch(function (error) { bar.style.background = '#ff7676'; msg.textContent = error.message || 'Request failed'; btn.disabled = false; });
+}
+function pollLayoutInspector(btn, bar, msg) {
+  fetch('/api/layout-inspector-status').then(function (r) { return r.json(); }).then(function (d) {
+    bar.style.width = Math.max(5, d.progress || 0) + '%';
+    if (d.error) { bar.style.background = '#ff7676'; msg.textContent = 'Capture failed: ' + d.error + ' — retry when ready.'; btn.disabled = false; return; }
+    if (d.done) {
+      bar.style.width = '100%'; bar.style.background = '#61d89c';
+      msg.innerHTML = '✓ Layout ready — <a href="/api/layout-inspector-report">open the inspector</a>';
+      msg.querySelector('a').onclick = function (event) { event.preventDefault(); openReport('/api/layout-inspector-report', btn); };
+      btn.disabled = false;
+      openReport('/api/layout-inspector-report', btn);
+      return;
+    }
+    msg.textContent = 'Reading hierarchy and screenshot… ' + (d.progress || 0) + '%';
+    setTimeout(function () { pollLayoutInspector(btn, bar, msg); }, 500);
+  }).catch(function () { setTimeout(function () { pollLayoutInspector(btn, bar, msg); }, 1000); });
 }
 
 // Native folder picker (opens an OS dialog on the machine running the app).

@@ -49,7 +49,8 @@ class WebApp(
     private val bindHost: String? = null,   // null = all interfaces (browser mode); "127.0.0.1" for the desktop shell
     releaseGuardRoot: File = File(MonitorSession.defaultReportsDir(), "ReleaseGuard"),
     playerDebuggerRoot: File = File(MonitorSession.defaultReportsDir(), "PlayerDebugger"),
-    playerCaptureFactory: PlayerMonitorCaptureFactory? = null
+    playerCaptureFactory: PlayerMonitorCaptureFactory? = null,
+    private val layoutInspectorRoot: File = MonitorSession.resolveBaseDir(null)
 ) {
     @Volatile var session: MonitorSession? = initialSession
 
@@ -107,6 +108,12 @@ class WebApp(
     @Volatile private var procError: String? = null
     @Volatile private var procFile: File? = null
 
+    // Layout Inspector state is independent from monitoring and the other one-shot diagnostics.
+    @Volatile private var layoutRunning = false
+    @Volatile private var layoutProgress = 0
+    @Volatile private var layoutError: String? = null
+    @Volatile private var layoutFile: File? = null
+
     fun start() {
         val s = HttpServer.create(if (bindHost != null) InetSocketAddress(bindHost, port) else InetSocketAddress(port), 0)
         route(s, "/") { ex -> respondPage(ex, HOME_PAGE.replace("__BUILD__", esc(buildTag())).replace("</head>", STUDIO_UI_CSS + CLIENT_LOG_TAG + "</head>")) }
@@ -136,6 +143,14 @@ class WebApp(
                     "\"error\":${procError?.let { "\"${esc(it)}\"" } ?: "null"}}")
         }
         route(s, "/api/procrank-report") { ex -> handleProcrankReport(ex) }
+        route(s, "/api/layout-inspector") { ex -> handleLayoutInspectorStart(ex) }
+        route(s, "/api/layout-inspector-status") { ex ->
+            val done = !layoutRunning && layoutError == null && layoutFile?.isFile == true
+            respond(ex, 200, "application/json",
+                "{\"running\":$layoutRunning,\"progress\":$layoutProgress,\"done\":$done," +
+                    "\"error\":${layoutError?.let { "\"${esc(it)}\"" } ?: "null"}}")
+        }
+        route(s, "/api/layout-inspector-report") { ex -> handleLayoutInspectorReport(ex) }
         route(s, "/api/start") { ex -> handleStart(ex) }
         route(s, "/api/stop") { ex ->
             if (releaseService.isRunning()) releaseService.cancel()
@@ -200,7 +215,7 @@ class WebApp(
     private class InFlight(val what: String, val startNanos: Long, val thread: Thread) { @Volatile var dumped = false }
     private val inFlight = java.util.concurrent.ConcurrentHashMap<HttpExchange, InFlight>()
     // Polled endpoints: only logged when slow, otherwise they would flood the log.
-    private val quietPaths = setOf("/api/session", "/api/devices", "/api/snapshot-status", "/api/procrank-status", "/api/clientlog", "/clientlog.js")
+    private val quietPaths = setOf("/api/session", "/api/devices", "/api/snapshot-status", "/api/procrank-status", "/api/layout-inspector-status", "/api/clientlog", "/clientlog.js")
 
     /** Register a handler that is timed, never leaks an exception, and always closes the exchange. */
     private fun route(s: HttpServer, path: String, handler: (HttpExchange) -> Unit) {
@@ -426,6 +441,49 @@ class WebApp(
         val bytes = f.readBytes()
         ex.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
         ex.responseHeaders.add("Content-Disposition", "inline; filename=\"${f.name}\"")
+        ex.sendResponseHeaders(200, bytes.size.toLong())
+        ex.responseBody.use { it.write(bytes) }
+    }
+
+    private fun handleLayoutInspectorStart(ex: HttpExchange) {
+        if (ex.requestMethod != "POST") { respond(ex, 405, "application/json", err("POST only")); return }
+        if (layoutRunning) { respond(ex, 409, "application/json", err("A layout capture is already running")); return }
+        val serial = parseForm(ex)["serial"] ?: run {
+            respond(ex, 400, "application/json", err("No device selected")); return
+        }
+        val authorized = runCatching { adb.devices().any { it.serial == serial && it.state == "device" } }.getOrDefault(false)
+        if (!authorized) { respond(ex, 400, "application/json", err("Selected device is not authorized or connected")); return }
+
+        layoutRunning = true
+        layoutProgress = 0
+        layoutError = null
+        Thread {
+            try {
+                val snapshot = LayoutInspectorCapture.capture(adb, serial) { layoutProgress = it }
+                val ts = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+                val out = File(layoutInspectorRoot, "layout-inspector_${ts}.html")
+                LayoutInspectorReport.writeHtml(snapshot, out)
+                layoutFile = out
+                layoutProgress = 100
+                println("Web: layout inspector written -> ${out.absolutePath} (${snapshot.hierarchy.elements.size} elements)")
+            } catch (e: Exception) {
+                layoutError = e.message ?: "layout capture failed"
+                System.err.println("Layout Inspector failed: ${e.message}")
+            } finally {
+                layoutRunning = false
+            }
+        }.apply { isDaemon = true; name = "layout-inspector" }.start()
+        respond(ex, 200, "application/json", "{\"ok\":true}")
+    }
+
+    private fun handleLayoutInspectorReport(ex: HttpExchange) {
+        val file = layoutFile
+        if (file == null || !file.isFile) {
+            respond(ex, 404, "application/json", err("Layout Inspector report is not ready")); return
+        }
+        val bytes = file.readBytes()
+        ex.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
+        ex.responseHeaders.add("Content-Disposition", "inline; filename=\"${file.name}\"")
         ex.sendResponseHeaders(200, bytes.size.toLong())
         ex.responseBody.use { it.write(bytes) }
     }

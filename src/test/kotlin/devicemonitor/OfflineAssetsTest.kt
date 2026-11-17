@@ -77,10 +77,13 @@ class OfflineAssetsTest {
 
     @Test fun diagnosticReportsOpenInTheStatePreservingViewer() {
         assertContains(HOME_PAGE, "id=\"reportViewer\"")
-        assertContains(HOME_PAGE, "var reportPaths = { '/api/snapshot-report': 'Device Snapshot', '/api/procrank-report': 'Memory Snapshot' }")
+        assertContains(HOME_PAGE, "'/api/layout-inspector-report': 'Layout Inspector'")
         assertContains(HOME_PAGE, "Object.prototype.hasOwnProperty.call(reportPaths, path)")
         assertContains(HOME_PAGE, "openReport('/api/snapshot-report', btn)")
         assertContains(HOME_PAGE, "openReport('/api/procrank-report', btn)")
+        assertContains(HOME_PAGE, "openReport('/api/layout-inspector-report', btn)")
+        assertContains(HOME_PAGE, "id=\"layoutBtn\"")
+        assertContains(HOME_PAGE, "/api/layout-inspector-status")
         assertFalse(Regex("""window\.open\(['\"]/api/(?:snapshot|procrank)-report""").containsMatchIn(HOME_PAGE))
     }
 
