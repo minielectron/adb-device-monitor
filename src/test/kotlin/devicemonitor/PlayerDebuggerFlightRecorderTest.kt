@@ -35,6 +35,15 @@ class PlayerDebuggerFlightRecorderTest {
         assertTrue(PLAYER_DEBUGGER_PAGE.contains("similar fingerprints"))
         assertTrue(PLAYER_DEBUGGER_PAGE.contains("Unavailable in this window"))
         assertTrue(PLAYER_DEBUGGER_PAGE.contains("prefers-reduced-motion: reduce"))
+        assertTrue(PLAYER_DEBUGGER_PAGE.contains("id=\"pdHandoffMap\""))
+        assertTrue(PLAYER_DEBUGGER_PAGE.contains("function renderHandoffMap()"))
+        assertTrue(PLAYER_DEBUGGER_PAGE.contains("Reason · "))
+        assertTrue(PLAYER_DEBUGGER_PAGE.contains("Activation · "))
+        assertTrue(PLAYER_DEBUGGER_PAGE.contains("Overlap · "))
+        assertTrue(PLAYER_DEBUGGER_PAGE.contains("Incidents · "))
+        assertTrue(PLAYER_DEBUGGER_PAGE.contains("id=\"playerReportViewer\""))
+        assertTrue(PLAYER_DEBUGGER_PAGE.contains("/api/player/report?captureId="))
+        assertFalse(PLAYER_DEBUGGER_PAGE.contains("window.open(playerReportUrl"))
     }
 
     @Test fun normalizesOnlyEnabledDeviceMeasurements() {

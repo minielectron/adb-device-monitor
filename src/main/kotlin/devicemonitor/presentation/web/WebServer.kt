@@ -168,6 +168,7 @@ class WebApp(
         route(s, "/api/player/graph") { ex -> handlePlayerGraph(ex) }
         route(s, "/api/player/timeline") { ex -> handlePlayerTimeline(ex) }
         route(s, "/api/player/incidents") { ex -> handlePlayerIncidents(ex) }
+        route(s, "/api/player/report") { ex -> handlePlayerReport(ex) }
         route(s, "/api/player/evidence") { ex -> handlePlayerEvidence(ex) }
         route(s, "/api/player/rules") { ex -> handlePlayerRules(ex) }
         route(s, "/api/player/export-preview") { ex -> handlePlayerExportPreview(ex) }
@@ -1108,6 +1109,34 @@ class WebApp(
         respond(ex, 200, "application/json", file.readText())
     }
 
+    private fun handlePlayerReport(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/report")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val indexed = requirePlayerCapture(ex) ?: return
+        try {
+            val graphFile = playerArtifact(indexed, "graph", "session-graph.json")
+                ?: error("Session graph is unavailable")
+            val incidentFile = playerArtifact(indexed, "incidents", "incidents.json")
+                ?: error("Incidents are unavailable")
+            val report = PlayerDebugReport.html(
+                indexed.manifest,
+                PlayerDebugJson.parseGraph(graphFile.readText()),
+                PlayerDebugJson.parseIncidents(incidentFile.readText())
+            )
+            val bytes = report.toByteArray(Charsets.UTF_8)
+            val download = queryParam(ex, "download") == "1"
+            ex.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
+            ex.responseHeaders.add("Content-Disposition", "${if (download) "attachment" else "inline"}; filename=\"player-debug-${safeFileName(indexed.manifest.captureId)}.html\"")
+            ex.responseHeaders.add("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'")
+            ex.responseHeaders.add("X-Content-Type-Options", "nosniff")
+            ex.responseHeaders.add("Cache-Control", "no-store")
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        } catch (e: Exception) {
+            playerError(ex, 404, "report_unavailable", e.message ?: "Player Debugger report is unavailable")
+        }
+    }
+
     private fun handlePlayerEvidence(ex: HttpExchange) {
         if (!exactPath(ex, "/api/player/evidence")) return
         if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
@@ -1219,19 +1248,7 @@ class WebApp(
             playerArtifacts.writeGraph(location, result.graph)
             playerArtifacts.writeIncidents(location, result.incidents)
             playerArtifacts.writeParserDiagnostics(location, result.diagnostics)
-            val artifacts = linkedMapOf<String, String>()
-            location.directory.walkTopDown().filter { it.isFile && it != location.manifestFile }.forEach { file ->
-                val local = file.relativeTo(location.directory).invariantSeparatorsPath
-                val key = when (local) {
-                    "events.ndjson" -> "events"
-                    "session-graph.json" -> "graph"
-                    "incidents.json" -> "incidents"
-                    "parser-diagnostics.json" -> "diagnostics"
-                    else -> local
-                }
-                artifacts[key] = playerArtifacts.relative(file)
-            }
-            val manifest = PlayerDebugManifest(
+            val reportManifest = PlayerDebugManifest(
                 captureId = location.captureId,
                 deviceId = playerDeviceId ?: "unknown",
                 packageName = playerPackageName ?: "unknown.package",
@@ -1241,9 +1258,23 @@ class WebApp(
                 eventCount = result.events.size,
                 sessionCount = result.graph.viewingSessions.size,
                 incidentCount = result.incidents.size,
-                artifacts = artifacts,
                 error = result.error
             )
+            PlayerDebugReport.writeHtml(reportManifest, result.graph, result.incidents, File(location.directory, "player-debug-report.html"))
+            val artifacts = linkedMapOf<String, String>()
+            location.directory.walkTopDown().filter { it.isFile && it != location.manifestFile }.forEach { file ->
+                val local = file.relativeTo(location.directory).invariantSeparatorsPath
+                val key = when (local) {
+                    "events.ndjson" -> "events"
+                    "session-graph.json" -> "graph"
+                    "incidents.json" -> "incidents"
+                    "parser-diagnostics.json" -> "diagnostics"
+                    "player-debug-report.html" -> "report"
+                    else -> local
+                }
+                artifacts[key] = playerArtifacts.relative(file)
+            }
+            val manifest = reportManifest.copy(artifacts = artifacts)
             playerArtifacts.writeManifest(location, manifest)
             playerRepository.upsert(manifest, playerArtifacts.relative(location.manifestFile), result.graph, result.incidents)
             playerPersistedId = location.captureId
@@ -1263,14 +1294,19 @@ class WebApp(
         val incidents = PlayerIncidentEngine().analyze(graph)
         val graphFile = playerArtifacts.writeGraph(location, graph)
         val incidentFile = playerArtifacts.writeIncidents(location, incidents)
-        val updated = manifest.copy(
+        val reportFile = File(location.directory, "player-debug-report.html")
+        val reportManifest = manifest.copy(
             updatedAt = Instant.now().toString(),
             eventCount = events.size,
             sessionCount = graph.viewingSessions.size,
-            incidentCount = incidents.size,
+            incidentCount = incidents.size
+        )
+        PlayerDebugReport.writeHtml(reportManifest, graph, incidents, reportFile)
+        val updated = reportManifest.copy(
             artifacts = manifest.artifacts + mapOf(
                 "graph" to playerArtifacts.relative(graphFile),
-                "incidents" to playerArtifacts.relative(incidentFile)
+                "incidents" to playerArtifacts.relative(incidentFile),
+                "report" to playerArtifacts.relative(reportFile)
             )
         )
         playerArtifacts.writeManifest(location, updated)

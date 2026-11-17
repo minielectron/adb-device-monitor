@@ -51,6 +51,9 @@ class OfflineAssetsTest {
         assertContains(PLAYER_DEBUGGER_PAGE, "/api/player/start")
         assertContains(PLAYER_DEBUGGER_PAGE, "/api/player/status")
         assertContains(PLAYER_DEBUGGER_PAGE, "/api/player/timeline")
+        assertContains(PLAYER_DEBUGGER_PAGE, "/api/player/report")
+        assertContains(PLAYER_DEBUGGER_PAGE, "id=\"playerReportViewer\"")
+        assertContains(PLAYER_DEBUGGER_PAGE, "id=\"pdHandoffMap\"")
         listOf("cpuUtil", "perCoreCpu", "topProcessCpu", "memoryUsed", "psiPressure", "topProcessMemory").forEach { id ->
             assertContains(PLAYER_DEBUGGER_PAGE, "id=\"$id\" type=\"checkbox\" checked")
         }

@@ -55,6 +55,10 @@ class PlayerDebuggerApiTest {
             val incidents = request(base, "GET", "/api/player/incidents?captureId=$captureId")
             assertEquals(200, incidents.status)
             assertContains(incidents.text, "playback_error")
+            val report = request(base, "GET", "/api/player/report?captureId=$captureId")
+            assertEquals(200, report.status)
+            assertContains(report.text, "Player Debugger report")
+            assertFalse("http://" in report.text || "https://" in report.text)
             assertEquals(200, request(base, "POST", "/api/player/reanalyze?captureId=$captureId").status)
             assertEquals(200, request(base, "GET", "/api/player/export-preview?captureId=$captureId").status)
 
