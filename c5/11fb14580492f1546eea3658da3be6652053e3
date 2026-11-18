@@ -1,0 +1,21 @@
+src/main/kotlin/devicemonitor/presentation/report/LayoutInspectorReport.kt
+  s_6a41e6dc5a6d74::t_3b99fd316a7954 55,60,71-74,77
+src/test/kotlin/devicemonitor/LayoutInspectorTest.kt
+  s_6a41e6dc5a6d74::t_8df84fc803191f 88-92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c511fb14580492f1546eea3658da3be6652053e3",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
