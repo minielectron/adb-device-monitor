@@ -1,0 +1,53 @@
+README.md
+  s_6a41e6dc5a6d74::t_64b29e2fa5fdf6 147,150,166-167,177-178
+  s_6a41e6dc5a6d74::t_13a88e403404a7 3-6,8-42,52-54,62-72,82-85,93-94
+  s_6a41e6dc5a6d74::t_804df54e14cdb7 139-143
+  s_6a41e6dc5a6d74::t_071a66d0543bef 47,156,160-161,165,176,187-188,190
+docs/release-guard.md
+  s_6a41e6dc5a6d74::t_81558cadfb4422 1-121
+docs/desktop-app.md
+  s_6a41e6dc5a6d74::t_c5adede875951a 30-32,37-40,68,81-83
+  s_6a41e6dc5a6d74::t_7d2497b85702ff 84
+docs/reports-and-comparison.md
+  s_6a41e6dc5a6d74::t_d78fac1cb0261d 3-5,33-35,39-42
+  s_6a41e6dc5a6d74::t_1878c06e3e6bcb 43
+docs/player-debugger.md
+  s_6a41e6dc5a6d74::t_e368d09653c635 9-28
+docs/web-dashboard.md
+  s_6a41e6dc5a6d74::t_4a60db1152a0a4 3-5,11,14-15,17,24-38
+docs/README.md
+  s_6a41e6dc5a6d74::t_aa0615143e9d88 28-29
+  s_6a41e6dc5a6d74::t_bc24343d3d9c21 5-7,34,51-54
+  s_6a41e6dc5a6d74::t_ec0b367999a44a 22-23,26
+docs/architecture.md
+  s_6a41e6dc5a6d74::t_d35af53ee10d1d 204
+  s_6a41e6dc5a6d74::t_b4f14264e2c95c 56
+  s_6a41e6dc5a6d74::t_592b6255f5d959 37,123-159
+  s_6a41e6dc5a6d74::t_ef0e4488836540 160
+docs/metrics.md
+  s_6a41e6dc5a6d74::t_d3de7ba7aa4722 9-12,14,64,86-89,94
+docs/layout-inspector.md
+  s_6a41e6dc5a6d74::t_81558cadfb4422 1-78
+docs/diagnostics.md
+  s_6a41e6dc5a6d74::t_81558cadfb4422 1-62
+docs/build-run-package.md
+  s_6a41e6dc5a6d74::t_50b01ccf77897f 106-110,124-131,134
+docs/device-and-procrank-snapshot.md
+  s_6a41e6dc5a6d74::t_5a0feb497cbff5 1-70,73-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d2283ddcefd96d9b0eb4e78e3b49b5bddf3b65c9",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
