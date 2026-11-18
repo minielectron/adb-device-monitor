@@ -1,0 +1,29 @@
+src/test/kotlin/devicemonitor/OfflineAssetsTest.kt
+  s_6a41e6dc5a6d74::t_b73807e44ac654 90-97
+desktop/src-tauri/src/main.rs
+  s_6a41e6dc5a6d74::t_b73807e44ac654 27-31,41,61,70-73,77-81,115-123,129-131,141-150,279-285,289-290,297,299
+  s_6a41e6dc5a6d74::t_f1550e94ca3896 7-8,124-128,132-140,286-288,291-296
+  s_6a41e6dc5a6d74::t_563eccacc33ff8 298
+docs/desktop-app.md
+  s_6a41e6dc5a6d74::t_6eca06478389b3 29-30,67
+src/main/kotlin/devicemonitor/presentation/web/HomePage.kt
+  s_6a41e6dc5a6d74::t_b73807e44ac654 127-148,475,648-665
+docs/diagnostics.md
+  s_6a41e6dc5a6d74::t_6eca06478389b3 33-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "57adee4341041709f1a24e7f9f62f4d6eee5c0d5",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
