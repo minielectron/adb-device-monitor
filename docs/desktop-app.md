@@ -26,7 +26,8 @@ ADB Performance Studio.app
 
 | Browser behaviour | In the app |
 |-------------------|------------|
-| Downloads (PDF report, diagnostics zip) | saved to `~/Downloads` (auto-renamed if the name exists) and revealed in Finder |
+| Diagnostics ZIP | saved to `~/Downloads` (auto-renamed if needed); Studio confirms completion without opening Finder |
+| Other downloads (PDF, HTML) | saved to `~/Downloads` and revealed in Finder |
 | Device, Procrank and Layout Inspector HTML | opened inside Home's full-screen report viewer; **Open externally** deliberately uses the default browser |
 | Player Debugger HTML report | opened inside Player Debugger's full-screen viewer; Back restores the existing debugger state |
 | Release Guard registered HTML evidence | served from the loopback sidecar and kept inside the application when opened as an internal route |
@@ -63,7 +64,7 @@ Check the packaged app, not only `tauri dev`:
 
 - [ ] `desktop/build-macos.sh` compiles; the app opens on the home page within ~2 s
 - [ ] Start a run, Stop → "Download PDF report" lands in `~/Downloads` and Finder reveals it
-- [ ] Export diagnostics downloads a zip
+- [ ] Export Diagnostics downloads a valid ZIP, shows the saved-filename confirmation and does not open Finder
 - [ ] Player Debugger → Open offline report stays inside the app; Back returns without losing the capture or form draft
 - [ ] Device, Procrank and Layout Inspector reports open in Home's viewer; Layout Refresh captures a new screen
 - [ ] The report viewer works with the network disconnected and Download HTML produces a self-contained file

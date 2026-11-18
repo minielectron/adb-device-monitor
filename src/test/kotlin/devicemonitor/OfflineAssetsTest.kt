@@ -87,6 +87,14 @@ class OfflineAssetsTest {
         assertFalse(Regex("""window\.open\(['\"]/api/(?:snapshot|procrank)-report""").containsMatchIn(HOME_PAGE))
     }
 
+    @Test fun homeHandlesNativeDiagnosticsDownloadConfirmation() {
+        assertContains(HOME_PAGE, "id=\"downloadToast\"")
+        assertContains(HOME_PAGE, "aria-live=\"polite\"")
+        assertContains(HOME_PAGE, "studio-download-finished")
+        assertContains(HOME_PAGE, "Diagnostics saved to Downloads")
+        assertContains(HOME_PAGE, "Diagnostics download failed")
+    }
+
     @Test fun assetAllowlistRejectsTraversalAndPrefixMatches() {
         assertNotNull(resolveOfflineAsset("/assets/chart.umd.js"))
         assertNotNull(resolveOfflineAsset("/assets/jspdf.umd.min.js"))

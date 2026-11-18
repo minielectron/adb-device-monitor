@@ -124,6 +124,28 @@ internal val HOME_PAGE = """<!DOCTYPE html>
     font-size: 13px;
   }
   .banner a { color: var(--gold-bright); font-weight: 750; text-decoration: none; white-space: nowrap; }
+  .download-toast {
+    position: fixed;
+    z-index: 1200;
+    top: 82px;
+    right: 24px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: min(440px, calc(100% - 32px));
+    padding: 13px 16px;
+    border: 1px solid rgba(97,216,156,.32);
+    border-radius: 12px;
+    color: #ddf7e9;
+    background: rgba(17,30,24,.97);
+    box-shadow: 0 18px 50px rgba(0,0,0,.38);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .download-toast[hidden] { display: none; }
+  .download-toast:before { content: "\2713"; color: var(--green); font-size: 15px; }
+  .download-toast.error { border-color: rgba(255,118,118,.35); color: #ffd7d7; background: rgba(35,19,19,.97); }
+  .download-toast.error:before { content: "!"; color: var(--red); }
   .stage, .control-card, .review-card {
     border: 1px solid var(--line);
     background: linear-gradient(145deg, rgba(27,27,25,.92), rgba(15,15,14,.9));
@@ -450,6 +472,7 @@ internal val HOME_PAGE = """<!DOCTYPE html>
     <a class="nav-link" href="/api/diagnostics" title="Download logs and thread diagnostics"><b aria-hidden="true">&#8595;</b><span>Diagnostics</span></a>
   </nav>
 </header>
+<div class="download-toast" id="downloadToast" role="status" aria-live="polite" aria-atomic="true" hidden><span id="downloadToastText"></span></div>
 
 <main class="shell">
   <section class="intro reveal">
@@ -622,6 +645,24 @@ var reportPaths = { '/api/snapshot-report': 'Device Snapshot', '/api/procrank-re
 var currentReportPath = null;
 var reportTrigger = null;
 var reportTimer = null;
+var downloadToastTimer = null;
+
+function showDownloadToast(success, fileName) {
+  var toast = document.getElementById('downloadToast');
+  var text = document.getElementById('downloadToastText');
+  toast.classList.toggle('error', !success);
+  text.textContent = success
+    ? 'Diagnostics saved to Downloads — ' + (fileName || 'diagnostics bundle')
+    : 'Diagnostics download failed. Try exporting again.';
+  toast.hidden = false;
+  clearTimeout(downloadToastTimer);
+  downloadToastTimer = setTimeout(function () { toast.hidden = true; }, 8000);
+}
+
+window.addEventListener('studio-download-finished', function (event) {
+  var detail = event.detail || {};
+  if (detail.kind === 'diagnostics') showDownloadToast(detail.success === true, detail.fileName);
+});
 
 function saveHomeDraft() {
   var values = {};

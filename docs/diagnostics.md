@@ -30,9 +30,10 @@ capture.
 | `adb-monitor.log` | Up to the latest 3 MiB of the application-wide log. |
 | `run.log` | Up to the latest 3 MiB of the active or most recent run log, when that file exists. |
 
-The archive is assembled in memory and returned immediately. In the native macOS application,
-downloads are saved under `~/Downloads` and revealed in Finder. In ordinary browser mode, the
-browser controls the download location.
+The archive is assembled in memory and returned immediately. In the native macOS application, it is
+saved under `~/Downloads` and Studio confirms the completed filename without opening Finder. Name
+collisions are handled by adding a numeric suffix. In ordinary browser mode, the browser controls
+the download location and its own completion UI.
 
 ### What is not included
 

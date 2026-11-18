@@ -4,7 +4,8 @@
 //   1. starts the engine as a sidecar process on a free loopback port (`--web <port> --sidecar`),
 //      using the Java runtime bundled in the app's Resources (falls back to a system `java` in dev);
 //   2. shows a splash page, then points the window at http://127.0.0.1:<port>/ once the engine answers;
-//   3. saves downloads (PDF report, diagnostics zip) to ~/Downloads and reveals them in Finder;
+//   3. saves downloads to ~/Downloads; reports are revealed in Finder while diagnostics confirm
+//      inside the app;
 //   4. opens pop-ups (snapshot reports) and external links in the default browser;
 //   5. shuts the engine down cleanly on quit: closing its stdin tells it to finish the active run's
 //      report and exit; it is force-killed only if it has not exited after a few seconds.
@@ -23,6 +24,11 @@ use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 /// The running Kotlin engine (None until started / after shutdown).
 struct Sidecar(Mutex<Option<Child>>);
 
+struct PendingDownload {
+    path: PathBuf,
+    diagnostics: bool,
+}
+
 fn main() {
     let app = tauri::Builder::default()
         .manage(Sidecar(Mutex::new(None)))
@@ -32,7 +38,7 @@ fn main() {
                 .path()
                 .download_dir()
                 .unwrap_or_else(|_| std::env::temp_dir());
-            let last_download: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
+            let last_download: Arc<Mutex<Option<PendingDownload>>> = Arc::new(Mutex::new(None));
 
             let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("ADB Performance Studio")
@@ -52,7 +58,7 @@ fn main() {
                     open_external(url.as_str());
                     NewWindowResponse::Deny
                 })
-                .on_download(move |_webview, event| {
+                .on_download(move |webview, event| {
                     match event {
                         DownloadEvent::Requested { destination, .. } => {
                             let name = destination
@@ -61,13 +67,18 @@ fn main() {
                                 .unwrap_or_else(|| "download".to_string());
                             let target = unique_path(&downloads, &name);
                             *destination = target.clone();
-                            *last_download.lock().unwrap() = Some(target);
+                            *last_download.lock().unwrap() = Some(PendingDownload {
+                                path: target,
+                                diagnostics: is_diagnostics_download(&name),
+                            });
                         }
                         DownloadEvent::Finished { success, .. } => {
                             // macOS does not report the saved path here, so we remember it ourselves.
-                            if let Some(path) = last_download.lock().unwrap().take() {
-                                if success {
-                                    let _ = Command::new("open").arg("-R").arg(path).spawn();
+                            if let Some(download) = last_download.lock().unwrap().take() {
+                                if download.diagnostics {
+                                    notify_diagnostics_download(&webview, success, &download.path);
+                                } else if success {
+                                    let _ = Command::new("open").arg("-R").arg(download.path).spawn();
                                 }
                             }
                         }
@@ -99,6 +110,42 @@ fn main() {
             stop_sidecar(handle);
         }
     });
+}
+
+fn is_diagnostics_download(name: &str) -> bool {
+    let Some(stamp) = name
+        .strip_prefix("adb-monitor-diagnostics_")
+        .and_then(|value| value.strip_suffix(".zip"))
+    else {
+        return false;
+    };
+    stamp.len() == 15
+        && stamp.bytes().enumerate().all(|(index, byte)| {
+            if index == 8 {
+                byte == b'_'
+            } else {
+                byte.is_ascii_digit()
+            }
+        })
+}
+
+fn notify_diagnostics_download<R: tauri::Runtime>(
+    webview: &tauri::Webview<R>,
+    success: bool,
+    path: &PathBuf,
+) {
+    let file_name = path
+        .file_name()
+        .map(|name| name.to_string_lossy())
+        .unwrap_or_default();
+    let detail = serde_json::json!({
+        "kind": "diagnostics",
+        "success": success,
+        "fileName": file_name,
+    });
+    let _ = webview.eval(format!(
+        "window.dispatchEvent(new CustomEvent('studio-download-finished',{{detail:{detail}}}));"
+    ));
 }
 
 /// Pages served by the engine or by the shell itself.
@@ -227,5 +274,26 @@ fn stop_sidecar(handle: &AppHandle) {
         }
         let _ = child.kill();
         let _ = child.wait();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_diagnostics_download;
+
+    #[test]
+    fn recognizes_only_diagnostics_bundle_names() {
+        assert!(is_diagnostics_download(
+            "adb-monitor-diagnostics_20261118_172624.zip"
+        ));
+        assert!(!is_diagnostics_download("adb-monitor-diagnostics_.zip"));
+        assert!(!is_diagnostics_download("adb-monitor-diagnostics_2026-11-18.zip"));
+        assert!(!is_diagnostics_download(
+            "adb-monitor-diagnostics_20261118_172624.zip.exe"
+        ));
+        assert!(!is_diagnostics_download(
+            "other-adb-monitor-diagnostics_20261118_172624.zip"
+        ));
+        assert!(!is_diagnostics_download("report.pdf"));
     }
 }
