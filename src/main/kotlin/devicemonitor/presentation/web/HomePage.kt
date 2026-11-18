@@ -372,6 +372,11 @@ internal val HOME_PAGE = """<!DOCTYPE html>
   .mcheck input[type=checkbox] { width: 14px; height: 14px; margin: 1px 0 0; flex: none; accent-color: var(--gold); cursor: pointer; }
   .mcheck-label { display: block; color: #cbc7be; font-size: 10px; font-weight: 680; }
   .mcheck-cost { display: block; margin-top: 2px; color: var(--quiet); font-size: 8px; line-height: 1.35; }
+  .root-required { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; color: var(--red); font: 800 7px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; vertical-align: 1px; }
+  .root-required:before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 3px rgba(255,118,118,.08); }
+  .mcheck.root-unavailable { opacity: .46; cursor: not-allowed; }
+  .mcheck.root-unavailable:hover { background: transparent; }
+  .mcheck input:disabled { cursor: not-allowed; }
   .review-card { position: sticky; top: 86px; overflow: hidden; border-radius: var(--radius-lg); }
   .review-top { padding: 24px 23px 19px; border-bottom: 1px solid var(--line); background: radial-gradient(circle at 100% 0%, rgba(232,182,109,.1), transparent 54%); }
   .summary-device { display: flex; align-items: center; gap: 12px; margin-top: 20px; padding: 13px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.025); }
@@ -576,7 +581,7 @@ internal val HOME_PAGE = """<!DOCTYPE html>
               <label class="mcheck"><input type="checkbox" id="m_thermal"><span><span class="mcheck-label">CPU temperature</span><span class="mcheck-cost">Low · thermal sysfs</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_freq"><span><span class="mcheck-label">CPU frequency</span><span class="mcheck-cost">Low · scaling_cur_freq</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_network"><span><span class="mcheck-label">Network throughput</span><span class="mcheck-cost">Low · /proc/net/dev</span></span></label>
-              <label class="mcheck"><input type="checkbox" id="m_topprocs" checked><span><span class="mcheck-label">Top process CPU</span><span class="mcheck-cost">Medium · process stat reads</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_topprocs" data-root-required="true" checked><span><span class="mcheck-label">Top process CPU <span class="root-required" aria-label="Requires rooted ADB device">ROOT</span></span><span class="mcheck-cost">Medium · process stat reads</span></span></label>
             </div>
           </div>
           <div class="metric-cluster">
@@ -597,8 +602,8 @@ internal val HOME_PAGE = """<!DOCTYPE html>
             <div class="metrics-grid">
               <label class="mcheck"><input type="checkbox" id="m_pss"><span><span class="mcheck-label">App PSS breakdown</span><span class="mcheck-cost">Medium · dumpsys meminfo</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_appcpu"><span><span class="mcheck-label">App process CPU</span><span class="mcheck-cost">Low · process stat</span></span></label>
-              <label class="mcheck"><input type="checkbox" id="m_maincpu"><span><span class="mcheck-label">Main-thread CPU</span><span class="mcheck-cost">Low · task stat</span></span></label>
-              <label class="mcheck"><input type="checkbox" id="m_mediacpu"><span><span class="mcheck-label">Media and HAL CPU</span><span class="mcheck-cost">Low · media process PIDs</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_maincpu" data-root-required="true"><span><span class="mcheck-label">Main-thread CPU <span class="root-required" aria-label="Requires rooted ADB device">ROOT</span></span><span class="mcheck-cost">Low · task stat</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_mediacpu" data-root-required="true"><span><span class="mcheck-label">Media and HAL CPU <span class="root-required" aria-label="Requires rooted ADB device">ROOT</span></span><span class="mcheck-cost">Low · media process PIDs</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_playback" onchange="if(this.checked){var l=document.getElementById('logcat');if(l)l.checked=true;}"><span><span class="mcheck-label">Playback and tunnel</span><span class="mcheck-cost">Logcat · STB video state</span></span></label>
             </div>
           </div>
@@ -646,6 +651,7 @@ var currentReportPath = null;
 var reportTrigger = null;
 var reportTimer = null;
 var downloadToastTimer = null;
+var ROOT_METRIC_IDS = ['m_topprocs', 'm_maincpu', 'm_mediacpu'];
 
 function showDownloadToast(success, fileName) {
   var toast = document.getElementById('downloadToast');
@@ -667,7 +673,9 @@ window.addEventListener('studio-download-finished', function (event) {
 function saveHomeDraft() {
   var values = {};
   Array.prototype.forEach.call(document.querySelectorAll('input[id]'), function (input) {
-    values[input.id] = input.type === 'checkbox' ? input.checked : input.value;
+    values[input.id] = input.type === 'checkbox'
+      ? (input.dataset.rootPreference == null ? input.checked : input.dataset.rootPreference === 'true')
+      : input.value;
   });
   localStorage.setItem(HOME_DRAFT_KEY, JSON.stringify({
     values: values,
@@ -675,6 +683,31 @@ function saveHomeDraft() {
     captureOpen: document.getElementById('captureCfg').classList.contains('open'),
     metricsOpen: document.getElementById('metricsCfg').classList.contains('open')
   }));
+}
+
+function applyRootMetricAvailability() {
+  var rooted = !!selectedDevice && selectedDevice.root === 'root';
+  ROOT_METRIC_IDS.forEach(function (id) {
+    var input = document.getElementById(id);
+    var label = input.closest('label');
+    if (!rooted) {
+      if (input.dataset.rootPreference == null) input.dataset.rootPreference = String(input.checked);
+      input.checked = false;
+      input.disabled = true;
+      label.classList.add('root-unavailable');
+      label.title = 'Requires a rooted ADB device';
+    } else {
+      if (input.dataset.rootPreference != null) input.checked = input.dataset.rootPreference === 'true';
+      delete input.dataset.rootPreference;
+      input.disabled = false;
+      label.classList.remove('root-unavailable');
+      label.removeAttribute('title');
+    }
+  });
+}
+
+function rootMetricEnabled(id) {
+  return !!selectedDevice && selectedDevice.root === 'root' && document.getElementById(id).checked;
 }
 
 function setPanelState(headerId, contentId, open) {
@@ -801,6 +834,7 @@ function renderDevices(devices) {
     selected = null;
     selectedDevice = null;
     grid.innerHTML = '<div class="empty">No authorized device found.<br>Connect over USB or <b>adb connect &lt;ip&gt;</b>, then scan again.</div>';
+    applyRootMetricAvailability();
     updateSummary();
     return;
   }
@@ -849,6 +883,7 @@ function renderDevices(devices) {
         .catch(function () { document.getElementById('msg').textContent = 'Could not restart adbd.'; setTimeout(loadDevices, 1500); });
     };
   });
+  applyRootMetricAvailability();
   updateSummary();
 }
 
@@ -957,13 +992,13 @@ function startRun() {
   p.set('thermal', document.getElementById('m_thermal').checked);
   p.set('cpuFreq', document.getElementById('m_freq').checked);
   p.set('network', document.getElementById('m_network').checked);
-  p.set('topProcs', document.getElementById('m_topprocs').checked);
+  p.set('topProcs', rootMetricEnabled('m_topprocs'));
   p.set('topMem', document.getElementById('m_topmem').checked ? 'true' : 'false');
   p.set('playback', document.getElementById('m_playback').checked ? 'true' : 'false');
   p.set('appPss', document.getElementById('m_pss').checked);
   p.set('appCpu', document.getElementById('m_appcpu').checked);
-  p.set('mainCpu', document.getElementById('m_maincpu').checked);
-  p.set('mediaCpu', document.getElementById('m_mediacpu').checked);
+  p.set('mainCpu', rootMetricEnabled('m_maincpu'));
+  p.set('mediaCpu', rootMetricEnabled('m_mediacpu'));
   setLaunchState(true);
   fetch('/api/start', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: p.toString() })
     .then(function (r) { return r.json(); })
@@ -1100,6 +1135,7 @@ Array.prototype.forEach.call(document.querySelectorAll('input'), function (input
 });
 window.addEventListener('beforeunload', saveHomeDraft);
 restoreHomeDraft();
+applyRootMetricAvailability();
 updateSummary();
 loadDevices();
 setInterval(loadDevices, 5000);

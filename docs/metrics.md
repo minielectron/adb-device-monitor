@@ -130,6 +130,13 @@ per-core CPU, top-process CPU, memory used, PSI pressure stalls, and top-process
 required. Changes are saved in local browser storage and restored after navigation or application
 restart; returning Home does not reset the draft. Unreadable OEM signals remain `n/a`.
 
+Home marks Top Process CPU, Main-thread CPU, and Media and HAL CPU with a red `ROOT` indicator. These
+three controls are disabled unless the selected device currently reports rooted ADB. Their saved
+selection is restored when a rooted device is selected. Player Debugger applies the same rule to Top
+Process CPU. App Process CPU and Top Process Memory remain available on non-rooted devices because
+they have `dumpsys cpuinfo` and `ps`/RSS fallbacks respectively; OEM-dependent thermal and frequency
+signals are not treated as root-required.
+
 ## CSV / programmatic reading
 
 Every field above is a column in `samples.csv` (see [reports-and-comparison.md](reports-and-comparison.md)),

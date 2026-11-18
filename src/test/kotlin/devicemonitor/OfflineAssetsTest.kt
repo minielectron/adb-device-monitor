@@ -55,7 +55,7 @@ class OfflineAssetsTest {
         assertContains(PLAYER_DEBUGGER_PAGE, "id=\"playerReportViewer\"")
         assertContains(PLAYER_DEBUGGER_PAGE, "id=\"pdHandoffMap\"")
         listOf("cpuUtil", "perCoreCpu", "topProcessCpu", "memoryUsed", "psiPressure", "topProcessMemory").forEach { id ->
-            assertContains(PLAYER_DEBUGGER_PAGE, "id=\"$id\" type=\"checkbox\" checked")
+            assertTrue(Regex("""id="$id"[^>]*\bchecked\b""").containsMatchIn(PLAYER_DEBUGGER_PAGE), "$id should be checked by default")
         }
         assertContains(PLAYER_DEBUGGER_PAGE, "Reported")
         assertContains(PLAYER_DEBUGGER_PAGE, "Measured")
@@ -65,14 +65,30 @@ class OfflineAssetsTest {
 
     @Test fun homeAndPlayerDebuggerShareBalancedFirstUseMetricDefaults() {
         listOf("m_cpu", "m_percore", "m_topprocs", "m_mempct", "m_psi", "m_topmem").forEach { id ->
-            assertContains(HOME_PAGE, "id=\"$id\" checked")
+            assertTrue(Regex("""id="$id"[^>]*\bchecked\b""").containsMatchIn(HOME_PAGE), "$id should be checked by default")
         }
         assertContains(HOME_PAGE, "id=\"m_pss\"><span>")
         assertFalse(HOME_PAGE.contains("id=\"m_pss\" checked"))
 
         listOf("cpuUtil", "perCoreCpu", "topProcessCpu", "memoryUsed", "psiPressure", "topProcessMemory").forEach { id ->
-            assertContains(PLAYER_DEBUGGER_PAGE, "id=\"$id\" type=\"checkbox\" checked")
+            assertTrue(Regex("""id="$id"[^>]*\bchecked\b""").containsMatchIn(PLAYER_DEBUGGER_PAGE), "$id should be checked by default")
         }
+    }
+
+    @Test fun rootRequiredMetricsAreMarkedGatedAndDefensivelySerialized() {
+        listOf("m_topprocs", "m_maincpu", "m_mediacpu").forEach { id ->
+            assertTrue(Regex("""id="$id"[^>]*data-root-required="true"""").containsMatchIn(HOME_PAGE))
+            assertContains(HOME_PAGE, "rootMetricEnabled('$id')")
+        }
+        assertContains(HOME_PAGE, "var ROOT_METRIC_IDS = ['m_topprocs', 'm_maincpu', 'm_mediacpu']")
+        assertContains(HOME_PAGE, "selectedDevice.root === 'root'")
+        assertContains(HOME_PAGE, "input.dataset.rootPreference")
+        assertContains(HOME_PAGE, "aria-label=\"Requires rooted ADB device\"")
+
+        assertContains(PLAYER_DEBUGGER_PAGE, "id=\"topProcessCpu\" type=\"checkbox\" data-root-required=\"true\"")
+        assertContains(PLAYER_DEBUGGER_PAGE, "device.root==='root'")
+        assertContains(PLAYER_DEBUGGER_PAGE, "id==='topProcessCpu'?rootSignalEnabled(id)")
+        assertContains(PLAYER_DEBUGGER_PAGE, "input.dataset.rootPreference")
     }
 
     @Test fun diagnosticReportsOpenInTheStatePreservingViewer() {
