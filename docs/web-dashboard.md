@@ -1,22 +1,41 @@
 # Web Dashboard
 
-The live UI ("ADB Performance Studio"). Served by `WebApp` (`presentation/web/WebServer.kt`); the
-pages are Kotlin raw-string constants (`HomePage.kt`, `DashboardPage.kt`, `ComparePage.kt`).
+The local UI ("ADB Performance Studio"). `WebApp` in `presentation/web/WebServer.kt` serves Kotlin
+page templates to a normal browser or the native app's WebView. Runtime assets are bundled; the HTTP
+origin is local and no internet service is required.
 
 ## Pages & endpoints
 
 | Route | Serves |
 |-------|--------|
-| `/` | Home: device picker + run configuration (`HOME_PAGE`) |
+| `/` | Home: device picker, run configuration and Quick Diagnostics (`HOME_PAGE`) |
 | `/dashboard` | Live charts (`DASHBOARD_PAGE`) |
 | `/compare` | Two-run comparison (`COMPARE_PAGE`) |
+| `/player-debugger` | Offline Player Debugger cockpit, graph, recorder and incidents |
+| `/release-guard` | Offline Release Guard project/scenario workspace and results |
 | `/api/devices` | connected devices + busy state |
+| `/api/defaults`, `/api/pick-folder` | resolved reports folder / native folder picker |
 | `/api/start` (POST) | start a run from the configured form |
 | `/api/stop` (POST) | request stop (aborts in-flight adb, returns fast) |
 | `/api/session?since=<n>` | incremental run state + new samples as JSON |
 | `/api/report` | the run's PDF |
 | `/api/runs`, `/api/runcsv?folder=` | list past runs / fetch a run's CSV (for compare) |
 | `/api/snapshot*`, `/api/procrank-snapshot*` | one-shot snapshots — see [device-and-procrank-snapshot.md](device-and-procrank-snapshot.md) |
+| `/api/layout-inspector*` | hierarchy/screenshot capture, status and HTML — see [layout-inspector.md](layout-inspector.md) |
+| `/api/player/*` | capability probe, capture, graph/timeline/incidents, report, bundles, import and re-analysis |
+| `/api/release/*` | projects/scenarios, capability probe, execution, result, baseline and artifact access |
+| `/api/diagnostics` | application/JVM support ZIP — see [diagnostics.md](diagnostics.md) |
+
+## Home defaults and draft persistence
+
+The initial Home metric set is CPU utilization, per-core CPU, top-process CPU, memory used, PSI and
+top-process memory. Logcat capture is also initially enabled. The page saves its form fields,
+checkboxes and open/closed panel state in local browser storage, so moving to Player Debugger,
+Release Guard, Compare or Home does not erase unsaved run configuration. A saved draft takes
+precedence over first-use defaults.
+
+Player Debugger keeps a separate saved draft for target, package, duration, interval and its six
+visible signal checkboxes.
 
 ## Polling protocol (how the live view works)
 

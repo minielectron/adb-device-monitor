@@ -6,6 +6,26 @@ architecture. A capture can represent one player, four parallel players, or a ch
 multicast → OTT fallback and OTT ↔ DVB switching without a product-specific adapter in the desktop
 tool.
 
+## Acquisition and data sources
+
+Player Debugger starts the normal `MonitorSession` with logcat and normalized player capture enabled.
+The UI does not read a player SDK directly. It combines the following bounded sources and preserves
+their evidence type instead of presenting all of them as equally certain.
+
+| Source | How it is collected | What it contributes | Important limit |
+|---|---|---|---|
+| Device logcat | ADB starts `logcat -v threadtime` after a best-effort buffer clear and writes `logcat.log` throughout the capture. The passive probe reads only new bytes, up to 2 MiB per scan. | App/native crash, ANR, codec, DRM and audio errors; generic playback/tunnel patterns; evidence references by byte offset and line. | OEM/vendor messages may be absent, obfuscated or rotated. Rotation creates an explicit evidence-gap event. |
+| OPTD/1 lines | The app writes bounded newline JSON with logcat tag `OPTD`; the desktop parser validates schema, package, depth, types, finite numbers and size. | Exact session, player, delivery, state, buffering, first-frame, A/V, quality, error and handoff identity as **App reported** evidence. | Optional app integration. Invalid lines become parser diagnostics and are not trusted events. |
+| Android media snapshots | Capability-gated `dumpsys media.codec`, `dumpsys media.audio_flinger`, `dumpsys SurfaceFlinger` and `dumpsys media.player`. | Bounded raw device context around codec, audio, surface and playback behavior. | Each provider is capped at 1 MiB, uses a five-second command timeout, normally samples no faster than ten seconds, rate-limits event-triggered captures to five seconds, and backs off after failures. |
+| Performance snapshot | Batched `/proc/stat`, `/proc/meminfo`, `/proc/pressure/*` plus enabled process collectors. | CPU, per-core CPU, memory, PSI, top CPU and top memory aligned with playback time. | Production builds can restrict `/proc`; missing signals remain unavailable. |
+| Package measurements | `dumpsys meminfo <package>` and process CPU sources used by `MetricsCollector`. | App PSS/breakdown and app process cost for the selected package. | Requires the package to be valid and running; dumpsys is heavier than basic `/proc` reads. |
+| Engine reconstruction | Ordered normalized events are replayed through `SessionGraphBuilder` and versioned incident rules. | Sessions, instances, handoff edges, overlap/duration, loops and incidents as **Inferred** evidence with confidence and linked sources. | An inference explains the evidence relationship; it is not a player-reported fact. Re-analysis is deterministic over stored events. |
+
+The first-use UI checkboxes enable CPU utilization, per-core CPU, top-process CPU, memory used, CPU/
+memory/I/O PSI and top-process memory. The capture API also enables package PSS and app process CPU
+unless a caller explicitly disables them. Logcat and playback evidence are required for every Player
+Debugger capture.
+
 ## Capture modes
 
 ### Passive capture — no app integration

@@ -103,9 +103,11 @@ DEBUG lines go to the files only (the terminal shows INFO and above). What to gr
 | `[client] error @ /dashboard: …` | JavaScript errors from the browser (onerror, unhandled rejections, console.error) |
 | `[run]`, `[loop]`, `[collector]`, `[top-mem]`, `[stop]` | run lifecycle |
 
-**Export diagnostics** (link on the home page and dashboard, or `GET /api/diagnostics`) downloads a
-zip with `info.txt` (build, JVM, session state/config), `threads.txt` (live thread dump) and the
-tails of both logs. If the UI hangs, export this first — it works even while a run is stuck.
+**Export Diagnostics** (Home/Dashboard navigation or `GET /api/diagnostics`) downloads
+`adb-monitor-diagnostics_<timestamp>.zip` containing `info.txt`, `threads.txt`, up to the latest
+3 MiB of `adb-monitor.log`, and up to the latest 3 MiB of `run.log` when available. This is host/JVM
+support evidence; it does not include a screenshot, hierarchy, full device logcat, Player Debugger
+capture or Release Guard evidence. See [diagnostics.md](diagnostics.md) for the exact boundary.
 
 ## Tests
 
@@ -119,11 +121,17 @@ scripts/smoke-test.sh     # end-to-end against scripts/fake-adb.sh: start → st
 
 ## Package as a macOS app
 
-`packaging/package-macos.sh` runs `./gradlew fatJar` and wraps the jar with `jpackage` into a
-`.app`/`.dmg` that opens the web dashboard on launch (no separate Java install needed).
+`desktop/build-macos.sh` builds the fat jar, prepares a bundled jlink Java runtime and builds the
+Tauri `.app` and `.dmg` (no Java install needed on the target Mac):
+
+```bash
+desktop/build-macos.sh          # release .app + .dmg
+desktop/build-macos.sh dev      # launch a development build
+desktop/build-macos.sh prepare  # refresh app.jar and the runtime only
+```
 
 > **Important:** the `.app` bundles a *frozen copy* of the jar taken at package time. After changing
-> code you must re-run the packaging script (or run the jar directly) — relaunching the old `.app`
+> code you must re-run the build script (or run the jar directly) — relaunching the old `.app`
 > runs the old jar. The dashboard build badge (bottom-right) shows which build is actually live.
 
 ## adb discovery

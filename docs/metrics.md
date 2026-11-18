@@ -6,10 +6,12 @@ by `MetricsCollector` (`data/metrics/`). Most core metrics come from **one batch
 `===MARKER===` lines and is parsed by `Snapshot`. Optional/expensive metrics use extra reads, some on
 a background thread.
 
-For each metric below: **source** (how it's collected), **read** (how to interpret the number), and
-**dev use** (what it tells you).
+Collection is controlled by `SessionConfig`. In the Home UI's first-use state, CPU utilization,
+per-core CPU, top-process CPU, memory used, PSI and top-process memory are enabled. CLI defaults and
+specialized workflows can differ, and a restored browser draft overrides the Home defaults. For each
+metric below: **source** (how it is collected), **read** (how to interpret it), and **dev use**.
 
-## Core (always sampled)
+## Device and system signals
 
 ### System CPU utilization — `cpu` (%)
 - **Source:** `/proc/stat` aggregate `cpu` line; utilization = busy-ticks Δ / total-ticks Δ between
@@ -59,7 +61,7 @@ For each metric below: **source** (how it's collected), **read** (how to interpr
 - **Source:** `/proc/net/dev` byte deltas across all non-loopback interfaces. **Dev use:** correlate
   buffering/playback stalls with throughput dips.
 
-## Optional (opt-in per run)
+## Package and heavier signals
 
 ### App PSS — `pss` + breakdown (`pssJava`, `pssNative`, `pssCode`, `pssStack`, `pssGfx`, `pssPriv`, `pssSys`) (MB)
 - **Source:** `dumpsys meminfo <pkg>` (requires `--package`). PSS = proportional set size (shared pages
@@ -81,15 +83,15 @@ For each metric below: **source** (how it's collected), **read** (how to interpr
 - **Dev use:** attributes system CPU to specific processes live; the dashboard chart is interactive.
 
 ### Top Process Memory — `memprocs[]` ({pid, n, mb})  *(RSS)*
-- **Source:** a single `ps -A -o PID,RSS,NAME` (header-aware parser handles device `ps` variants);
-  RSS in KiB → MB. Runs on the background collector with adaptive back-off. **procrank is deliberately
-  not used here** (it walks pagemap, is heavy, and needs root — see the Procrank *Snapshot* feature for
-  a one-shot PSS view).
+- **Source:** bounded `ps` column strategies selected for the Android implementation, with a
+  `/proc/[pid]/stat` fallback; RSS is converted to MB. It runs on the background collector with
+  adaptive back-off. **procrank is deliberately not used here** (it walks pagemap, is heavy, and
+  commonly needs root — see the Procrank Snapshot for a one-shot PSS view).
 - **Read:** RSS over-counts shared pages, but it's a cheap, reliable ranking of the biggest processes.
 - **Dev use:** spot which process is growing during a repro without root or per-tick overhead.
 
 ### Direct reclaim / s — `reclaim`
-- **Source:** counted from logcat (`--playback`/logcat enabled). **Dev use:** confirms the kernel hit
+- **Source:** counted from the captured logcat when logcat and this signal are enabled. **Dev use:** confirms the kernel hit
   the `min` watermark and allocations are blocking — a hard memory-pressure signal.
 
 ## Logcat anomalies & events — `Anomaly` (`domain/Anomaly.kt`)

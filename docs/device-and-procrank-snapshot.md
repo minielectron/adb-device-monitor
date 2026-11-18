@@ -1,51 +1,84 @@
-# Device Snapshot & Procrank Snapshot
+# Device Snapshot and Procrank Snapshot
 
-Two **one-shot** captures (buttons on the Home page) that produce a self-contained interactive HTML
-report about the device's current memory state. Implemented in
-`presentation/report/Capabilities.kt`; served by `WebApp` via async start + progress-poll + inline
-HTML endpoints.
+**Current state:** both are implemented under **Home → Quick diagnostics**. They are independent,
+one-shot captures; no monitoring run is required. Each saves and serves a self-contained HTML report
+without a CDN, analytics or remote assets.
 
-Both render **server-side** (SVG charts + static HTML tables). There is intentionally **no Chart.js,
-no CDN, and no embedded JS data array**, because those failed silently on locale/escaping edge cases.
-If the capture has rows, the graph is there.
+Layout inspection is a third Quick Diagnostics tool and is documented separately in
+[layout-inspector.md](layout-inspector.md). The navigation-level Diagnostics ZIP is an application
+support bundle, not one of these device captures; see [diagnostics.md](diagnostics.md).
 
-## Device Snapshot  (`📸 Device Snapshot`)
+## Device Snapshot
 
-- **What:** a snapshot of the STB's capabilities and memory footprint — hardware/OS summary, a
-  memory-footprint doughnut (PSS by category: Android / 3rd-party / Launcher vs MemFree / MemAvailable),
-  and a full process table.
-- **How:** `Capabilities.capture(adb, target)` runs a few `adb shell` reads (getprop summary,
-  `/proc/meminfo`, launcher detection, per-process PSS) and `writeHtml()` renders the HTML.
-- **Endpoints:** `POST /api/snapshot` (async start) → `GET /api/snapshot-status` (progress) →
-  `GET /api/snapshot-report` (serves the HTML inline; also saved as `device-snapshot_<ts>.html`).
-- **Read:** the doughnut shows where RAM is going; "Total RAM" is drawn at the doughnut's true center.
-- **Dev use:** a fast baseline of a device you don't know — what launcher/apps dominate memory before
-  you even start a run.
+Device Snapshot provides device identity and a current memory-footprint overview.
 
-## Procrank Snapshot  (`📊 Procrank Snapshot`)
+| Displayed value | Source |
+|---|---|
+| Manufacturer, brand, model, device, board/platform, Android release/SDK/build type and hardware | batched `getprop` reads |
+| Kernel | `uname -r` |
+| CPU cores | `nproc`, falling back to processor count in `/proc/cpuinfo` |
+| CPU governor | `/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor` |
+| Total/free/available RAM and swap | `/proc/meminfo` |
+| Default launcher | `cmd package resolve-activity` for the HOME intent |
+| Per-process PSS | the `Total PSS by process` block from `dumpsys meminfo`, bounded to 250 lines |
 
-- **What:** per-process **VSS/RSS/PSS/USS** from `procrank` — the accurate proportional-memory view —
-  as a top-15 bar chart plus a sortable/searchable full table.
-- **How:** `captureProcrank(adb, target)` tries `procrank`, then `su 0 procrank` / `su -c procrank`,
-  and accepts the result only if it yields real data rows (a non-rooted device often prints just the
-  header). If none work it falls back to `ps` (RSS/VSS; PSS/USS blank). A debug sidecar
-  `procrank-snapshot_<ts>.debug.txt` records exactly what each command returned.
-- **Endpoints:** `POST /api/procrank-snapshot` → `GET /api/procrank-status` → `GET /api/procrank-report`.
-- **Read:** PSS is the fair per-process number (shared pages counted proportionally); USS is
-  private-only (what you'd reclaim by killing it); RSS over-counts shared; VSS is address space (mostly
-  noise). The report header states the source (`procrank` vs `ps` fallback) and process count.
-- **Dev use:** the definitive "who is really using memory" view for a repro. Because it's one-shot and
-  bounded by the hardened adb timeout, it's safe even though procrank is heavy — unlike the live Top
-  Process Memory chart, which uses cheap RSS via `ps` every tick.
+Processes are grouped as Android, launcher or third-party using the resolved launcher package plus
+name/prefix heuristics. The resulting doughnut is therefore an operational overview, not Android's
+memory accounting authority. PSS values and the full process table remain the more direct evidence.
 
-## Why one-shot vs live differ
+The report is `device-snapshot_<yyyyMMdd_HHmmss>.html` in the resolved reports directory. It uses
+server-rendered SVG and static HTML, so a captured file can be read offline.
 
-`procrank` walks every process's pagemap to compute PSS: accurate but slow and root-gated. That's fine
-for a deliberate one-shot snapshot, but wrong for a per-tick live chart (it would stall sampling). So:
+## Procrank Snapshot
+
+Procrank Snapshot is the deliberate, heavier per-process memory view. It tries these sources in
+order and only accepts output containing real process rows:
+
+1. `procrank`
+2. `su 0 procrank`
+3. `su -c procrank`
+4. `ps` fallback when proportional-memory data is not available
+
+With procrank, the report contains VSS, RSS, PSS and USS. With the `ps` fallback, PSS and USS are
+left unavailable rather than copied from RSS. The report header states the actual source.
+
+- **PSS** proportionally shares mapped pages and is the fairest per-process total.
+- **USS** is private memory that would be reclaimed when the process exits.
+- **RSS** counts resident shared pages in every process and can overstate system use.
+- **VSS** is virtual address space and is usually not a useful pressure measure by itself.
+
+Outputs are `procrank-snapshot_<yyyyMMdd_HHmmss>.html` and a neighboring
+`procrank-snapshot_<yyyyMMdd_HHmmss>.debug.txt`. The debug sidecar records the attempted commands and
+raw responses so an empty/header-only OEM implementation or permission failure can be diagnosed.
+
+## API flow
+
+Both tools run on background threads so the Home UI remains responsive:
+
+| Tool | Start | Status | Report |
+|---|---|---|---|
+| Device Snapshot | `POST /api/snapshot` | `GET /api/snapshot-status` | `GET /api/snapshot-report` |
+| Procrank Snapshot | `POST /api/procrank-snapshot` | `GET /api/procrank-status` | `GET /api/procrank-report` |
+
+Only one capture of each type runs at once. The selected serial must be present in the request; ADB
+or parse failures are returned as explicit error state.
+
+## Why live Top Process Memory is different
+
+`procrank` walks process memory maps and is commonly root-gated, so running it every sample would
+disturb the workload and can stall on OEM builds. The live chart instead uses a cheap `ps` RSS read,
+with `/proc` fallback strategies where supported.
 
 | | Live chart | Procrank Snapshot |
-|-|------------|-------------------|
-| Command | `ps -A -o PID,RSS,NAME` | `procrank` (su fallbacks) → `ps` fallback |
-| Metric | RSS | PSS/USS/RSS/VSS |
-| Cost | cheap, no root | heavy, usually needs root |
-| Cadence | every tick | on demand |
+|---|---|---|
+| Source | `ps`/`/proc` strategies | `procrank` with su attempts, then `ps` |
+| Primary metric | RSS | PSS when available, otherwise RSS |
+| Cost | Low enough for periodic sampling | Deliberate on-demand deep dive |
+| Root | Not normally required | Usually required for complete PSS/USS |
+
+## Privacy and limitations
+
+The HTML and debug sidecar can contain device properties, package/process names and memory values.
+They remain local but are not sanitized support bundles. Production devices may restrict procrank,
+parts of `/proc`, sysfs or dumpsys. Missing data is shown as unavailable or a named fallback; it is
+not treated as zero or as a successful proportional-memory capture.

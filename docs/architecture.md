@@ -34,7 +34,7 @@ devicemonitor/
 │       ├── Playback.kt             #   STB video-player state + tunnel-mode tracking
 │       └── TraceParser.kt          #   ART method-trace / jank analysis
 │   ├── playerdebug/                # passive probe, OPTD parser, snapshots, artifacts, SQLite index
-│   ├── device/                     # capability-based device driver used by Release Guard
+│   ├── device/                     # capability driver + secure Layout Inspector capture
 │   └── storage/                    # Release Guard artifacts and run repository
 │
 ├── application/                    # orchestration / use-cases
@@ -53,6 +53,7 @@ devicemonitor/
 │   └── report/
 │       ├── Report.kt               #   PdfReport: PDF generation with JFreeChart images
 │       ├── Capabilities.kt         #   one-shot Device / Procrank snapshot HTML
+│       ├── LayoutInspectorReport.kt #  self-contained screenshot/hierarchy inspector
 │       ├── PlayerDebugReport.kt    #   sanitized, script-free playback report
 │       └── ReleaseGuardReport.kt   #   release evidence exporters
 ```
@@ -119,6 +120,44 @@ OTT ↔ DVB switching, overlapping players, loops, failed transitions, and missi
 not hard-coded special cases. The Retail Android project was inspected as architecture reference
 only; none of its source, player SDKs, names, rules, or assets are bundled into this repository.
 
+## One-shot diagnostics pipeline
+
+Home Quick Diagnostics do not create a `MonitorSession`. Each has its own bounded background capture
+and status endpoint:
+
+```
+Home card → POST start → ADB capture thread → local self-contained HTML → inline report endpoint
+```
+
+Device and Procrank snapshots are rendered by `Capabilities.kt`. Layout Inspector uses
+`LayoutInspectorCapture` to parse a hardened `uiautomator` XML document and validate a pulled PNG,
+then `LayoutInspectorReport` embeds both into one HTML file. Their state is intentionally separate
+from live monitoring, Player Debugger and Release Guard. See
+[device-and-procrank-snapshot.md](device-and-procrank-snapshot.md) and
+[layout-inspector.md](layout-inspector.md).
+
+The top navigation Diagnostics action follows a different path: `WebServer` reads host/JVM state,
+the thread dump and bounded log tails into an in-memory ZIP. It does not call a device diagnostic
+collector. See [diagnostics.md](diagnostics.md).
+
+## Release Guard pipeline
+
+Release Guard composes the capability-based `DeviceDriver` with the existing `MonitorSession`:
+
+```
+scenario JSON → validation + capability preflight → warm-ups → measured attempts
+                                                    │
+                                                    ▼
+                                       samples + step/section markers
+                                                    │
+                                                    ▼
+                              budget/baseline evaluation → local evidence exporters
+```
+
+The domain layer owns versioned scenarios, budgets and verdicts; the device layer translates neutral
+steps to ADB; the application layer schedules attempts and evaluation; storage confines atomic
+artifacts beneath the configured root. Full details are in [release-guard.md](release-guard.md).
+
 Capture artifacts are written atomically and indexed in a local SQLite database. Interrupted runs
 are recovered as partial evidence. The report renderer and support-bundle sanitizer consume stored
 artifacts, so analysis is deterministic and can be re-run without reconnecting the device. See
@@ -162,7 +201,7 @@ Two hardening rules run throughout:
   into a 500, exchange always closed. `/api/devices` caches the per-device version/root probe
   (30 s) and bounds it to 5 s.
 - **Logging is central** (`common/Log.kt`): levelled, timestamped, thread-named lines; `println`
-  is captured too. See [build-run-package.md](build-run-package.md#logs).
+  is captured too. See [build-run-package.md](build-run-package.md#logs-and-diagnostics).
 
 ## Conventions
 

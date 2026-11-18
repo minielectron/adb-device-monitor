@@ -27,12 +27,17 @@ ADB Performance Studio.app
 | Browser behaviour | In the app |
 |-------------------|------------|
 | Downloads (PDF report, diagnostics zip) | saved to `~/Downloads` (auto-renamed if the name exists) and revealed in Finder |
-| Player Debugger / Release Guard HTML evidence | opened inside the application in a full-screen WKWebView-backed viewer |
+| Device, Procrank and Layout Inspector HTML | opened inside Home's full-screen report viewer; **Open externally** deliberately uses the default browser |
+| Player Debugger HTML report | opened inside Player Debugger's full-screen viewer; Back restores the existing debugger state |
+| Release Guard registered HTML evidence | served from the loopback sidecar and kept inside the application when opened as an internal route |
 | Explicit external links | opened in the default browser |
 | Links to other sites (e.g. ui.perfetto.dev) | opened in the default browser |
 | Reports-folder picker | unchanged — the engine's native dialog |
 
-The UI uses no Tauri IPC; the only capability granted is `core:default` for the splash page.
+The UI uses loopback HTTP rather than a hosted web service or Tauri command API; the only Tauri
+capability granted is `core:default` for the splash page. Internet access is not required after the
+application has been built. Build-time Gradle, Cargo and npm dependency resolution can require a
+network when their caches are empty.
 Logs are unchanged: `~/ADB Device Monitor/adb-monitor.log` (look for `[sidecar]` and `[exit]` lines).
 
 ## Build and run
@@ -60,6 +65,7 @@ Check the packaged app, not only `tauri dev`:
 - [ ] Start a run, Stop → "Download PDF report" lands in `~/Downloads` and Finder reveals it
 - [ ] Export diagnostics downloads a zip
 - [ ] Player Debugger → Open offline report stays inside the app; Back returns without losing the capture or form draft
+- [ ] Device, Procrank and Layout Inspector reports open in Home's viewer; Layout Refresh captures a new screen
 - [ ] The report viewer works with the network disconnected and Download HTML produces a self-contained file
 - [ ] Device snapshot / Procrank snapshot still open successfully
 - [ ] Run Comparison → "Export PDF" (a client-side blob download — the one path most likely to need a follow-up)
@@ -71,6 +77,10 @@ Player Debugger capture data stays under `~/ADB Device Monitor/PlayerDebugger/` 
 loads reports from its loopback-only sidecar, not from a public web service. The HTML report has no
 scripts or remote assets and uses a restrictive content-security policy. See
 [player-debugger.md](player-debugger.md) for privacy and support-bundle details.
+
+The reports themselves have different security profiles: Player Debugger's static handoff report is
+sanitized and script-free; the Layout Inspector is self-contained but includes a small inline script
+for local search, hit-testing and in-app Refresh, plus the real screenshot and hierarchy metadata.
 
 ## Signing and notarization (later, with the Developer ID)
 
