@@ -1,0 +1,27 @@
+src/main/kotlin/devicemonitor/presentation/web/PlayerDebuggerPage.kt
+  s_6a41e6dc5a6d74::t_97e018e56f2354 27-28,80,143,149,154-158,281
+src/test/kotlin/devicemonitor/OfflineAssetsTest.kt
+  s_6a41e6dc5a6d74::t_3ff78cdc872808 68,74,80
+  s_6a41e6dc5a6d74::t_0f4e34c32b534d 58
+  s_6a41e6dc5a6d74::t_97e018e56f2354 78-79,81-93
+docs/metrics.md
+  s_6a41e6dc5a6d74::t_97e018e56f2354 133-139
+src/main/kotlin/devicemonitor/presentation/web/HomePage.kt
+  s_6a41e6dc5a6d74::t_97e018e56f2354 375-379,584,605-606,654,676-678,688-712,837,886,995,1000-1001,1138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "05cf2eba8e0b2e4add495aa51917c03057a290c6",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
