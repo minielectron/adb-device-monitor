@@ -1,0 +1,51 @@
+docs/player-debugger.md
+  s_6a41e6dc5a6d74::t_1ce59ed70319fb 17,25-27,35-36
+src/main/kotlin/devicemonitor/data/playerdebug/PassivePlaybackProbe.kt
+  s_6a41e6dc5a6d74::t_76ba81e29ed6f9 142
+src/main/kotlin/devicemonitor/presentation/report/Report.kt
+  s_6a41e6dc5a6d74::t_ee18c472761ba5 282-283,293,300
+src/main/kotlin/devicemonitor/presentation/web/DashboardPage.kt
+  s_6a41e6dc5a6d74::t_47e33197b49c9c 113,117,457-458,463-464,470,484,489,494,540-541,775,780
+src/test/kotlin/devicemonitor/OfflineAssetsTest.kt
+  s_6a41e6dc5a6d74::t_42bc0153ea68d1 79,83-86,91-92,94,98-103
+  s_6a41e6dc5a6d74::t_c9d7cd3d721e53 104-105
+src/main/kotlin/devicemonitor/application/Session.kt
+  s_6a41e6dc5a6d74::t_76ba81e29ed6f9 585
+  s_6a41e6dc5a6d74::t_ee18c472761ba5 56
+src/main/kotlin/devicemonitor/presentation/web/PlayerDebuggerPage.kt
+  s_6a41e6dc5a6d74::t_f3dbc35ced2629 80,82,154,158
+docs/metrics.md
+  s_6a41e6dc5a6d74::t_1ce59ed70319fb 104-108,119,133-136
+src/main/kotlin/devicemonitor/data/logcat/Playback.kt
+  s_6a41e6dc5a6d74::t_76ba81e29ed6f9 5,13,16,19,68,75,80,86,98
+src/main/kotlin/devicemonitor/presentation/web/HomePage.kt
+  s_6a41e6dc5a6d74::t_f3dbc35ced2629 581,584,594,605-607,654,988,992,995,1000-1001
+docs/superpowers/specs/2026-11-18-root-required-metrics-design.md
+  s_6a41e6dc5a6d74::t_b44e98c4f46615 3-5
+src/main/kotlin/devicemonitor/Main.kt
+  s_6a41e6dc5a6d74::t_ee18c472761ba5 57,490,497
+src/test/kotlin/devicemonitor/PassivePlaybackProbeTest.kt
+  s_6a41e6dc5a6d74::t_42bc0153ea68d1 12,15-16,39,42-47
+docs/confluence-wiki-page.txt
+  s_6a41e6dc5a6d74::t_1ce59ed70319fb 3,16,72,143
+docs/build-run-package.md
+  s_6a41e6dc5a6d74::t_1ce59ed70319fb 48
+docs/web-dashboard.md
+  s_6a41e6dc5a6d74::t_b44e98c4f46615 37-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fe98749fd1551656a7f8059ab5f57008ee12e5ab",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
