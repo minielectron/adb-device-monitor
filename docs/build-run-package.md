@@ -45,7 +45,7 @@ Key options (full list via `--help`):
 | `--jank` | UI jank % + frame-phase breakdown (needs `--package`) |
 | `--profile` | ART sampling profiler → top main-thread methods table (needs debuggable app) |
 | `--perfetto` | record a Perfetto system trace for the run |
-| `--playback` | STB: track player state + tunnel mode from logcat |
+| `--playback` | track MediaCodec tunnel mode from logcat |
 | `--sidecar` (with `--web`) | backend mode for the native app: loopback only, exits when stdin closes — see [desktop-app.md](desktop-app.md) |
 | `--zap-time <ms>` / `--zap-count <n>` | channel-zapping stress test (sends CHANNEL_UP) |
 | `--label <name>` | tag the run/folder/report (e.g. `tunnel-on`) for comparisons |

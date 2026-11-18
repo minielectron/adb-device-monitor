@@ -1,6 +1,6 @@
 h1. ADB Device Monitor (ADB Performance Studio)
 
-*ADB Device Monitor* is a self-contained Kotlin/JVM tool that samples live CPU, memory, and app performance from adb-connected Android and STB devices. It renders a live web dashboard, writes PDF/CSV reports, captures logcat with anomaly flagging, and supports STB-specific playback metrics (MediaKind player state, tunnel mode).
+*ADB Device Monitor* is a self-contained Kotlin/JVM tool that samples live CPU, memory, and app performance from adb-connected Android and STB devices. It renders a live web dashboard, writes PDF/CSV reports, captures logcat with anomaly flagging, and tracks generic Android tunnel mode.
 
 It consolidates and extends the capabilities of earlier Python tools such as *MemMonitor*, *MemCPUMonitor*, *Pressure Pulse*, and *STB Session Monitor* into a single fat-jar with a unified live dashboard.
 
@@ -13,7 +13,7 @@ h2. Goals
 | Lower DDR memory footprint | App PSS breakdown (Java/native/graphics), Top Process Memory, zone watermarks |
 | Minimize disk I/O | IO PSI, major page faults, direct reclaim rate |
 | Ensure stability and robustness | PSI (cpu/mem/io), memory zone watermarks, anomaly log, logcat capture |
-| Benchmark performance on STB | Tunnel mode tracking, player lifecycle, channel-zap stress test, A/B comparison |
+| Benchmark performance on STB | Tunnel mode tracking, channel-zap stress test, A/B comparison |
 
 h2. 30-Second Mental Model
 
@@ -69,7 +69,7 @@ java -jar adb-device-monitor-1.0.0-all.jar --duration 300 --interval 2 [options]
 | {{--jank}} | UI jank % + frame-phase breakdown (needs {{--package}}) |
 | {{--profile}} | ART sampling profiler, top main-thread methods table |
 | {{--perfetto}} | Record a Perfetto system trace for the run |
-| {{--playback}} | STB: track player state + tunnel mode from logcat |
+| {{--playback}} | Track MediaCodec tunnel mode from logcat |
 | {{--zap-time}} / {{--zap-count}} | Channel-zapping stress test (sends CHANNEL_UP) |
 | {{--label}} | Tag the run for A/B comparisons (e.g. {{tunnel-on}}) |
 | {{--serve}} | Also expose the live dashboard for this CLI run |
@@ -140,10 +140,9 @@ h3. Application metrics (require {{--package}})
 | Top-10 process CPU | /proc/pid/stat all | Medium | Noisy neighbors stealing cycles |
 | Top process memory RSS | /proc/pid/stat field 24 | Low-Med | Who is eating RAM (cheap, no root) |
 
-h3. STB playback metrics (require {{--playback}}, from logcat)
+h3. Tunnel-mode metrics (require {{--playback}}, from logcat)
 
 || Metric || What it tells you ||
-| Video player state | MediaKind lifecycle: onSourceLoad, onRenderFirstFrame, onPlaying, onStallStarted |
 | Tunnel mode build vs actual | Whether tunneled hardware playback was requested and granted |
 
 *Tunnel mode example:* build flag true + actual non_tunneled = silently fell back to software path — explains high codec CPU and micro-stutter. Enabling tunnel mode can reduce app-level CPU by up to ~20% and memory by ~10% (see Performance and Stability page for comparison graphs).

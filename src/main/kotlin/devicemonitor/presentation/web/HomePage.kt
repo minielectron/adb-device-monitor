@@ -578,10 +578,10 @@ internal val HOME_PAGE = """<!DOCTYPE html>
               <label class="mcheck"><input type="checkbox" id="m_cpuidle"><span><span class="mcheck-label">CPU idle</span><span class="mcheck-cost">Free · /proc/stat</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_percore" checked><span><span class="mcheck-label">Per-core CPU</span><span class="mcheck-cost">Free · /proc/stat cpuN</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_load"><span><span class="mcheck-label">Load average</span><span class="mcheck-cost">Negligible · /proc/loadavg</span></span></label>
-              <label class="mcheck"><input type="checkbox" id="m_thermal"><span><span class="mcheck-label">CPU temperature</span><span class="mcheck-cost">Low · thermal sysfs</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_thermal" data-root-required="true"><span><span class="mcheck-label">CPU temperature <span class="root-required" aria-label="Requires rooted ADB device">ROOT</span></span><span class="mcheck-cost">Low · thermal sysfs</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_freq"><span><span class="mcheck-label">CPU frequency</span><span class="mcheck-cost">Low · scaling_cur_freq</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_network"><span><span class="mcheck-label">Network throughput</span><span class="mcheck-cost">Low · /proc/net/dev</span></span></label>
-              <label class="mcheck"><input type="checkbox" id="m_topprocs" data-root-required="true" checked><span><span class="mcheck-label">Top process CPU <span class="root-required" aria-label="Requires rooted ADB device">ROOT</span></span><span class="mcheck-cost">Medium · process stat reads</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_topprocs" checked><span><span class="mcheck-label">Top process CPU</span><span class="mcheck-cost">Medium · process stat reads</span></span></label>
             </div>
           </div>
           <div class="metric-cluster">
@@ -591,7 +591,7 @@ internal val HOME_PAGE = """<!DOCTYPE html>
               <label class="mcheck"><input type="checkbox" id="m_mempct" checked><span><span class="mcheck-label">Memory used</span><span class="mcheck-cost">Free · /proc/meminfo</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_swap"><span><span class="mcheck-label">Swap used</span><span class="mcheck-cost">Free · /proc/meminfo</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_zone"><span><span class="mcheck-label">Zone watermarks</span><span class="mcheck-cost">Free · /proc/zoneinfo</span></span></label>
-              <label class="mcheck"><input type="checkbox" id="m_psi" checked><span><span class="mcheck-label">PSI pressure stall</span><span class="mcheck-cost">Low · /proc/pressure</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_psi" data-root-required="true" checked><span><span class="mcheck-label">PSI pressure stall <span class="root-required" aria-label="Requires rooted ADB device">ROOT</span></span><span class="mcheck-cost">Low · /proc/pressure</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_pgfault"><span><span class="mcheck-label">Major page faults</span><span class="mcheck-cost">Low · /proc/vmstat</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_reclaim" onchange="if(this.checked){var l=document.getElementById('logcat');if(l)l.checked=true;}"><span><span class="mcheck-label">Direct reclaim</span><span class="mcheck-cost">Logcat · pressure events</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_topmem" checked><span><span class="mcheck-label">Top process memory</span><span class="mcheck-cost">Low · single ps call</span></span></label>
@@ -602,9 +602,9 @@ internal val HOME_PAGE = """<!DOCTYPE html>
             <div class="metrics-grid">
               <label class="mcheck"><input type="checkbox" id="m_pss"><span><span class="mcheck-label">App PSS breakdown</span><span class="mcheck-cost">Medium · dumpsys meminfo</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_appcpu"><span><span class="mcheck-label">App process CPU</span><span class="mcheck-cost">Low · process stat</span></span></label>
-              <label class="mcheck"><input type="checkbox" id="m_maincpu" data-root-required="true"><span><span class="mcheck-label">Main-thread CPU <span class="root-required" aria-label="Requires rooted ADB device">ROOT</span></span><span class="mcheck-cost">Low · task stat</span></span></label>
-              <label class="mcheck"><input type="checkbox" id="m_mediacpu" data-root-required="true"><span><span class="mcheck-label">Media and HAL CPU <span class="root-required" aria-label="Requires rooted ADB device">ROOT</span></span><span class="mcheck-cost">Low · media process PIDs</span></span></label>
-              <label class="mcheck"><input type="checkbox" id="m_playback" onchange="if(this.checked){var l=document.getElementById('logcat');if(l)l.checked=true;}"><span><span class="mcheck-label">Playback and tunnel</span><span class="mcheck-cost">Logcat · STB video state</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_maincpu"><span><span class="mcheck-label">Main-thread CPU</span><span class="mcheck-cost">Low · task stat</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_mediacpu"><span><span class="mcheck-label">Media and HAL CPU</span><span class="mcheck-cost">Low · media process PIDs</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_playback" onchange="if(this.checked){var l=document.getElementById('logcat');if(l)l.checked=true;}"><span><span class="mcheck-label">Tunnel mode</span><span class="mcheck-cost">Logcat · MediaCodec tunnel state</span></span></label>
             </div>
           </div>
         </div></div></div>
@@ -651,7 +651,7 @@ var currentReportPath = null;
 var reportTrigger = null;
 var reportTimer = null;
 var downloadToastTimer = null;
-var ROOT_METRIC_IDS = ['m_topprocs', 'm_maincpu', 'm_mediacpu'];
+var ROOT_METRIC_IDS = ['m_psi', 'm_thermal'];
 
 function showDownloadToast(success, fileName) {
   var toast = document.getElementById('downloadToast');
@@ -985,20 +985,20 @@ function startRun() {
   p.set('memoryPct', document.getElementById('m_mempct').checked);
   p.set('swap', document.getElementById('m_swap').checked);
   p.set('zoneinfo', document.getElementById('m_zone').checked);
-  p.set('psi', document.getElementById('m_psi').checked);
+  p.set('psi', rootMetricEnabled('m_psi'));
   p.set('load', document.getElementById('m_load').checked);
   p.set('pageFaults', document.getElementById('m_pgfault').checked);
   p.set('reclaim', document.getElementById('m_reclaim').checked);
-  p.set('thermal', document.getElementById('m_thermal').checked);
+  p.set('thermal', rootMetricEnabled('m_thermal'));
   p.set('cpuFreq', document.getElementById('m_freq').checked);
   p.set('network', document.getElementById('m_network').checked);
-  p.set('topProcs', rootMetricEnabled('m_topprocs'));
+  p.set('topProcs', document.getElementById('m_topprocs').checked);
   p.set('topMem', document.getElementById('m_topmem').checked ? 'true' : 'false');
   p.set('playback', document.getElementById('m_playback').checked ? 'true' : 'false');
   p.set('appPss', document.getElementById('m_pss').checked);
   p.set('appCpu', document.getElementById('m_appcpu').checked);
-  p.set('mainCpu', rootMetricEnabled('m_maincpu'));
-  p.set('mediaCpu', rootMetricEnabled('m_mediacpu'));
+  p.set('mainCpu', document.getElementById('m_maincpu').checked);
+  p.set('mediaCpu', document.getElementById('m_mediacpu').checked);
   setLaunchState(true);
   fetch('/api/start', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: p.toString() })
     .then(function (r) { return r.json(); })

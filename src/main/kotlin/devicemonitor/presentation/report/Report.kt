@@ -279,12 +279,10 @@ class PdfReport(
                     if (anomalies.isNotEmpty()) "  (orange dashed lines on the charts; details in anomalies.log)" else "",
                 PDType1Font.HELVETICA, 10f
             )
-            // STB playback / tunnel mode summary (only when playback tracking captured data)
-            if (samples.any { it.videoState != null || it.tunnelMode != null }) {
-                val playing = samples.count { Playback.isPlayingState(it.videoState) }
+            // Tunnel-mode summary (only when tracking captured data)
+            if (samples.any { it.tunnelMode != null }) {
                 val tunneled = samples.count { it.tunnelMode == "tunneled" }
                 val nonTunneled = samples.count { it.tunnelMode == "non_tunneled" }
-                val playSecs = playing * intervalSec
                 val tunnelLabel = when {
                     tunneled > 0 && nonTunneled > 0 -> "mixed (tunneled $tunneled, non-tunneled $nonTunneled samples)"
                     tunneled > 0 -> "tunneled"
@@ -292,17 +290,14 @@ class PdfReport(
                     else -> "not observed"
                 }
                 y -= 4f
-                line("Playback (STB):", PDType1Font.HELVETICA_BOLD, 10f)
+                line("Tunnel mode:", PDType1Font.HELVETICA_BOLD, 10f)
                 val buildFlag = when (buildTunnelEnabled) {
                     true -> "Tunnel enabled in build: YES (isTunneledPlaybackEnabled=true)"
                     false -> "Tunnel enabled in build: NO (isTunneledPlaybackEnabled=false)"
                     null -> "Tunnel enabled in build: not detected in logcat"
                 }
                 line(buildFlag, PDType1Font.HELVETICA, 10f)
-                line(
-                    "Video playing: $playing/${samples.size} samples (~${fmt(playSecs)} s)  |  Actual tunnel mode: $tunnelLabel",
-                    PDType1Font.HELVETICA, 10f
-                )
+                line("Actual tunnel mode: $tunnelLabel", PDType1Font.HELVETICA, 10f)
             }
             y -= 14f
             line("Summary", PDType1Font.HELVETICA_BOLD, 13f)

@@ -1,5 +1,8 @@
 # Root-required performance metrics
 
+> Superseded for metric classification by
+> [2026-11-19-root-metrics-mediakind-cleanup-design.md](2026-11-19-root-metrics-mediakind-cleanup-design.md).
+
 ## Goal
 
 Prevent users from selecting performance metrics that cannot provide their intended data unless the

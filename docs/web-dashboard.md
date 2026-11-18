@@ -34,6 +34,10 @@ checkboxes and open/closed panel state in local browser storage, so moving to Pl
 Release Guard, Compare or Home does not erase unsaved run configuration. A saved draft takes
 precedence over first-use defaults.
 
+PSI and CPU temperature are marked `ROOT` and disabled until the selected target reports rooted ADB.
+Their saved choices return on a rooted target. Top-process, main-thread and media/HAL CPU remain
+selectable on non-rooted devices.
+
 Player Debugger keeps a separate saved draft for target, package, duration, interval and its six
 visible signal checkboxes.
 

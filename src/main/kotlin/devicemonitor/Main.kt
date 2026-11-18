@@ -54,7 +54,7 @@ CLI mode:
   --profile              ART sampling profiler: top main-thread methods table in the report
                          (requires --package; app must be debuggable)
   --perfetto             Record a Perfetto system trace for the run (trace.perfetto-trace)
-  --playback             STB: track video player state + tunnel mode (TUNNELED/NON-TUNNELED) from logcat
+  --playback             Track MediaCodec tunnel mode (TUNNELED/NON-TUNNELED) from logcat
   --zap-time <millis>    Send CHANNEL_UP every N ms (channel-zapping stress test)
   --zap-count <n>        Stop after n zaps (requires --zap-time)
   --no-logcat            Disable logcat capture / anomaly flagging / app-info extraction
@@ -487,27 +487,16 @@ private fun scanLogcat(arg: String) {
         null -> "not found in logcat"
     }
     println()
-    println("==== STB playback analysis ====")
+    println("==== Android tunnel-mode analysis ====")
     println("Tunnel enabled in build : $buildLine")
     println("Actual tunnel config    : ${a.tunneledEvents} TUNNELED, ${a.nonTunneledEvents} NON-TUNNELED MediaCodec events")
     val actual = when {
         a.tunneledEvents > 0 && a.nonTunneledEvents > 0 -> "mixed"
         a.tunneledEvents > 0 -> "tunneled"
         a.nonTunneledEvents > 0 -> "non-tunneled"
-        else -> "not observed during playback"
+        else -> "not observed"
     }
     println("Actual tunnel mode      : $actual")
-    println("Final player state      : ${a.finalVideoState ?: "unknown"}")
-    println("Lifecycle transitions   : ${a.stateTransitions.size}")
-    if (a.stateTransitions.isNotEmpty()) {
-        println()
-        println("  time        lifecycle state")
-        a.stateTransitions.take(60).forEach { (el, ev) ->
-            val t = el?.let { "%7.1fs".format(it) } ?: "      ?"
-            println("  $t   $ev")
-        }
-        if (a.stateTransitions.size > 60) println("  … ${a.stateTransitions.size - 60} more")
-    }
 }
 
 /** Use the preferred port if free, otherwise let the OS pick any open port. */

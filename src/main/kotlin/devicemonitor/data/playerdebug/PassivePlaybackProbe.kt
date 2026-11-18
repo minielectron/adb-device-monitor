@@ -7,7 +7,6 @@ import java.io.RandomAccessFile
 
 data class PassiveProbeResult(
     val events: List<PlaybackEvent>,
-    val videoState: String?,
     val tunnelMode: String,
     val buildTunnelEnabled: Boolean?,
     val diagnostics: List<OptdParseDiagnostic>,
@@ -64,7 +63,6 @@ class PassivePlaybackProbe(
         val events = mutableListOf<PlaybackEvent>()
         val diagnostics = mutableListOf<OptdParseDiagnostic>()
         var relativeByteOffset = 0L
-        val oldState = playback.videoState
         val oldTunnel = playback.tunnelMode
         playback.updateIncremental(lines)
 
@@ -84,9 +82,6 @@ class PassivePlaybackProbe(
                 is OptdParseResult.Rejected -> diagnostics += parsed.diagnostic
                 OptdParseResult.Ignored -> platformEvent(line, absoluteOffset)?.let { events += it }
             }
-        }
-        if (oldState != playback.videoState && playback.videoState != null && events.none { it.type == "state.changed" && it.source == EvidenceSource.APP_REPORTED }) {
-            events += inferredEvent("state.changed", lines.lastOrNull().orEmpty(), startOffset, mapOf("to" to playback.videoState!!))
         }
         if (oldTunnel != playback.tunnelMode && playback.tunnelMode != null) {
             events += inferredEvent("tunnel.changed", lines.lastOrNull().orEmpty(), startOffset, mapOf("mode" to playback.tunnelMode!!))
@@ -144,7 +139,7 @@ class PassivePlaybackProbe(
     } catch (_: Exception) { null }
 
     private fun result(events: List<PlaybackEvent>, diagnostics: List<OptdParseDiagnostic>, gap: Boolean) =
-        PassiveProbeResult(events, playback.videoState, playback.snapshot().second, playback.buildTunnel, diagnostics, gap)
+        PassiveProbeResult(events, playback.snapshot(), playback.buildTunnel, diagnostics, gap)
 
     companion object {
         private val DEVICE_TIME = Regex("^(\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}\\.\\d+)")

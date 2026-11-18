@@ -101,11 +101,11 @@ metric below: **source** (how it is collected), **read** (how to interpret it), 
 - **Read:** each anomaly has device time, elapsed seconds, type, and a detail string; shown on the
   dashboard timeline and in the report. **Dev use:** ties a metric spike to a concrete kernel/app event.
 
-## STB playback — `video`, `tunnel`  (`--playback`)
-- **Source:** `Playback.Tracker` replays the logcat tail into a player state machine (onSourceLoad →
-  onReady → onPlaying …) and reads the build's tunnel-mode flag.
-- **Dev use:** overlay player-state transitions on the metric charts to see how tunneled vs
-  non-tunneled playback shifts load between the app and media/HAL processes.
+## Tunnel mode — `tunnel` (`--playback`)
+- **Source:** `Playback.Tracker` reads explicit MediaCodec/ACodec/CCodec TUNNELED or NON-TUNNELED
+  configuration lines plus the optional `isTunneledPlaybackEnabled` build flag.
+- **Dev use:** compare tunneled and non-tunneled runs to see how decode work shifts between the app
+  and media/HAL processes. Generic monitoring does not parse project-specific player lifecycles.
 
 ## Player Debugger evidence
 
@@ -116,7 +116,7 @@ labelled by origin:
 |---|---|---|
 | **Reported** (`APP_REPORTED`) | The app explicitly emitted a valid OPTD event | session/player lifecycle, buffer, first frame, A/V availability, quality, errors, handoffs |
 | **Measured** (`DEVICE_MEASURED`) | The tool observed the Android device directly | CPU/memory/PSI/process samples and bounded media snapshots |
-| **Log parsed** (`LOG_PARSED`) | A known platform/log pattern was recognized | ANR, Java/native crash, codec, DRM and audio failures, passive player state |
+| **Log parsed** (`LOG_PARSED`) | A known platform/log pattern was recognized | ANR, Java/native crash, codec, DRM, audio and tunnel evidence |
 | **Inferred** (`ENGINE_INFERRED`) | The engine reconstructed a relationship from other evidence | synthetic session/player boundaries, missing endpoints, correlated incidents |
 | **Unavailable** | The device/app did not expose the signal | displayed as unavailable, never silently converted to healthy |
 
@@ -130,12 +130,10 @@ per-core CPU, top-process CPU, memory used, PSI pressure stalls, and top-process
 required. Changes are saved in local browser storage and restored after navigation or application
 restart; returning Home does not reset the draft. Unreadable OEM signals remain `n/a`.
 
-Home marks Top Process CPU, Main-thread CPU, and Media and HAL CPU with a red `ROOT` indicator. These
-three controls are disabled unless the selected device currently reports rooted ADB. Their saved
-selection is restored when a rooted device is selected. Player Debugger applies the same rule to Top
-Process CPU. App Process CPU and Top Process Memory remain available on non-rooted devices because
-they have `dumpsys cpuinfo` and `ps`/RSS fallbacks respectively; OEM-dependent thermal and frequency
-signals are not treated as root-required.
+Home marks PSI Pressure Stall and CPU Temperature with a red `ROOT` indicator. These controls are
+disabled unless the selected device currently reports rooted ADB, and their saved selections return
+when a rooted device is selected. Player Debugger applies the same rule to PSI Pressure Stall. Top
+Process CPU, Main-thread CPU and Media/HAL CPU remain selectable on non-rooted devices.
 
 ## CSV / programmatic reading
 

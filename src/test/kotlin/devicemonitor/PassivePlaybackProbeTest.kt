@@ -9,11 +9,11 @@ import kotlin.test.*
 class PassivePlaybackProbeTest {
     @Test fun incrementallyParsesPlaybackPlatformAndOptdWithoutDuplicates() {
         val file = tempFile()
-        file.writeText("11-17 10:00:00.000  10  11 I mk-player-lifecycle: onPlaying\n")
+        file.writeText("11-17 10:00:00.000  10  11 I MediaCodec: Configuring TUNNELED video playback\n")
         val probe = PassivePlaybackProbe("example.app", 1_000_000)
         val first = probe.scanNew(file)
-        assertEquals("onPlaying", first.videoState)
-        assertEquals(1, first.events.count { it.type == "state.changed" })
+        assertEquals("tunneled", first.tunnelMode)
+        assertEquals(1, first.events.count { it.type == "tunnel.changed" })
 
         file.appendText("11-17 10:00:01.000  10  11 E MediaCodec: decoder failed error 12\n")
         file.appendText("11-17 10:00:02.000  10  11 I OPTD: {\"schema\":\"optd/1\",\"type\":\"render.first_frame\",\"timeNs\":3000000,\"viewSessionId\":\"v\",\"instanceId\":\"p\",\"data\":{}}\n")
@@ -36,13 +36,15 @@ class PassivePlaybackProbeTest {
         assertTrue(reset.events.any { it.type == "evidence.gap" })
     }
 
-    @Test fun latchesPlaybackStateAcrossUnrelatedBatches() {
+    @Test fun latchesTunnelStateAndIgnoresProjectLifecycleAcrossUnrelatedBatches() {
         val file = tempFile()
         val probe = PassivePlaybackProbe(null, 100)
-        file.writeText("11-17 10:00:00.000  1  1 I mk-player-lifecycle: onPlaying\n")
-        assertEquals("onPlaying", probe.scanNew(file).videoState)
-        file.appendText("11-17 10:00:01.000  1  1 I Other: unrelated\n")
-        assertEquals("onPlaying", probe.scanNew(file).videoState)
+        file.writeText("11-17 10:00:00.000  1  1 I ProjectLifecycle: onPlaying\n")
+        assertTrue(probe.scanNew(file).events.isEmpty())
+        file.appendText("11-17 10:00:01.000  1  1 I CCodec: Configuring NON-TUNNELED video playback\n")
+        assertEquals("non_tunneled", probe.scanNew(file).tunnelMode)
+        file.appendText("11-17 10:00:02.000  1  1 I Other: unrelated\n")
+        assertEquals("non_tunneled", probe.scanNew(file).tunnelMode)
     }
 
     private fun tempFile(): File = createTempDirectory("passive-probe").resolve("logcat.log").toFile()

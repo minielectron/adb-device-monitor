@@ -76,19 +76,31 @@ class OfflineAssetsTest {
     }
 
     @Test fun rootRequiredMetricsAreMarkedGatedAndDefensivelySerialized() {
-        listOf("m_topprocs", "m_maincpu", "m_mediacpu").forEach { id ->
+        listOf("m_psi", "m_thermal").forEach { id ->
             assertTrue(Regex("""id="$id"[^>]*data-root-required="true"""").containsMatchIn(HOME_PAGE))
             assertContains(HOME_PAGE, "rootMetricEnabled('$id')")
         }
-        assertContains(HOME_PAGE, "var ROOT_METRIC_IDS = ['m_topprocs', 'm_maincpu', 'm_mediacpu']")
+        listOf("m_topprocs", "m_maincpu", "m_mediacpu").forEach { id ->
+            assertFalse(Regex("""id="$id"[^>]*data-root-required="true"""").containsMatchIn(HOME_PAGE))
+        }
+        assertContains(HOME_PAGE, "var ROOT_METRIC_IDS = ['m_psi', 'm_thermal']")
         assertContains(HOME_PAGE, "selectedDevice.root === 'root'")
         assertContains(HOME_PAGE, "input.dataset.rootPreference")
         assertContains(HOME_PAGE, "aria-label=\"Requires rooted ADB device\"")
 
-        assertContains(PLAYER_DEBUGGER_PAGE, "id=\"topProcessCpu\" type=\"checkbox\" data-root-required=\"true\"")
+        assertContains(PLAYER_DEBUGGER_PAGE, "id=\"psiPressure\" type=\"checkbox\" data-root-required=\"true\"")
+        assertFalse(Regex("""id="topProcessCpu"[^>]*data-root-required="true"""").containsMatchIn(PLAYER_DEBUGGER_PAGE))
         assertContains(PLAYER_DEBUGGER_PAGE, "device.root==='root'")
-        assertContains(PLAYER_DEBUGGER_PAGE, "id==='topProcessCpu'?rootSignalEnabled(id)")
+        assertContains(PLAYER_DEBUGGER_PAGE, "id==='psiPressure'?rootSignalEnabled(id)")
         assertContains(PLAYER_DEBUGGER_PAGE, "input.dataset.rootPreference")
+    }
+
+    @Test fun dashboardKeepsTunnelModeWithoutProjectSpecificLifecycle() {
+        assertContains(DASHBOARD_PAGE, "id=\"c-tunnel\"")
+        assertContains(DASHBOARD_PAGE, "Negotiated tunnel state")
+        assertFalse("mk-player-lifecycle" in DASHBOARD_PAGE)
+        assertFalse("id=\"c-video\"" in DASHBOARD_PAGE)
+        assertFalse("Player state" in DASHBOARD_PAGE)
     }
 
     @Test fun diagnosticReportsOpenInTheStatePreservingViewer() {
