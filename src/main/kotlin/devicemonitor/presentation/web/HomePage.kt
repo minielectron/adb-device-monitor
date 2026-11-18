@@ -207,7 +207,7 @@ internal val HOME_PAGE = """<!DOCTYPE html>
   .diag-context { flex: none; display: flex; align-items: center; gap: 8px; max-width: 330px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); background: rgba(0,0,0,.22); font-size: 10px; }
   .diag-context:before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 4px rgba(232,182,109,.08); }
   #diagTarget { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tool-stack { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+  .tool-stack { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
   .diagnostic-tool { position: relative; overflow: hidden; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(0,0,0,.19); transition: transform .24s cubic-bezier(.2,.8,.2,1), border-color .24s, background .24s; }
   .diagnostic-tool:hover { transform: translateY(-2px); border-color: var(--line-strong); background: rgba(255,255,255,.028); }
   .tool-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -236,6 +236,7 @@ internal val HOME_PAGE = """<!DOCTYPE html>
   .tool-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; font-size: 15px; }
   .tool-icon.violet { color: #c3b8ff; background: rgba(158,140,255,.12); }
   .tool-icon.teal { color: #8df1e5; background: rgba(88,214,199,.11); }
+  .tool-icon.gold { color: #ffd798; background: rgba(232,182,109,.12); }
   .tool-name { display: block; font-size: 10px; font-weight: 760; }
   .tool-arrow { color: var(--quiet); font-size: 14px; }
   .progress-wrap { display: none; margin-top: 12px; }
@@ -443,6 +444,8 @@ internal val HOME_PAGE = """<!DOCTYPE html>
     </div>
   </div>
   <nav class="nav-actions" aria-label="Application">
+    <a class="nav-link" href="/player-debugger" title="Debug multi-player playback and fallbacks"><b aria-hidden="true">&#9654;</b><span>Player Debugger</span></a>
+    <a class="nav-link" href="/release-guard" title="Open the offline performance release gate"><b aria-hidden="true">&#9670;</b><span>Release Guard</span></a>
     <a class="nav-link" href="/compare" title="Compare previous runs"><b aria-hidden="true">&#8644;</b><span>Compare runs</span></a>
     <a class="nav-link" href="/api/diagnostics" title="Download logs and thread diagnostics"><b aria-hidden="true">&#8595;</b><span>Diagnostics</span></a>
   </nav>
@@ -490,6 +493,13 @@ internal val HOME_PAGE = """<!DOCTYPE html>
             <button class="tool-button" type="button" id="procBtn" onclick="takeProcrank()" disabled><span class="tool-name">Capture memory profile</span><span class="tool-arrow">&rarr;</span></button>
             <div class="progress-wrap" id="procProgWrap" aria-live="polite"><div class="progress-track"><div class="progress-bar" id="procProg" style="background:#58d6c7"></div></div><div class="progress-message" id="procMsg"></div></div>
           </article>
+          <article class="diagnostic-tool">
+            <div class="tool-heading"><span class="tool-icon gold" aria-hidden="true">&#8862;</span><span class="tool-type">UI structure</span></div>
+            <h4>Layout Inspector</h4><p>Match visible Android elements with resource IDs, types, states and exact screen positions.</p>
+            <div class="tool-requirement">Captures screen imagery and visible UI text</div>
+            <button class="tool-button" type="button" id="layoutBtn" onclick="takeLayoutInspector()" disabled><span class="tool-name">Inspect current screen</span><span class="tool-arrow">&rarr;</span></button>
+            <div class="progress-wrap" id="layoutProgWrap" aria-live="polite"><div class="progress-track"><div class="progress-bar" id="layoutProg" style="background:#e8b66d"></div></div><div class="progress-message" id="layoutMsg"></div></div>
+          </article>
         </div>
       </aside>
     </div>
@@ -536,33 +546,33 @@ internal val HOME_PAGE = """<!DOCTYPE html>
           <div class="metric-cluster">
             <div class="mgroup-title">System and compute <span class="mgroup-hint">CPU, load, thermal and network signals</span></div>
             <div class="metrics-grid">
-              <label class="mcheck"><input type="checkbox" id="m_cpu"><span><span class="mcheck-label">CPU utilization</span><span class="mcheck-cost">Free · /proc/stat</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_cpu" checked><span><span class="mcheck-label">CPU utilization</span><span class="mcheck-cost">Free · /proc/stat</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_cpuidle"><span><span class="mcheck-label">CPU idle</span><span class="mcheck-cost">Free · /proc/stat</span></span></label>
-              <label class="mcheck"><input type="checkbox" id="m_percore"><span><span class="mcheck-label">Per-core CPU</span><span class="mcheck-cost">Free · /proc/stat cpuN</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_percore" checked><span><span class="mcheck-label">Per-core CPU</span><span class="mcheck-cost">Free · /proc/stat cpuN</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_load"><span><span class="mcheck-label">Load average</span><span class="mcheck-cost">Negligible · /proc/loadavg</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_thermal"><span><span class="mcheck-label">CPU temperature</span><span class="mcheck-cost">Low · thermal sysfs</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_freq"><span><span class="mcheck-label">CPU frequency</span><span class="mcheck-cost">Low · scaling_cur_freq</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_network"><span><span class="mcheck-label">Network throughput</span><span class="mcheck-cost">Low · /proc/net/dev</span></span></label>
-              <label class="mcheck"><input type="checkbox" id="m_topprocs"><span><span class="mcheck-label">Top process CPU</span><span class="mcheck-cost">Medium · process stat reads</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_topprocs" checked><span><span class="mcheck-label">Top process CPU</span><span class="mcheck-cost">Medium · process stat reads</span></span></label>
             </div>
           </div>
           <div class="metric-cluster">
             <div class="mgroup-title">Memory pressure <span class="mgroup-hint">Capacity, stalls, reclaim and top consumers</span></div>
             <div class="metrics-grid">
               <label class="mcheck"><input type="checkbox" id="m_mem"><span><span class="mcheck-label">Memory amount</span><span class="mcheck-cost">Free · /proc/meminfo</span></span></label>
-              <label class="mcheck"><input type="checkbox" id="m_mempct"><span><span class="mcheck-label">Memory used</span><span class="mcheck-cost">Free · /proc/meminfo</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_mempct" checked><span><span class="mcheck-label">Memory used</span><span class="mcheck-cost">Free · /proc/meminfo</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_swap"><span><span class="mcheck-label">Swap used</span><span class="mcheck-cost">Free · /proc/meminfo</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_zone"><span><span class="mcheck-label">Zone watermarks</span><span class="mcheck-cost">Free · /proc/zoneinfo</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_psi" checked><span><span class="mcheck-label">PSI pressure stall</span><span class="mcheck-cost">Low · /proc/pressure</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_pgfault"><span><span class="mcheck-label">Major page faults</span><span class="mcheck-cost">Low · /proc/vmstat</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_reclaim" onchange="if(this.checked){var l=document.getElementById('logcat');if(l)l.checked=true;}"><span><span class="mcheck-label">Direct reclaim</span><span class="mcheck-cost">Logcat · pressure events</span></span></label>
-              <label class="mcheck"><input type="checkbox" id="m_topmem"><span><span class="mcheck-label">Top process memory</span><span class="mcheck-cost">Low · single ps call</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_topmem" checked><span><span class="mcheck-label">Top process memory</span><span class="mcheck-cost">Low · single ps call</span></span></label>
             </div>
           </div>
           <div class="metric-cluster">
             <div class="mgroup-title">App and media <span class="mgroup-hint">Package-aware process and playback signals</span></div>
             <div class="metrics-grid">
-              <label class="mcheck"><input type="checkbox" id="m_pss" checked><span><span class="mcheck-label">App PSS breakdown</span><span class="mcheck-cost">Medium · dumpsys meminfo</span></span></label>
+              <label class="mcheck"><input type="checkbox" id="m_pss"><span><span class="mcheck-label">App PSS breakdown</span><span class="mcheck-cost">Medium · dumpsys meminfo</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_appcpu"><span><span class="mcheck-label">App process CPU</span><span class="mcheck-cost">Low · process stat</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_maincpu"><span><span class="mcheck-label">Main-thread CPU</span><span class="mcheck-cost">Low · task stat</span></span></label>
               <label class="mcheck"><input type="checkbox" id="m_mediacpu"><span><span class="mcheck-label">Media and HAL CPU</span><span class="mcheck-cost">Low · media process PIDs</span></span></label>
@@ -602,14 +612,56 @@ internal val HOME_PAGE = """<!DOCTYPE html>
   </div>
 </section>
 <script>
+var HOME_DRAFT_KEY = 'aps.home.draft.v1';
+var homeDraftValues = {};
 var selected = null;
 var selectedDevice = null;
 var lastDevices = [];
 var runBusy = false;
-var reportPaths = { '/api/snapshot-report': 'Device Snapshot', '/api/procrank-report': 'Memory Snapshot' };
+var reportPaths = { '/api/snapshot-report': 'Device Snapshot', '/api/procrank-report': 'Memory Snapshot', '/api/layout-inspector-report': 'Layout Inspector' };
 var currentReportPath = null;
 var reportTrigger = null;
 var reportTimer = null;
+
+function saveHomeDraft() {
+  var values = {};
+  Array.prototype.forEach.call(document.querySelectorAll('input[id]'), function (input) {
+    values[input.id] = input.type === 'checkbox' ? input.checked : input.value;
+  });
+  localStorage.setItem(HOME_DRAFT_KEY, JSON.stringify({
+    values: values,
+    selected: selected,
+    captureOpen: document.getElementById('captureCfg').classList.contains('open'),
+    metricsOpen: document.getElementById('metricsCfg').classList.contains('open')
+  }));
+}
+
+function setPanelState(headerId, contentId, open) {
+  var header = document.getElementById(headerId);
+  var content = document.getElementById(contentId);
+  content.classList.toggle('open', open);
+  header.classList.toggle('open', open);
+  header.setAttribute('aria-expanded', open ? 'true' : 'false');
+  content.setAttribute('aria-hidden', open ? 'false' : 'true');
+  if (open) content.removeAttribute('inert'); else content.setAttribute('inert', '');
+}
+
+function restoreHomeDraft() {
+  try {
+    var draft = JSON.parse(localStorage.getItem(HOME_DRAFT_KEY) || 'null');
+    if (!draft) return;
+    homeDraftValues = draft.values || {};
+    Object.keys(homeDraftValues).forEach(function (id) {
+      var input = document.getElementById(id);
+      if (!input) return;
+      if (input.type === 'checkbox') input.checked = !!homeDraftValues[id]; else input.value = homeDraftValues[id];
+    });
+    selected = draft.selected || null;
+    setPanelState('captureHdr', 'captureCfg', draft.captureOpen !== false);
+    setPanelState('metricsHdr', 'metricsCfg', draft.metricsOpen === true);
+    document.getElementById('zapcfg').style.display = document.getElementById('zap').checked ? 'flex' : 'none';
+  } catch (_) {}
+}
 
 function setReportBackgroundInert(inert) {
   [document.querySelector('.appbar'), document.querySelector('main')].forEach(function (el) {
@@ -734,7 +786,7 @@ function renderDevices(devices) {
   grid.innerHTML = html;
   Array.prototype.forEach.call(grid.children, function (el) {
     if (el.dataset.usable !== 'true') return;
-    var choose = function () { selected = el.dataset.serial; renderDevices(lastDevices); };
+    var choose = function () { selected = el.dataset.serial; renderDevices(lastDevices); saveHomeDraft(); };
     el.onclick = choose;
     el.onkeydown = function (event) {
       if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(); }
@@ -781,17 +833,14 @@ function loadDevices() {
 document.getElementById('zap').onchange = function () {
   document.getElementById('zapcfg').style.display = this.checked ? 'flex' : 'none';
   updateSummary();
+  saveHomeDraft();
 };
 
 function togglePanel(headerId, contentId) {
-  var header = document.getElementById(headerId);
   var content = document.getElementById(contentId);
   var open = !content.classList.contains('open');
-  content.classList.toggle('open', open);
-  header.classList.toggle('open', open);
-  header.setAttribute('aria-expanded', open ? 'true' : 'false');
-  content.setAttribute('aria-hidden', open ? 'false' : 'true');
-  if (open) content.removeAttribute('inert'); else content.setAttribute('inert', '');
+  setPanelState(headerId, contentId, open);
+  saveHomeDraft();
 }
 
 function toggleCapture() { togglePanel('captureHdr', 'captureCfg'); }
@@ -825,6 +874,7 @@ function updateSummary() {
   document.getElementById('startBtn').disabled = !selected || runBusy;
   document.getElementById('snapBtn').disabled = !selected;
   document.getElementById('procBtn').disabled = !selected;
+  document.getElementById('layoutBtn').disabled = !selected;
 }
 
 function setLaunchState(active) {
@@ -949,6 +999,36 @@ function pollProcrank(btn, bar, msg) {
   }).catch(function () { setTimeout(function () { pollProcrank(btn, bar, msg); }, 1000); });
 }
 
+// Layout Inspector — current UI hierarchy + screenshot in a standalone interactive HTML file.
+function takeLayoutInspector() {
+  if (!selected) { document.getElementById('msg').textContent = 'Select a device first.'; return; }
+  var btn = document.getElementById('layoutBtn'); btn.disabled = true;
+  var wrap = document.getElementById('layoutProgWrap'); wrap.style.display = 'block';
+  var bar = document.getElementById('layoutProg'); var msg = document.getElementById('layoutMsg');
+  bar.style.background = '#e8b66d'; bar.style.width = '5%'; msg.textContent = 'Capturing screen structure…';
+  var p = new URLSearchParams(); p.set('serial', selected);
+  fetch('/api/layout-inspector', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: p.toString() })
+    .then(function (r) { return r.json().then(function (body) { if (!r.ok || body.ok === false) throw new Error(body.error || 'Failed to start'); return body; }); })
+    .then(function () { pollLayoutInspector(btn, bar, msg); })
+    .catch(function (error) { bar.style.background = '#ff7676'; msg.textContent = error.message || 'Request failed'; btn.disabled = false; });
+}
+function pollLayoutInspector(btn, bar, msg) {
+  fetch('/api/layout-inspector-status').then(function (r) { return r.json(); }).then(function (d) {
+    bar.style.width = Math.max(5, d.progress || 0) + '%';
+    if (d.error) { bar.style.background = '#ff7676'; msg.textContent = 'Capture failed: ' + d.error + ' — retry when ready.'; btn.disabled = false; return; }
+    if (d.done) {
+      bar.style.width = '100%'; bar.style.background = '#61d89c';
+      msg.innerHTML = '✓ Layout ready — <a href="/api/layout-inspector-report">open the inspector</a>';
+      msg.querySelector('a').onclick = function (event) { event.preventDefault(); openReport('/api/layout-inspector-report', btn); };
+      btn.disabled = false;
+      openReport('/api/layout-inspector-report', btn);
+      return;
+    }
+    msg.textContent = 'Reading hierarchy and screenshot… ' + (d.progress || 0) + '%';
+    setTimeout(function () { pollLayoutInspector(btn, bar, msg); }, 500);
+  }).catch(function () { setTimeout(function () { pollLayoutInspector(btn, bar, msg); }, 1000); });
+}
+
 // Native folder picker (opens an OS dialog on the machine running the app).
 function pickFolder() {
   var btn = document.getElementById('browseBtn');
@@ -959,7 +1039,7 @@ function pickFolder() {
   var cur = encodeURIComponent(document.getElementById('outputDir').value || '');
   fetch('/api/pick-folder?initial=' + cur).then(function (r) { return r.json(); }).then(function (d) {
     btn.disabled = false; btn.innerHTML = orig;
-    if (d && d.path) { document.getElementById('outputDir').value = d.path; }
+    if (d && d.path) { document.getElementById('outputDir').value = d.path; saveHomeDraft(); updateSummary(); }
     else if (d && d.supported === false) { alert('The folder picker isn’t available here — type the path manually.'); }
   }).catch(function () { btn.disabled = false; btn.innerHTML = orig; });
 }
@@ -967,15 +1047,18 @@ function pickFolder() {
 // Prefill the Reports folder with the server's default (writable) location.
 fetch('/api/defaults').then(function (r) { return r.json(); }).then(function (d) {
   var el = document.getElementById('outputDir');
-  if (el && d && d.reportsDir) { el.value = d.reportsDir; el.placeholder = d.reportsDir; }
+  if (el && d && d.reportsDir) { if (!Object.prototype.hasOwnProperty.call(homeDraftValues, 'outputDir')) el.value = d.reportsDir; el.placeholder = d.reportsDir; }
   var b = document.getElementById('buildtag');
   if (b && d && d.build) { b.textContent = d.build; }
   updateSummary();
 }).catch(function () {});
 
 Array.prototype.forEach.call(document.querySelectorAll('input'), function (input) {
-  input.addEventListener('input', updateSummary);
+  input.addEventListener('input', function () { updateSummary(); saveHomeDraft(); });
+  input.addEventListener('change', function () { updateSummary(); saveHomeDraft(); });
 });
+window.addEventListener('beforeunload', saveHomeDraft);
+restoreHomeDraft();
 updateSummary();
 loadDevices();
 setInterval(loadDevices, 5000);

@@ -27,7 +27,8 @@ ADB Performance Studio.app
 | Browser behaviour | In the app |
 |-------------------|------------|
 | Downloads (PDF report, diagnostics zip) | saved to `~/Downloads` (auto-renamed if the name exists) and revealed in Finder |
-| `window.open` / `target=_blank` (interactive snapshot reports) | opened in the default browser |
+| Player Debugger / Release Guard HTML evidence | opened inside the application in a full-screen WKWebView-backed viewer |
+| Explicit external links | opened in the default browser |
 | Links to other sites (e.g. ui.perfetto.dev) | opened in the default browser |
 | Reports-folder picker | unchanged — the engine's native dialog |
 
@@ -53,16 +54,23 @@ Without a device: `ADBMON_ADB="$PWD/scripts/fake-adb.sh" desktop/build-macos.sh 
 
 ## Verify after the first build
 
-This shell could not be compiled in the authoring environment (no Rust/macOS there), so check on the Mac:
+Check the packaged app, not only `tauri dev`:
 
 - [ ] `desktop/build-macos.sh` compiles; the app opens on the home page within ~2 s
 - [ ] Start a run, Stop → "Download PDF report" lands in `~/Downloads` and Finder reveals it
 - [ ] Export diagnostics downloads a zip
-- [ ] Device snapshot / Procrank snapshot open in the default browser
+- [ ] Player Debugger → Open offline report stays inside the app; Back returns without losing the capture or form draft
+- [ ] The report viewer works with the network disconnected and Download HTML produces a self-contained file
+- [ ] Device snapshot / Procrank snapshot still open successfully
 - [ ] Run Comparison → "Export PDF" (a client-side blob download — the one path most likely to need a follow-up)
 - [ ] Choose reports folder shows the native dialog, with no second Dock icon
 - [ ] Quit (Cmd+Q) during a run → the run folder contains `report.pdf`; `pgrep -f app.jar` prints nothing
 - [ ] `kill -9` the shell → the Java process exits by itself within a few seconds
+
+Player Debugger capture data stays under `~/ADB Device Monitor/PlayerDebugger/` by default. The app
+loads reports from its loopback-only sidecar, not from a public web service. The HTML report has no
+scripts or remote assets and uses a restrictive content-security policy. See
+[player-debugger.md](player-debugger.md) for privacy and support-bundle details.
 
 ## Signing and notarization (later, with the Developer ID)
 

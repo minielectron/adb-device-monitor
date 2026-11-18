@@ -2,7 +2,8 @@
 
 ADB Device Monitor ("ADB Performance Studio") is a self-contained Kotlin/JVM tool that samples
 live CPU / memory / app performance from adb-connected Android & STB devices, renders a live web
-dashboard, writes PDF/CSV reports, and captures logcat with anomaly flagging.
+dashboard, writes offline evidence, and captures logcat with anomaly flagging. Release Guard adds
+repeatable performance decisions; Player Debugger reconstructs multi-player playback and handoffs.
 
 This folder documents each feature: **how it's implemented**, **how it works technically**, **how to
 read the values**, and **how to use it during development**.
@@ -18,6 +19,7 @@ read the values**, and **how to use it during development**.
 | [web-dashboard.md](web-dashboard.md) | The live dashboard: polling protocol, charts, interactive top-process charts, health badges, Stop/report flow |
 | [device-and-procrank-snapshot.md](device-and-procrank-snapshot.md) | One-shot Device Snapshot and Procrank Snapshot features (server-rendered HTML) |
 | [reports-and-comparison.md](reports-and-comparison.md) | PDF report, CSV schema, and the two-run comparison view |
+| [player-debugger.md](player-debugger.md) | Player Debugger capture modes, OPTD, evidence confidence, storage/privacy, support bundles, and QA checklist |
 
 > The legacy single-file [`../documentation.md`](../documentation.md) contains the original deep-dive
 > on individual metrics and remains valid; `metrics.md` here supersedes and reorganizes it.
@@ -38,3 +40,7 @@ adb device ──> MetricsCollector (one batched `adb shell` per tick)
 
 A **Sample** is the unit of everything: the collector builds one per tick, and every consumer
 (dashboard JSON, PDF, CSV) is just a different serialization of the same `Sample` stream.
+
+Player Debugger adds a second normalized stream, `PlaybackEvent`. It combines passive Android
+evidence, optional app-reported OPTD events, device measurements, and explicitly labelled engine
+inference. See [player-debugger.md](player-debugger.md).

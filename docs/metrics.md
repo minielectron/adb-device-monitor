@@ -105,6 +105,29 @@ For each metric below: **source** (how it's collected), **read** (how to interpr
 - **Dev use:** overlay player-state transitions on the metric charts to see how tunneled vs
   non-tunneled playback shifts load between the app and media/HAL processes.
 
+## Player Debugger evidence
+
+Player Debugger records normalized events in addition to numeric `Sample` values. Evidence is always
+labelled by origin:
+
+| Label | Meaning | Typical inputs |
+|---|---|---|
+| **Reported** (`APP_REPORTED`) | The app explicitly emitted a valid OPTD event | session/player lifecycle, buffer, first frame, A/V availability, quality, errors, handoffs |
+| **Measured** (`DEVICE_MEASURED`) | The tool observed the Android device directly | CPU/memory/PSI/process samples and bounded media snapshots |
+| **Log parsed** (`LOG_PARSED`) | A known platform/log pattern was recognized | ANR, Java/native crash, codec, DRM and audio failures, passive player state |
+| **Inferred** (`ENGINE_INFERRED`) | The engine reconstructed a relationship from other evidence | synthetic session/player boundaries, missing endpoints, correlated incidents |
+| **Unavailable** | The device/app did not expose the signal | displayed as unavailable, never silently converted to healthy |
+
+Every event includes a monotonic timestamp, source and confidence. Structured OPTD telemetry has the
+best identity and handoff fidelity; passive evidence remains useful but may lack exact player
+instances. Incident rules link back to event sequence numbers and registered artifacts so a finding
+can be audited rather than treated as an opaque score.
+
+The Player Debugger capture form enables a balanced first-use set by default: CPU utilization,
+per-core CPU, top-process CPU, memory used, PSI pressure stalls, and top-process memory. Logcat is
+required. Changes are saved in local browser storage and restored after navigation or application
+restart; returning Home does not reset the draft. Unreadable OEM signals remain `n/a`.
+
 ## CSV / programmatic reading
 
 Every field above is a column in `samples.csv` (see [reports-and-comparison.md](reports-and-comparison.md)),

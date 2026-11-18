@@ -23,6 +23,14 @@ esac
 [ -n "$FAKE_ADB_DELAY" ] && sleep "$FAKE_ADB_DELAY"
 cmd="$2"
 case "$cmd" in
+  *"getprop ro.product.model"*)
+    echo "model=FakeSTB"; echo "android=12"; echo "firmware=fake/device/build:12/test"; echo "characteristics=tv,nosdcard";;
+  "echo release_guard_ready") echo release_guard_ready;;
+  *"for t in cmd"*)
+    echo "package=1"; echo "uiautomator=1"; echo "input=1"; echo "perfetto=1"
+    echo "procrank=1"; echo "screencap=1"; echo "logcat=1";;
+  *"dumpsys gfxinfo >/dev/null"*)
+    echo "gfxinfo=1"; echo "psi=1"; echo "thermal=1"; echo "battery=1"; echo "playback=1"; echo "root=0";;
   *===STAT===*)
     t=$(( $(date +%s%N) / 10000000 ))
     echo "===STAT==="; echo "cpu  $((t/4)) 0 $((t/8)) $((t*4)) 10 0 5 0 0 0"

@@ -1,0 +1,125 @@
+# Lite Layout Inspector Design
+
+## Goal
+
+Add a lightweight, fully offline Android layout inspector to Home Quick Diagnostics. It captures the
+current UI hierarchy and screenshot from the selected ADB device, then opens an interactive HTML
+report inside the existing state-preserving application viewer.
+
+The inspector is device-, application-, framework-, and project-agnostic. It uses Android's standard
+`uiautomator` and `screencap` commands and requires no instrumentation library in the target app.
+
+## User experience
+
+Home gains a third Quick Diagnostics card named **Layout Inspector**. Its capture button is enabled
+for an authorized selected device and remains independent of monitoring runs and the other snapshot
+tools.
+
+The generated report uses the existing dark Studio visual language and contains:
+
+- a compact device screenshot with selectable element-bound overlays;
+- a searchable, scrollable element list;
+- element type/class, resource ID, screen bounds, width, height and center coordinates;
+- visible text and content description when Android exposes them;
+- enabled, clickable, focusable, focused, scrollable, selected, checked and password states;
+- node count, screen dimensions, capture time and selected-device context; and
+- clear unavailable values instead of inferred identifiers.
+
+Selecting an overlay selects and scrolls to its list row. Selecting a row highlights the element on
+the screenshot. Overlapping elements remain selectable through the list. The screenshot stays small
+enough to inspect alongside the element information; the report becomes vertically stacked at narrow
+window widths.
+
+## Refresh and portable HTML
+
+The in-report **Refresh screen** button asks the loopback-only application API to capture a new XML
+hierarchy and screenshot, then replaces the report with the refreshed capture. It does not reload the
+underlying Home page, so device selection, run form values, disclosure state and diagnostic messages
+remain intact.
+
+The report is saved as a self-contained HTML file with inline CSS, JavaScript, normalized element
+data, and a base64 data-image screenshot. It uses no CDN, fonts, analytics or external assets. When
+opened as a downloaded `file:` document, the captured inspector remains interactive but Refresh is
+disabled with an explanation because no trusted application API is available.
+
+## Capture pipeline
+
+1. Validate that the requested serial is currently authorized.
+2. Run one bounded shell command that writes the UI hierarchy to a unique path under
+   `/data/local/tmp`, reads it, and removes it.
+3. Capture a PNG to another unique device path, pull it to a temporary local file, and remove the
+   device copy in a `finally` block.
+4. Parse XML using the existing hardened settings: disallow DOCTYPE, external entities, external DTD
+   and schemas, XInclude and entity expansion.
+5. Normalize at most 5,000 nodes with valid `[left,top][right,bottom]` bounds. Preserve hierarchy
+   depth and source order. Malformed individual nodes are skipped; malformed documents fail the
+   capture with an actionable message.
+6. Verify that the screenshot is a bounded PNG and obtain its dimensions locally. Cap the embedded
+   image at 16 MiB and the hierarchy at 8 MiB.
+7. Render and atomically save the report under the default ADB Device Monitor reports directory.
+
+The report renderer escapes all Android-provided strings before embedding them in HTML or JSON.
+Element bounds are converted to screenshot-relative percentages for overlay placement, while the
+original pixel values remain visible in details.
+
+## API and state
+
+The web server adds independent Layout Inspector state and these exact routes:
+
+- `POST /api/layout-inspector?serial=<encoded serial>` starts a capture and rejects concurrent layout
+  captures with HTTP 409.
+- `GET /api/layout-inspector-status` returns running, progress, done and error fields.
+- `GET /api/layout-inspector-report` serves only the most recently completed HTML report inline.
+
+The report refresh button calls the same start endpoint using its embedded encoded serial, polls the
+status endpoint, then navigates its own iframe document to the report endpoint with a cache-busting
+query. Home uses the same start/poll/open pattern as the existing Device and Memory snapshots.
+
+The report path is added to the existing explicit iframe allowlist. No arbitrary URL can be opened by
+the report viewer.
+
+## Security and privacy
+
+Layout captures can contain visible text, accessibility labels and screen imagery, including
+potentially sensitive application content. They remain local and are never included automatically in
+diagnostics or Player Debugger support bundles. The UI states this before capture.
+
+The backend accepts only a serial from the currently enumerated authorized device list. Serial values
+are passed as an ADB process argument, never interpolated into a shell command. Temporary remote names
+are generated by the backend and shell-quoted. Local output names are generated, not user supplied.
+
+Passwords are never rendered from a node marked `password=true`; its text and content description
+are replaced with `Protected`. The report uses a restrictive content-security policy allowing only
+its inline script/style and data image. It makes same-origin requests only when Refresh is used inside
+the running application.
+
+## Failures and compatibility
+
+- Missing `uiautomator`, missing `screencap`, unauthorized/offline devices, empty hierarchy,
+  malformed XML, oversized artifacts and pull failures appear in the Layout Inspector card/report
+  status without affecting other diagnostics.
+- Android versions and OEMs that omit resource IDs or accessibility fields show those values as
+  unavailable.
+- Secure surfaces may appear black in the screenshot and are reported as device-protected rather
+  than retried or bypassed.
+- A refresh failure leaves the last completed report visible and retryable.
+- Existing Home drafts, snapshot tools, monitoring APIs and report viewer behavior do not change.
+
+## Verification
+
+- Parser tests cover nested nodes, IDs/classes/bounds/state extraction, password redaction,
+  malformed bounds, XXE rejection and node limits.
+- Report tests verify escaping, screenshot embedding, overlay/list linkage, search, refresh behavior,
+  offline fallback and absence of remote assets.
+- API tests cover authorization, busy state, progress, success, failure and report serving.
+- Home asset tests cover the new independent card, allowlisted in-app report path, and preservation of
+  existing diagnostic/report flows.
+- Manual QA covers phone, TV/STB DPAD layouts, portrait/landscape, overlapping elements, refresh after
+  navigation, secure surfaces, disconnected device, narrow desktop window and downloaded HTML with
+  networking disabled.
+
+## Out of scope
+
+The lite inspector does not edit properties, tap elements, poll continuously, inspect Compose
+semantics beyond what `uiautomator` exposes, display application source resources, or bypass secure
+Android surfaces. These additions would require a separate design.

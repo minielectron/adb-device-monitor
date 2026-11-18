@@ -1,15 +1,24 @@
 package devicemonitor.presentation.web
 
 import devicemonitor.domain.*
+import devicemonitor.domain.playerdebug.*
 import devicemonitor.data.adb.*
 import devicemonitor.application.*
+import devicemonitor.application.releaseguard.*
+import devicemonitor.application.playerdebug.*
+import devicemonitor.data.device.*
+import devicemonitor.data.playerdebug.*
+import devicemonitor.data.storage.*
 import devicemonitor.presentation.report.*
 import devicemonitor.common.*
+import com.google.gson.JsonParser
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.URLDecoder
+import java.nio.file.Files
+import java.time.Instant
 import java.util.Locale
 
 internal val OFFLINE_WEB_ASSETS = mapOf(
@@ -18,6 +27,7 @@ internal val OFFLINE_WEB_ASSETS = mapOf(
 )
 
 internal const val PAGE_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+private val PLAYER_TEXT_EXTENSIONS = setOf("json", "ndjson", "csv", "log", "txt", "html")
 
 internal fun resolveOfflineAsset(path: String): Pair<String, String>? = OFFLINE_WEB_ASSETS[path]
 
@@ -36,11 +46,46 @@ class WebApp(
     private val port: Int,
     private val adb: Adb,
     initialSession: MonitorSession? = null,
-    private val bindHost: String? = null   // null = all interfaces (browser mode); "127.0.0.1" for the desktop shell
+    private val bindHost: String? = null,   // null = all interfaces (browser mode); "127.0.0.1" for the desktop shell
+    releaseGuardRoot: File = File(MonitorSession.defaultReportsDir(), "ReleaseGuard"),
+    playerDebuggerRoot: File = File(MonitorSession.defaultReportsDir(), "PlayerDebugger"),
+    playerCaptureFactory: PlayerMonitorCaptureFactory? = null,
+    private val layoutInspectorRoot: File = MonitorSession.resolveBaseDir(null)
 ) {
     @Volatile var session: MonitorSession? = initialSession
 
     private var server: HttpServer? = null
+    @Volatile var actualPort: Int = port; private set
+
+    private val releaseArtifacts = ArtifactStore(releaseGuardRoot)
+    private val releaseRepository = SqliteRunRepository(File(releaseGuardRoot, "release-guard.db"))
+    private val releaseService = ReleaseGuardService {
+        ScenarioRunner(
+            releaseRepository,
+            releaseArtifacts,
+            CaptureSessionFactory { config ->
+                val monitor = MonitorSession(adb, config)
+                session = monitor
+                MonitorCaptureSession(monitor)
+            }
+        )
+    }
+    private val playerArtifacts = PlayerDebugArtifactStore(File(playerDebuggerRoot, "captures"))
+    private val playerRepository = SqlitePlayerDebugRepository(File(playerDebuggerRoot, "player-debugger.db"), playerArtifacts)
+    private val playerSupport = SupportBundleService(playerArtifacts)
+    private val playerService = PlayerDebugService(playerCaptureFactory ?: PlayerMonitorCaptureFactory { config ->
+        MonitorPlayerCapture(MonitorSession(adb, config).also { session = it })
+    })
+    @Volatile private var playerLocation: PlayerCaptureLocation? = null
+    @Volatile private var playerDeviceId: String? = null
+    @Volatile private var playerPackageName: String? = null
+    @Volatile private var playerStartedAt: String? = null
+    @Volatile private var playerPersistedId: String? = null
+
+    init {
+        runCatching { playerRepository.rebuildFromArtifacts() }
+            .onFailure { Log.warn("[player-debug] index rebuild failed: ${it.message}") }
+    }
 
     // Base folder that runs are written to (the UI "Reports folder"). Tracked so the Run Comparison
     // page lists runs from the SAME place they were saved — not just the process cwd, which is "/"
@@ -63,10 +108,18 @@ class WebApp(
     @Volatile private var procError: String? = null
     @Volatile private var procFile: File? = null
 
+    // Layout Inspector state is independent from monitoring and the other one-shot diagnostics.
+    @Volatile private var layoutRunning = false
+    @Volatile private var layoutProgress = 0
+    @Volatile private var layoutError: String? = null
+    @Volatile private var layoutFile: File? = null
+
     fun start() {
         val s = HttpServer.create(if (bindHost != null) InetSocketAddress(bindHost, port) else InetSocketAddress(port), 0)
         route(s, "/") { ex -> respondPage(ex, HOME_PAGE.replace("__BUILD__", esc(buildTag())).replace("</head>", STUDIO_UI_CSS + CLIENT_LOG_TAG + "</head>")) }
         route(s, "/dashboard") { ex -> respondPage(ex, DASHBOARD_PAGE.replace("__BUILD__", esc(buildTag())).replace("</head>", STUDIO_UI_CSS + CLIENT_LOG_TAG + "</head>")) }
+        route(s, "/release-guard") { ex -> respondPage(ex, RELEASE_GUARD_PAGE.replace("__BUILD__", esc(buildTag())).replace("</head>", STUDIO_UI_CSS + CLIENT_LOG_TAG + "</head>")) }
+        route(s, "/player-debugger") { ex -> respondPage(ex, PLAYER_DEBUGGER_PAGE.replace("__BUILD__", esc(buildTag())).replace("</head>", STUDIO_UI_CSS + CLIENT_LOG_TAG + "</head>")) }
         OFFLINE_WEB_ASSETS.keys.forEach { path -> route(s, path) { ex -> handleOfflineAsset(ex, path) } }
         route(s, "/api/devices") { ex -> respond(ex, 200, "application/json", devicesJson()) }
         route(s, "/api/defaults") { ex ->
@@ -90,8 +143,17 @@ class WebApp(
                     "\"error\":${procError?.let { "\"${esc(it)}\"" } ?: "null"}}")
         }
         route(s, "/api/procrank-report") { ex -> handleProcrankReport(ex) }
+        route(s, "/api/layout-inspector") { ex -> handleLayoutInspectorStart(ex) }
+        route(s, "/api/layout-inspector-status") { ex ->
+            val done = !layoutRunning && layoutError == null && layoutFile?.isFile == true
+            respond(ex, 200, "application/json",
+                "{\"running\":$layoutRunning,\"progress\":$layoutProgress,\"done\":$done," +
+                    "\"error\":${layoutError?.let { "\"${esc(it)}\"" } ?: "null"}}")
+        }
+        route(s, "/api/layout-inspector-report") { ex -> handleLayoutInspectorReport(ex) }
         route(s, "/api/start") { ex -> handleStart(ex) }
         route(s, "/api/stop") { ex ->
+            if (releaseService.isRunning()) releaseService.cancel()
             session?.requestStop()
             respond(ex, 200, "application/json", "{\"ok\":true}")
         }
@@ -104,6 +166,30 @@ class WebApp(
         route(s, "/clientlog.js") { ex -> respond(ex, 200, "application/javascript", CLIENT_LOG_JS) }
         route(s, "/api/clientlog") { ex -> handleClientLog(ex) }
         route(s, "/api/diagnostics") { ex -> handleDiagnostics(ex) }
+        route(s, "/api/release/projects") { ex -> handleReleaseProjects(ex) }
+        route(s, "/api/release/scenarios") { ex -> handleReleaseScenarios(ex) }
+        route(s, "/api/release/capabilities") { ex -> handleReleaseCapabilities(ex) }
+        route(s, "/api/release/start") { ex -> handleReleaseStart(ex) }
+        route(s, "/api/release/stop") { ex -> handleReleaseStop(ex) }
+        route(s, "/api/release/status") { ex -> handleReleaseStatus(ex) }
+        route(s, "/api/release/result") { ex -> handleReleaseResult(ex) }
+        route(s, "/api/release/baseline") { ex -> handleReleaseBaseline(ex) }
+        route(s, "/api/release/artifact") { ex -> handleReleaseArtifact(ex) }
+        route(s, "/api/player/capabilities") { ex -> handlePlayerCapabilities(ex) }
+        route(s, "/api/player/start") { ex -> handlePlayerStart(ex) }
+        route(s, "/api/player/stop") { ex -> handlePlayerStop(ex) }
+        route(s, "/api/player/status") { ex -> handlePlayerStatus(ex) }
+        route(s, "/api/player/captures") { ex -> handlePlayerCaptures(ex) }
+        route(s, "/api/player/graph") { ex -> handlePlayerGraph(ex) }
+        route(s, "/api/player/timeline") { ex -> handlePlayerTimeline(ex) }
+        route(s, "/api/player/incidents") { ex -> handlePlayerIncidents(ex) }
+        route(s, "/api/player/report") { ex -> handlePlayerReport(ex) }
+        route(s, "/api/player/evidence") { ex -> handlePlayerEvidence(ex) }
+        route(s, "/api/player/rules") { ex -> handlePlayerRules(ex) }
+        route(s, "/api/player/export-preview") { ex -> handlePlayerExportPreview(ex) }
+        route(s, "/api/player/export") { ex -> handlePlayerExport(ex) }
+        route(s, "/api/player/import") { ex -> handlePlayerImport(ex) }
+        route(s, "/api/player/reanalyze") { ex -> handlePlayerReanalyze(ex) }
         // Unbounded named daemon pool: a slow handler (unresponsive device, native folder dialog)
         // can no longer starve the dashboard poll the way the old fixed pool of 4 did.
         val n = java.util.concurrent.atomic.AtomicInteger()
@@ -113,10 +199,15 @@ class WebApp(
         startHttpWatchdog()
         s.start()
         server = s
+        actualPort = s.address.port
     }
 
     fun stop() {
+        releaseService.cancel()
+        playerService.stop()
         server?.stop(0)
+        try { releaseRepository.close() } catch (_: Exception) {}
+        try { playerRepository.close() } catch (_: Exception) {}
     }
 
     // ---------- request plumbing: timing, error capture, stall detection ----------
@@ -124,7 +215,7 @@ class WebApp(
     private class InFlight(val what: String, val startNanos: Long, val thread: Thread) { @Volatile var dumped = false }
     private val inFlight = java.util.concurrent.ConcurrentHashMap<HttpExchange, InFlight>()
     // Polled endpoints: only logged when slow, otherwise they would flood the log.
-    private val quietPaths = setOf("/api/session", "/api/devices", "/api/snapshot-status", "/api/procrank-status", "/api/clientlog", "/clientlog.js")
+    private val quietPaths = setOf("/api/session", "/api/devices", "/api/snapshot-status", "/api/procrank-status", "/api/layout-inspector-status", "/api/clientlog", "/clientlog.js")
 
     /** Register a handler that is timed, never leaks an exception, and always closes the exchange. */
     private fun route(s: HttpServer, path: String, handler: (HttpExchange) -> Unit) {
@@ -354,8 +445,54 @@ class WebApp(
         ex.responseBody.use { it.write(bytes) }
     }
 
+    private fun handleLayoutInspectorStart(ex: HttpExchange) {
+        if (ex.requestMethod != "POST") { respond(ex, 405, "application/json", err("POST only")); return }
+        if (layoutRunning) { respond(ex, 409, "application/json", err("A layout capture is already running")); return }
+        val serial = parseForm(ex)["serial"] ?: run {
+            respond(ex, 400, "application/json", err("No device selected")); return
+        }
+        val authorized = runCatching { adb.devices().any { it.serial == serial && it.state == "device" } }.getOrDefault(false)
+        if (!authorized) { respond(ex, 400, "application/json", err("Selected device is not authorized or connected")); return }
+
+        layoutRunning = true
+        layoutProgress = 0
+        layoutError = null
+        Thread {
+            try {
+                val snapshot = LayoutInspectorCapture.capture(adb, serial) { layoutProgress = it }
+                val ts = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
+                val out = File(layoutInspectorRoot, "layout-inspector_${ts}.html")
+                LayoutInspectorReport.writeHtml(snapshot, out)
+                layoutFile = out
+                layoutProgress = 100
+                println("Web: layout inspector written -> ${out.absolutePath} (${snapshot.hierarchy.elements.size} elements)")
+            } catch (e: Exception) {
+                layoutError = e.message ?: "layout capture failed"
+                System.err.println("Layout Inspector failed: ${e.message}")
+            } finally {
+                layoutRunning = false
+            }
+        }.apply { isDaemon = true; name = "layout-inspector" }.start()
+        respond(ex, 200, "application/json", "{\"ok\":true}")
+    }
+
+    private fun handleLayoutInspectorReport(ex: HttpExchange) {
+        val file = layoutFile
+        if (file == null || !file.isFile) {
+            respond(ex, 404, "application/json", err("Layout Inspector report is not ready")); return
+        }
+        val bytes = file.readBytes()
+        ex.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
+        ex.responseHeaders.add("Content-Disposition", "inline; filename=\"${file.name}\"")
+        ex.sendResponseHeaders(200, bytes.size.toLong())
+        ex.responseBody.use { it.write(bytes) }
+    }
+
     private fun handleStart(ex: HttpExchange) {
         if (ex.requestMethod != "POST") { respond(ex, 405, "application/json", err("POST only")); return }
+        if (releaseService.isRunning()) {
+            respond(ex, 409, "application/json", err("A Release Guard check is already running")); return
+        }
         val active = session
         if (active != null && active.status in listOf(MonitorSession.Status.STARTING, MonitorSession.Status.RUNNING)) {
             respond(ex, 409, "application/json", err("A session is already running")); return
@@ -475,6 +612,8 @@ class WebApp(
         }
         val zaps: List<Double>
         synchronized(s.zapTimes) { zaps = s.zapTimes.toList() }
+        val scenarioMarkers: List<devicemonitor.domain.releaseguard.ScenarioMarker>
+        synchronized(s.scenarioMarkers) { scenarioMarkers = s.scenarioMarkers.toList() }
         val anomalies = liveAnomalies(s)
         val info = s.info
 
@@ -591,6 +730,20 @@ class WebApp(
         }
         sb.append("],")
         sb.append("\"zaps\":[").append(zaps.joinToString(",") { num(it) }).append("],")
+        sb.append("\"scenarioMarkers\":[")
+        scenarioMarkers.forEachIndexed { i, marker ->
+            if (i > 0) sb.append(",")
+            sb.append("{\"t\":").append(num(marker.elapsedSec))
+                .append(",\"attempt\":").append(marker.attempt)
+                .append(",\"step\":").append(marker.stepIndex)
+                .append(",\"label\":\"").append(esc(marker.label))
+                .append("\",\"section\":").append(marker.section?.let { "\"${esc(it)}\"" } ?: "null")
+                .append(",\"type\":\"").append(marker.type.name.lowercase())
+                .append("\",\"outcome\":\"").append(marker.outcome.name.lowercase())
+                .append("\",\"detail\":").append(marker.detail?.let { "\"${esc(it.take(500))}\"" } ?: "null")
+                .append("}")
+        }
+        sb.append("],")
         sb.append("\"anomalies\":[")
         anomalies.forEachIndexed { i, a ->
             if (i > 0) sb.append(",")
@@ -671,7 +824,660 @@ class WebApp(
         ex.responseBody.use { it.write(bytes) }
     }
 
+    // ---------- Offline Release Guard ----------
+
+    private fun handleReleaseProjects(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/release/projects")) return
+        when (ex.requestMethod) {
+            "GET" -> respond(
+                ex, 200, "application/json",
+                "{\"projects\":${ReleaseGuardJson.json(releaseRepository.projects())}}"
+            )
+            "POST" -> {
+                val body = requestBody(ex) ?: return
+                try {
+                    val obj = JsonParser.parseString(body).asJsonObject
+                    val id = requiredString(obj, "id")
+                    val existing = releaseRepository.project(id)
+                    val now = java.time.Instant.now().toString()
+                    val project = ProjectRecord(
+                        id = id,
+                        name = requiredString(obj, "name"),
+                        packageName = requiredString(obj, "packageName"),
+                        createdAt = existing?.createdAt ?: now,
+                        updatedAt = now,
+                        metadata = existing?.metadata ?: emptyMap()
+                    )
+                    releaseRepository.saveProject(project)
+                    respond(ex, 200, "application/json", "{\"ok\":true,\"project\":${ReleaseGuardJson.project(project)}}")
+                } catch (e: Exception) {
+                    respond(ex, 400, "application/json", err(e.message ?: "Invalid project"))
+                }
+            }
+            else -> methodNotAllowed(ex, "GET, POST")
+        }
+    }
+
+    private fun handleReleaseScenarios(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/release/scenarios")) return
+        when (ex.requestMethod) {
+            "GET" -> {
+                val projectId = queryParam(ex, "projectId")
+                    ?: run { respond(ex, 400, "application/json", err("Missing projectId")); return }
+                val scenarios = releaseRepository.scenarios(projectId)
+                respond(ex, 200, "application/json", "{\"scenarios\":${ReleaseGuardJson.json(scenarios)}}")
+            }
+            "POST" -> {
+                val projectId = queryParam(ex, "projectId")
+                    ?: run { respond(ex, 400, "application/json", err("Missing projectId")); return }
+                val body = requestBody(ex) ?: return
+                try {
+                    val scenario = ReleaseGuardJson.parseScenario(body)
+                    releaseRepository.saveScenario(projectId, scenario)
+                    respond(ex, 200, "application/json", "{\"ok\":true,\"scenario\":${ReleaseGuardJson.scenario(scenario)}}")
+                } catch (e: Exception) {
+                    respond(ex, 400, "application/json", err(e.message ?: "Invalid scenario"))
+                }
+            }
+            else -> methodNotAllowed(ex, "GET, POST")
+        }
+    }
+
+    private fun handleReleaseCapabilities(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/release/capabilities")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val serial = queryParam(ex, "serial")
+            ?: run { respond(ex, 400, "application/json", err("Missing serial")); return }
+        try {
+            val target = AdbDeviceDriver(adb, serial).target(refresh = queryParam(ex, "refresh") == "true")
+            respond(ex, 200, "application/json", "{\"target\":${ReleaseGuardJson.json(target)}}")
+        } catch (e: Exception) {
+            respond(ex, 400, "application/json", err(e.message ?: "Capability probe failed"))
+        }
+    }
+
+    private fun handleReleaseStart(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/release/start")) return
+        if (ex.requestMethod != "POST") { methodNotAllowed(ex, "POST"); return }
+        if (releaseService.isRunning()) {
+            respond(ex, 409, "application/json", err("A Release Guard check is already running")); return
+        }
+        val active = session
+        if (active != null && active.status in listOf(MonitorSession.Status.STARTING, MonitorSession.Status.RUNNING)) {
+            respond(ex, 409, "application/json", err("A performance session is already running")); return
+        }
+        val body = requestBody(ex) ?: return
+        try {
+            val obj = JsonParser.parseString(body).asJsonObject
+            val projectId = requiredString(obj, "projectId")
+            val scenarioId = requiredString(obj, "scenarioId")
+            val serial = requiredString(obj, "serial")
+            val project = releaseRepository.project(projectId) ?: error("Unknown project '$projectId'")
+            val scenario = releaseRepository.scenario(scenarioId) ?: error("Unknown scenario '$scenarioId'")
+            require(scenario.packageName == project.packageName) {
+                "Scenario package '${scenario.packageName}' does not match project package '${project.packageName}'"
+            }
+            releaseService.start(
+                project,
+                scenario,
+                AdbDeviceDriver(adb, serial),
+                releaseRepository.activeBaseline(projectId, scenarioId),
+                obj.get("allowCompatibleDeviceBaseline")?.asBoolean == true
+            )
+            respond(ex, 202, "application/json", "{\"ok\":true}")
+        } catch (e: Exception) {
+            respond(ex, 400, "application/json", err(e.message ?: "Could not start Release Guard"))
+        }
+    }
+
+    private fun handleReleaseStop(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/release/stop")) return
+        if (ex.requestMethod != "POST") { methodNotAllowed(ex, "POST"); return }
+        releaseService.cancel()
+        session?.requestStop()
+        respond(ex, 200, "application/json", "{\"ok\":true}")
+    }
+
+    private fun handleReleaseStatus(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/release/status")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        respond(
+            ex, 200, "application/json",
+            "{\"running\":${releaseService.isRunning()}," +
+                "\"progress\":${ReleaseGuardJson.json(releaseService.progress())}," +
+                "\"manifest\":${ReleaseGuardJson.json(releaseService.latestManifest())}}"
+        )
+    }
+
+    private fun handleReleaseResult(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/release/result")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val runId = queryParam(ex, "runId")
+            ?: run { respond(ex, 400, "application/json", err("Missing runId")); return }
+        val run = releaseRepository.run(runId)
+            ?: run { respond(ex, 404, "application/json", err("Run not found")); return }
+        respond(ex, 200, "application/json", "{\"manifest\":${ReleaseGuardJson.manifest(run.manifest)}}")
+    }
+
+    private fun handleReleaseBaseline(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/release/baseline")) return
+        if (ex.requestMethod != "POST") { methodNotAllowed(ex, "POST"); return }
+        val body = requestBody(ex) ?: return
+        try {
+            val obj = JsonParser.parseString(body).asJsonObject
+            val runId = requiredString(obj, "runId")
+            val run = releaseRepository.run(runId)?.manifest ?: error("Run '$runId' was not found")
+            val identity = run.device ?: error("Run has no device identity")
+            require(run.state in setOf(
+                devicemonitor.domain.releaseguard.ExecutionState.PASSED,
+                devicemonitor.domain.releaseguard.ExecutionState.WARNING,
+                devicemonitor.domain.releaseguard.ExecutionState.FAILED
+            )) { "Only a completed run can become a baseline" }
+            require(run.attempts.any { it.successful }) { "Run has no successful attempt" }
+            val baseline = devicemonitor.domain.releaseguard.BaselineRevision("baseline-$runId", identity, run.attempts)
+            releaseRepository.promoteBaseline(run.projectId, baseline)
+            respond(ex, 200, "application/json", "{\"ok\":true,\"baseline\":${ReleaseGuardJson.baseline(baseline)}}")
+        } catch (e: Exception) {
+            respond(ex, 400, "application/json", err(e.message ?: "Could not promote baseline"))
+        }
+    }
+
+    private fun handleReleaseArtifact(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/release/artifact")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val runId = queryParam(ex, "runId")
+            ?: run { respond(ex, 400, "application/json", err("Missing runId")); return }
+        val key = queryParam(ex, "key")
+            ?: run { respond(ex, 400, "application/json", err("Missing artifact key")); return }
+        try {
+            val run = releaseRepository.run(runId)?.manifest ?: error("Run not found")
+            val relative = run.artifacts[key] ?: error("Artifact not found")
+            val file = releaseArtifacts.resolve(relative)
+            require(file.isFile) { "Artifact not found" }
+            val type = when (file.extension.lowercase()) {
+                "html" -> "text/html"
+                "json" -> "application/json"
+                "xml" -> "application/xml"
+                "csv", "log", "txt" -> "text/plain"
+                "pdf" -> "application/pdf"
+                "png" -> "image/png"
+                else -> "application/octet-stream"
+            }
+            val bytes = file.readBytes()
+            if (file.extension.equals("html", ignoreCase = true)) ex.responseHeaders.add("Content-Security-Policy", PAGE_CSP)
+            ex.responseHeaders.add("Content-Type", type)
+            ex.responseHeaders.add("Content-Disposition", "inline; filename=\"${file.name.replace("\"", "")}\"")
+            ex.responseHeaders.add("X-Content-Type-Options", "nosniff")
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        } catch (e: Exception) {
+            respond(ex, 404, "application/json", err(e.message ?: "Artifact not found"))
+        }
+    }
+
+    // ---------- Offline Player Debugger ----------
+
+    private fun handlePlayerCapabilities(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/capabilities")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val serial = queryParam(ex, "serial")
+            ?: run { playerError(ex, 400, "missing_serial", "Missing serial"); return }
+        if (!validDeviceId(serial)) { playerError(ex, 400, "invalid_serial", "Invalid device serial"); return }
+        try {
+            val target = CapabilityProbe(adb).probe(serial, queryParam(ex, "refresh") == "true")
+            respond(ex, 200, "application/json", "{\"target\":${ReleaseGuardJson.json(target)}}")
+        } catch (e: Exception) {
+            playerError(ex, 400, "probe_failed", e.message ?: "Capability probe failed")
+        }
+    }
+
+    private fun handlePlayerStart(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/start")) return
+        if (ex.requestMethod != "POST") { methodNotAllowed(ex, "POST"); return }
+        if (playerService.isRunning()) { playerError(ex, 409, "capture_conflict", "A Player Debugger capture is already running"); return }
+        if (releaseService.isRunning()) { playerError(ex, 409, "capture_conflict", "A Release Guard check is already running"); return }
+        val active = session
+        if (active != null && active.status in listOf(MonitorSession.Status.STARTING, MonitorSession.Status.RUNNING)) {
+            playerError(ex, 409, "capture_conflict", "A performance session is already running"); return
+        }
+        val body = requestBody(ex) ?: return
+        try {
+            val obj = JsonParser.parseString(body).asJsonObject
+            val serial = requiredString(obj, "serial")
+            val packageName = requiredString(obj, "packageName")
+            require(validDeviceId(serial)) { "Invalid device serial" }
+            require(packageName.matches(Regex("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+"))) { "Invalid Android package name" }
+            val duration = obj.get("durationSec")?.asDouble ?: 300.0
+            val interval = obj.get("intervalSec")?.asDouble ?: 1.0
+            require(duration in 1.0..86_400.0) { "Duration must be between 1 and 86400 seconds" }
+            require(interval in 0.25..60.0) { "Interval must be between 0.25 and 60 seconds" }
+
+            val location = playerArtifacts.createCapture(packageName)
+            val now = Instant.now().toString()
+            val initial = PlayerDebugManifest(
+                captureId = location.captureId,
+                deviceId = serial,
+                packageName = packageName,
+                state = PlayerCaptureState.PROBE,
+                startedAt = now,
+                updatedAt = now
+            )
+            playerArtifacts.writeManifest(location, initial)
+            playerRepository.upsert(initial, playerArtifacts.relative(location.manifestFile))
+            playerLocation = location
+            playerDeviceId = serial
+            playerPackageName = packageName
+            playerStartedAt = now
+            playerPersistedId = null
+            playerService.start(
+                SessionConfig(
+                    target = serial,
+                    durationSec = duration,
+                    intervalSec = interval,
+                    packageName = packageName,
+                    runDirectoryOverride = location.directory,
+                    cpuUtilEnabled = bool(obj, "cpuUtil", true),
+                    perCoreEnabled = bool(obj, "perCoreCpu", true),
+                    topProcsEnabled = bool(obj, "topProcessCpu", true),
+                    memoryMbEnabled = bool(obj, "memoryUsed", true),
+                    psiEnabled = bool(obj, "psiPressure", true),
+                    topMemEnabled = bool(obj, "topProcessMemory", true),
+                    playbackEnabled = true,
+                    appPssEnabled = bool(obj, "appPss", true),
+                    appProcCpuEnabled = bool(obj, "appProcessCpu", true)
+                )
+            )
+            watchPlayerCapture()
+            respond(ex, 202, "application/json", "{\"ok\":true,\"captureId\":\"${esc(location.captureId)}\"}")
+        } catch (e: Exception) {
+            playerError(ex, 400, "invalid_capture", e.message ?: "Could not start Player Debugger")
+        }
+    }
+
+    private fun handlePlayerStop(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/stop")) return
+        if (ex.requestMethod != "POST") { methodNotAllowed(ex, "POST"); return }
+        playerService.stop()
+        respond(ex, 200, "application/json", "{\"ok\":true}")
+    }
+
+    private fun handlePlayerStatus(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/status")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        if (!playerService.isRunning()) persistPlayerResult()
+        respond(ex, 200, "application/json", PlayerDebugJson.json(mapOf(
+            "running" to playerService.isRunning(),
+            "captureId" to playerLocation?.captureId,
+            "progress" to playerService.progress,
+            "graph" to playerService.graph?.let(::playerGraphSummary),
+            "highestSeverity" to playerService.incidents.maxByOrNull { it.severity.ordinal }?.severity
+        )))
+    }
+
+    private fun handlePlayerCaptures(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/captures")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val packageName = queryParam(ex, "packageName")
+        respond(ex, 200, "application/json", "{\"captures\":${PlayerDebugJson.json(playerRepository.captures(packageName).map { it.manifest })}}")
+    }
+
+    private fun handlePlayerGraph(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/graph")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val indexed = requirePlayerCapture(ex) ?: return
+        val file = playerArtifact(indexed, "graph", "session-graph.json")
+            ?: run { playerError(ex, 404, "graph_unavailable", "Session graph is unavailable"); return }
+        val graph = PlayerDebugJson.parseGraph(file.readText())
+        respond(ex, 200, "application/json", PlayerDebugJson.json(mapOf(
+            "summary" to playerGraphSummary(graph),
+            "processEpochs" to graph.processEpochs,
+            "viewingSessions" to graph.viewingSessions,
+            "duplicateEvents" to graph.duplicateEvents,
+            "lateEvents" to graph.lateEvents
+        )))
+    }
+
+    private fun handlePlayerTimeline(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/timeline")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val indexed = requirePlayerCapture(ex) ?: return
+        val offset = queryParam(ex, "offset")?.toLongOrNull() ?: 0L
+        val sequence = queryParam(ex, "sequence")?.toLongOrNull()
+        val limit = queryParam(ex, "limit")?.toIntOrNull() ?: 200
+        try {
+            val file = playerArtifact(indexed, "events", "events.ndjson")
+                ?: error("Timeline is unavailable")
+            val page = if (sequence == null) playerArtifacts.readEventPage(file, offset, limit)
+                else playerArtifacts.readEventWindow(file, sequence, limit)
+            respond(ex, 200, "application/json", "{\"events\":[${page.events.joinToString(",") { PlayerDebugJson.event(it) }}]," +
+                "\"offset\":${page.offset},\"nextOffset\":${page.nextOffset ?: "null"},\"totalRead\":${page.totalRead}}")
+        } catch (e: IllegalArgumentException) {
+            playerError(ex, 400, "invalid_window", e.message ?: "Invalid timeline window")
+        } catch (e: Exception) {
+            playerError(ex, 404, "timeline_unavailable", e.message ?: "Timeline is unavailable")
+        }
+    }
+
+    private fun handlePlayerIncidents(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/incidents")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val indexed = requirePlayerCapture(ex) ?: return
+        val file = playerArtifact(indexed, "incidents", "incidents.json")
+            ?: run { playerError(ex, 404, "incidents_unavailable", "Incidents are unavailable"); return }
+        respond(ex, 200, "application/json", file.readText())
+    }
+
+    private fun handlePlayerReport(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/report")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val indexed = requirePlayerCapture(ex) ?: return
+        try {
+            val graphFile = playerArtifact(indexed, "graph", "session-graph.json")
+                ?: error("Session graph is unavailable")
+            val incidentFile = playerArtifact(indexed, "incidents", "incidents.json")
+                ?: error("Incidents are unavailable")
+            val report = PlayerDebugReport.html(
+                indexed.manifest,
+                PlayerDebugJson.parseGraph(graphFile.readText()),
+                PlayerDebugJson.parseIncidents(incidentFile.readText())
+            )
+            val bytes = report.toByteArray(Charsets.UTF_8)
+            val download = queryParam(ex, "download") == "1"
+            ex.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
+            ex.responseHeaders.add("Content-Disposition", "${if (download) "attachment" else "inline"}; filename=\"player-debug-${safeFileName(indexed.manifest.captureId)}.html\"")
+            ex.responseHeaders.add("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'")
+            ex.responseHeaders.add("X-Content-Type-Options", "nosniff")
+            ex.responseHeaders.add("Cache-Control", "no-store")
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        } catch (e: Exception) {
+            playerError(ex, 404, "report_unavailable", e.message ?: "Player Debugger report is unavailable")
+        }
+    }
+
+    private fun handlePlayerEvidence(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/evidence")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val indexed = requirePlayerCapture(ex) ?: return
+        val key = queryParam(ex, "artifact")
+            ?: run { playerError(ex, 400, "missing_artifact", "Missing artifact"); return }
+        val relative = indexed.manifest.artifacts[key]
+            ?: run { playerError(ex, 404, "artifact_not_found", "Artifact not found"); return }
+        try {
+            val file = playerArtifacts.resolve(relative)
+            require(file.isFile && file.extension.lowercase() in PLAYER_TEXT_EXTENSIONS) { "Artifact is not safe text evidence" }
+            val startLine = (queryParam(ex, "line")?.toIntOrNull() ?: 1).coerceAtLeast(1)
+            val lines = file.useLines { sequence -> sequence.drop(startLine - 1).take(200).toList() }
+            respond(ex, 200, "application/json", PlayerDebugJson.json(mapOf(
+                "artifact" to key,
+                "line" to startLine,
+                "text" to lines.joinToString("\n").take(64 * 1024)
+            )))
+        } catch (e: Exception) {
+            playerError(ex, 404, "artifact_not_found", e.message ?: "Artifact not found")
+        }
+    }
+
+    private fun handlePlayerRules(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/rules")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        respond(ex, 200, "application/json", PlayerDebugJson.json(PlayerRuleProfile()))
+    }
+
+    private fun handlePlayerExportPreview(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/export-preview")) return
+        if (ex.requestMethod != "GET") { methodNotAllowed(ex, "GET"); return }
+        val indexed = requirePlayerCapture(ex) ?: return
+        try {
+            respond(ex, 200, "application/json", PlayerDebugJson.json(playerSupport.preview(playerLocation(indexed), indexed.manifest)))
+        } catch (e: Exception) {
+            playerError(ex, 400, "preview_failed", e.message ?: "Could not preview support bundle")
+        }
+    }
+
+    private fun handlePlayerExport(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/export")) return
+        if (ex.requestMethod != "POST") { methodNotAllowed(ex, "POST"); return }
+        val indexed = requirePlayerCapture(ex) ?: return
+        val temp = Files.createTempFile("player-support-", ".zip").toFile()
+        try {
+            playerSupport.export(playerLocation(indexed), indexed.manifest, temp)
+            val bytes = temp.readBytes()
+            ex.responseHeaders.add("Content-Type", "application/zip")
+            ex.responseHeaders.add("Content-Disposition", "attachment; filename=\"player-support-${safeFileName(indexed.manifest.captureId)}.zip\"")
+            ex.responseHeaders.add("X-Content-Type-Options", "nosniff")
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        } catch (e: Exception) {
+            playerError(ex, 400, "export_failed", e.message ?: "Could not export support bundle")
+        } finally {
+            temp.delete()
+        }
+    }
+
+    private fun handlePlayerImport(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/import")) return
+        if (ex.requestMethod != "POST") { methodNotAllowed(ex, "POST"); return }
+        val upload = receivePlayerBundle(ex) ?: return
+        try {
+            val imported = playerSupport.importBundle(upload, playerArtifacts.root)
+            var captureId = imported.manifest.captureId
+            var suffix = 2
+            while (playerRepository.capture(captureId) != null) captureId = "${imported.manifest.captureId}-import-${suffix++}"
+            val artifacts = imported.manifest.artifacts.mapValues { (_, local) ->
+                playerArtifacts.relative(File(imported.directory, local))
+            }
+            val location = PlayerCaptureLocation(captureId, imported.directory, File(imported.directory, "manifest.json"))
+            val rewritten = imported.manifest.copy(captureId = captureId, artifacts = artifacts, updatedAt = Instant.now().toString())
+            val analyzed = reanalyzePlayerCapture(location, rewritten)
+            respond(ex, 201, "application/json", "{\"ok\":true,\"manifest\":${PlayerDebugJson.manifest(analyzed)}}")
+        } catch (e: Exception) {
+            playerError(ex, 400, "invalid_bundle", e.message ?: "Could not import support bundle")
+        } finally {
+            upload.delete()
+        }
+    }
+
+    private fun handlePlayerReanalyze(ex: HttpExchange) {
+        if (!exactPath(ex, "/api/player/reanalyze")) return
+        if (ex.requestMethod != "POST") { methodNotAllowed(ex, "POST"); return }
+        val indexed = requirePlayerCapture(ex) ?: return
+        try {
+            val manifest = reanalyzePlayerCapture(playerLocation(indexed), indexed.manifest)
+            respond(ex, 200, "application/json", "{\"ok\":true,\"manifest\":${PlayerDebugJson.manifest(manifest)}}")
+        } catch (e: Exception) {
+            playerError(ex, 400, "reanalyze_failed", e.message ?: "Could not re-analyze capture")
+        }
+    }
+
+    private fun watchPlayerCapture() {
+        Thread {
+            while (playerService.isRunning()) try { Thread.sleep(100) } catch (_: InterruptedException) { return@Thread }
+            persistPlayerResult()
+        }.apply { isDaemon = true; name = "player-debug-persist"; start() }
+    }
+
+    @Synchronized private fun persistPlayerResult() {
+        val location = playerLocation ?: return
+        if (playerPersistedId == location.captureId) return
+        val result = playerService.result ?: return
+        try {
+            playerArtifacts.writeEvents(location, result.events)
+            playerArtifacts.writeGraph(location, result.graph)
+            playerArtifacts.writeIncidents(location, result.incidents)
+            playerArtifacts.writeParserDiagnostics(location, result.diagnostics)
+            val reportManifest = PlayerDebugManifest(
+                captureId = location.captureId,
+                deviceId = playerDeviceId ?: "unknown",
+                packageName = playerPackageName ?: "unknown.package",
+                state = result.state,
+                startedAt = playerStartedAt ?: Instant.now().toString(),
+                updatedAt = Instant.now().toString(),
+                eventCount = result.events.size,
+                sessionCount = result.graph.viewingSessions.size,
+                incidentCount = result.incidents.size,
+                error = result.error
+            )
+            PlayerDebugReport.writeHtml(reportManifest, result.graph, result.incidents, File(location.directory, "player-debug-report.html"))
+            val artifacts = linkedMapOf<String, String>()
+            location.directory.walkTopDown().filter { it.isFile && it != location.manifestFile }.forEach { file ->
+                val local = file.relativeTo(location.directory).invariantSeparatorsPath
+                val key = when (local) {
+                    "events.ndjson" -> "events"
+                    "session-graph.json" -> "graph"
+                    "incidents.json" -> "incidents"
+                    "parser-diagnostics.json" -> "diagnostics"
+                    "player-debug-report.html" -> "report"
+                    else -> local
+                }
+                artifacts[key] = playerArtifacts.relative(file)
+            }
+            val manifest = reportManifest.copy(artifacts = artifacts)
+            playerArtifacts.writeManifest(location, manifest)
+            playerRepository.upsert(manifest, playerArtifacts.relative(location.manifestFile), result.graph, result.incidents)
+            playerPersistedId = location.captureId
+        } catch (e: Exception) {
+            Log.error("[player-debug] failed to persist ${location.captureId}", e)
+        }
+    }
+
+    private fun reanalyzePlayerCapture(location: PlayerCaptureLocation, manifest: PlayerDebugManifest): PlayerDebugManifest {
+        val eventsPath = manifest.artifacts["events"]
+            ?: manifest.artifacts.values.firstOrNull { it.endsWith("events.ndjson") }
+            ?: error("Capture has no event timeline")
+        val events = playerArtifacts.resolve(eventsPath).useLines { lines ->
+            lines.filter { it.isNotBlank() }.map(PlayerDebugJson::parseEvent).toList()
+        }
+        val graph = SessionGraphBuilder().build(EventReplay().replay(events))
+        val incidents = PlayerIncidentEngine().analyze(graph)
+        val graphFile = playerArtifacts.writeGraph(location, graph)
+        val incidentFile = playerArtifacts.writeIncidents(location, incidents)
+        val reportFile = File(location.directory, "player-debug-report.html")
+        val reportManifest = manifest.copy(
+            updatedAt = Instant.now().toString(),
+            eventCount = events.size,
+            sessionCount = graph.viewingSessions.size,
+            incidentCount = incidents.size
+        )
+        PlayerDebugReport.writeHtml(reportManifest, graph, incidents, reportFile)
+        val updated = reportManifest.copy(
+            artifacts = manifest.artifacts + mapOf(
+                "graph" to playerArtifacts.relative(graphFile),
+                "incidents" to playerArtifacts.relative(incidentFile),
+                "report" to playerArtifacts.relative(reportFile)
+            )
+        )
+        playerArtifacts.writeManifest(location, updated)
+        playerRepository.upsert(updated, playerArtifacts.relative(location.manifestFile), graph, incidents)
+        return updated
+    }
+
+    private fun requirePlayerCapture(ex: HttpExchange): IndexedPlayerCapture? {
+        val captureId = queryParam(ex, "captureId")
+            ?: run { playerError(ex, 400, "missing_capture", "Missing captureId"); return null }
+        return playerRepository.capture(captureId)
+            ?: run { playerError(ex, 404, "capture_not_found", "Capture not found"); null }
+    }
+
+    private fun playerLocation(indexed: IndexedPlayerCapture): PlayerCaptureLocation {
+        val manifestFile = playerArtifacts.resolve(indexed.manifestPath)
+        return PlayerCaptureLocation(indexed.manifest.captureId, manifestFile.parentFile, manifestFile)
+    }
+
+    private fun playerArtifact(indexed: IndexedPlayerCapture, key: String, fileName: String): File? {
+        val relative = indexed.manifest.artifacts[key]
+            ?: indexed.manifest.artifacts.values.firstOrNull { it.endsWith(fileName) }
+            ?: return null
+        return runCatching { playerArtifacts.resolve(relative).takeIf(File::isFile) }.getOrNull()
+    }
+
+    private fun playerGraphSummary(graph: PlayerSessionGraph): Map<String, Any> = mapOf(
+        "processEpochs" to graph.processEpochs.size,
+        "viewingSessions" to graph.viewingSessions.size,
+        "players" to graph.viewingSessions.sumOf { it.playerInstances.size },
+        "handoffs" to graph.viewingSessions.sumOf { it.handoffs.size },
+        "events" to graph.events.size,
+        "duplicateEvents" to graph.duplicateEvents,
+        "lateEvents" to graph.lateEvents
+    )
+
+    private fun receivePlayerBundle(ex: HttpExchange): File? {
+        val maxBytes = 100L * 1024 * 1024
+        val declared = ex.requestHeaders.getFirst("Content-Length")?.toLongOrNull()
+        if (declared != null && declared > maxBytes) {
+            playerError(ex, 413, "bundle_too_large", "Support bundle is too large")
+            return null
+        }
+        val temp = Files.createTempFile("player-upload-", ".zip").toFile()
+        return try {
+            var total = 0L
+            ex.requestBody.use { input -> temp.outputStream().use { output ->
+                val buffer = ByteArray(8192)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    total += read
+                    if (total > maxBytes) throw IllegalArgumentException("Support bundle is too large")
+                    output.write(buffer, 0, read)
+                }
+            } }
+            temp
+        } catch (e: Exception) {
+            temp.delete()
+            playerError(ex, 413, "bundle_too_large", e.message ?: "Support bundle is too large")
+            null
+        }
+    }
+
+    private fun bool(obj: com.google.gson.JsonObject, name: String, default: Boolean): Boolean =
+        obj.get(name)?.takeUnless { it.isJsonNull }?.asBoolean ?: default
+
+    private fun validDeviceId(value: String): Boolean = value.matches(Regex("[A-Za-z0-9._:-]{1,200}"))
+    private fun safeFileName(value: String): String = value.replace(Regex("[^A-Za-z0-9._-]"), "_").take(100)
+
+    private fun playerError(ex: HttpExchange, status: Int, code: String, message: String) {
+        respond(ex, status, "application/json", "{\"ok\":false,\"code\":\"${esc(code)}\",\"error\":\"${esc(message)}\"}")
+    }
+
     // ---------- helpers ----------
+
+    private fun exactPath(ex: HttpExchange, expected: String): Boolean {
+        if (ex.requestURI.path == expected) return true
+        respond(ex, 404, "application/json", err("Not found"))
+        return false
+    }
+
+    private fun methodNotAllowed(ex: HttpExchange, allow: String) {
+        ex.responseHeaders.add("Allow", allow)
+        respond(ex, 405, "application/json", err("Method not allowed"))
+    }
+
+    private fun requestBody(ex: HttpExchange, maxBytes: Int = 1_048_576): String? {
+        val declared = ex.requestHeaders.getFirst("Content-Length")?.toLongOrNull()
+        if (declared != null && declared > maxBytes) {
+            respond(ex, 413, "application/json", err("Request body is too large"))
+            return null
+        }
+        val bytes = ex.requestBody.readNBytes(maxBytes + 1)
+        if (bytes.size > maxBytes) {
+            respond(ex, 413, "application/json", err("Request body is too large"))
+            return null
+        }
+        return bytes.toString(Charsets.UTF_8)
+    }
+
+    private fun queryParam(ex: HttpExchange, name: String): String? = ex.requestURI.rawQuery
+        ?.split('&')
+        ?.mapNotNull { part ->
+            val split = part.split('=', limit = 2)
+            if (split.size == 2) URLDecoder.decode(split[0], "UTF-8") to URLDecoder.decode(split[1], "UTF-8") else null
+        }
+        ?.firstOrNull { it.first == name }
+        ?.second
+
+    private fun requiredString(obj: com.google.gson.JsonObject, name: String): String =
+        obj.get(name)?.takeUnless { it.isJsonNull }?.asString?.trim()?.takeIf { it.isNotEmpty() }
+            ?: throw IllegalArgumentException("Missing $name")
 
     private fun parseForm(ex: HttpExchange): Map<String, String> =
         ex.requestBody.bufferedReader().readText()

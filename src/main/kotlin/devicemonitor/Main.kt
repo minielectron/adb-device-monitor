@@ -6,8 +6,13 @@ import devicemonitor.data.adb.*
 import devicemonitor.data.metrics.*
 import devicemonitor.data.logcat.*
 import devicemonitor.application.*
+import devicemonitor.application.releaseguard.*
+import devicemonitor.data.device.AdbDeviceDriver
+import devicemonitor.data.storage.*
+import devicemonitor.domain.releaseguard.*
 import devicemonitor.presentation.web.*
 import devicemonitor.presentation.report.*
+import com.google.gson.JsonPrimitive
 
 import java.awt.Desktop
 import java.io.File
@@ -25,6 +30,19 @@ Web mode (recommended):
   Opens ADB Performance Studio at http://localhost:8080 — pick a connected device,
   configure zapping / logcat / PSS / jank tracking in the browser, press Start, and
   watch live charts with health verdicts. Reports land in run_<timestamp>_<device>/.
+
+Offline Release Guard (headless / CI):
+  adb-device-monitor --release-guard <scenario.json-or-saved-id> [options]
+
+  --release-project <id>       Saved project ID (optional for scenario files; inferred for saved scenarios)
+  --release-project-name <n>   Project display name for a scenario file
+  --release-root <dir>         Offline database and artifact root (default: ~/ADB Device Monitor/ReleaseGuard)
+  --apk <file.apk>             Install this APK as the first scenario step
+  --build-label <label>        Attach a local build label to the project metadata
+  --allow-compatible-baseline  Permit normalized metrics to compare across compatible device identities
+  --release-json               Print only the final evaluation/manifest JSON path on stdout
+
+  Exit codes: 0 pass, 2 warning, 3 budget failure, 4 invalid configuration, 5 infrastructure failure.
 
 CLI mode:
   adb-device-monitor --duration <seconds> --interval <seconds> [options]
@@ -62,7 +80,16 @@ Examples:
   adb-device-monitor --duration 300 --interval 2 --package com.telekom.onetv.tv.hr --jank
 """
 
-private val BOOL_FLAGS = setOf("jank", "no-logcat", "profile", "perfetto", "playback", "app", "sidecar")
+private val BOOL_FLAGS = setOf(
+    "jank", "no-logcat", "profile", "perfetto", "playback", "app", "sidecar", "selftest",
+    "allow-compatible-baseline", "release-json"
+)
+
+internal const val RELEASE_GUARD_PASS = 0
+internal const val RELEASE_GUARD_WARNING = 2
+internal const val RELEASE_GUARD_FAILED = 3
+internal const val RELEASE_GUARD_INVALID = 4
+internal const val RELEASE_GUARD_INFRASTRUCTURE = 5
 
 
 
@@ -124,12 +151,16 @@ fun main(args: Array<String>) {
         println("ADB Device Monitor ${buildTag()}")
         return
     }
+    val machineOut = System.out
+    val releaseGuardRequested = args.contains("--release-guard")
+    val opts = parseArgs(args, if (releaseGuardRequested) RELEASE_GUARD_INVALID else 1)
+    if (opts.containsKey("release-guard")) System.setProperty("java.awt.headless", "true")
+    if (opts.containsKey("release-json")) System.setOut(System.err)
     installFileLogging()
     if (args.contains("--selftest")) {
         selfTest()
         return
     }
-    val opts = parseArgs(args)
     val adb = Adb(Adb.locate(opts["adb"]))
     System.err.println("ADB Device Monitor ${buildTag()}")
 
@@ -154,6 +185,10 @@ fun main(args: Array<String>) {
     opts["scan-logcat"]?.let { pathArg ->
         scanLogcat(pathArg)
         return
+    }
+
+    opts["release-guard"]?.let {
+        exitProcess(runReleaseGuardCli(adb, opts, machineOut))
     }
 
     // ---------- web mode ----------
@@ -310,6 +345,119 @@ private fun resolveTarget(adb: Adb, ip: String?, serial: String?): String {
     }
 }
 
+private fun runReleaseGuardCli(adb: Adb, opts: Map<String, String>, machineOut: java.io.PrintStream): Int {
+    val root = File(
+        opts["release-root"] ?: File(MonitorSession.defaultReportsDir(), "ReleaseGuard").absolutePath
+    ).absoluteFile
+    val repository = try {
+        SqliteRunRepository(File(root, "release-guard.db"))
+    } catch (e: Exception) {
+        System.err.println("Release Guard infrastructure error: ${e.message}")
+        return RELEASE_GUARD_INFRASTRUCTURE
+    }
+    return repository.use { repo ->
+        try {
+            val reference = opts.getValue("release-guard")
+            val scenarioFile = File(reference)
+            val fromRepository = !scenarioFile.isFile
+            var scenario = if (scenarioFile.isFile) {
+                ReleaseGuardJson.parseScenario(scenarioFile.readText())
+            } else {
+                repo.scenario(reference) ?: throw IllegalArgumentException("Saved scenario '$reference' was not found")
+            }
+            opts["apk"]?.let { apkPath ->
+                val apk = File(apkPath).absoluteFile
+                require(apk.isFile) { "APK was not found: ${apk.absolutePath}" }
+                scenario = scenario.copy(
+                    revision = if (fromRepository) scenario.revision + 1 else scenario.revision,
+                    steps = listOf(ScenarioStep.InstallApk(apk.absolutePath)) + scenario.steps
+                )
+            }
+            val validation = scenario.validate()
+            require(validation.isEmpty()) { validation.joinToString("; ") }
+
+            val projectId = opts["release-project"] ?: if (fromRepository) {
+                repo.projects().firstOrNull { project -> repo.scenarios(project.id).any { it.id == scenario.id } }?.id
+                    ?: throw IllegalArgumentException("--release-project is required for saved scenario '${scenario.id}'")
+            } else {
+                "cli-" + scenario.packageName.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifBlank { "project" }
+            }
+            val now = java.time.Instant.now().toString()
+            val existing = repo.project(projectId)
+            val metadata = existing?.metadata.orEmpty().toMutableMap().apply {
+                opts["build-label"]?.let { put("buildLabel", JsonPrimitive(it)) }
+            }
+            val project = ProjectRecord(
+                id = projectId,
+                name = opts["release-project-name"] ?: existing?.name ?: scenario.name,
+                packageName = existing?.packageName ?: scenario.packageName,
+                createdAt = existing?.createdAt ?: now,
+                updatedAt = now,
+                metadata = metadata
+            )
+            require(project.packageName == scenario.packageName) {
+                "Project package '${project.packageName}' does not match scenario package '${scenario.packageName}'"
+            }
+
+            val serial = releaseGuardTarget(adb, opts["ip"], opts["device"])
+            System.err.println("Release Guard: ${project.name} / ${scenario.name} r${scenario.revision}")
+            System.err.println("Release Guard: probing $serial and executing ${scenario.repetitions} measured attempt(s)")
+            val store = ArtifactStore(root)
+            val runner = ScenarioRunner(repo, store, MonitorCaptureSessionFactory(adb))
+            val manifest = runner.run(
+                project,
+                scenario,
+                AdbDeviceDriver(adb, serial),
+                repo.activeBaseline(project.id, scenario.id),
+                opts.containsKey("allow-compatible-baseline")
+            )
+            val jsonPath = manifest.artifacts["evaluation.json"]?.let(store::resolve)
+                ?: repo.run(manifest.runId)?.let { store.resolve(it.manifestPath) }
+            if (opts.containsKey("release-json")) {
+                machineOut.println(jsonPath?.absolutePath ?: "")
+            } else {
+                System.err.println("Release Guard: ${manifest.evaluation?.verdict ?: manifest.state} (${manifest.runId})")
+                jsonPath?.let { println("Result JSON: ${it.absolutePath}") }
+            }
+            releaseGuardExitCode(manifest)
+        } catch (e: IllegalArgumentException) {
+            System.err.println("Release Guard configuration error: ${e.message}")
+            RELEASE_GUARD_INVALID
+        } catch (e: Exception) {
+            System.err.println("Release Guard infrastructure error: ${e.message}")
+            RELEASE_GUARD_INFRASTRUCTURE
+        }
+    }
+}
+
+private fun releaseGuardTarget(adb: Adb, ip: String?, serial: String?): String {
+    if (ip != null) return adb.connect(ip)
+    val devices = adb.devices()
+    val usable = devices.filter { it.state == "device" }
+    if (serial != null) {
+        require(usable.any { it.serial == serial }) { "Device '$serial' is not connected and authorized" }
+        return serial
+    }
+    require(usable.size == 1) {
+        if (usable.isEmpty()) "No connected and authorized ADB device" else "Multiple devices found; use --device <serial>"
+    }
+    return usable.single().serial
+}
+
+internal fun releaseGuardExitCode(manifest: RunManifest): Int {
+    val error = manifest.error.orEmpty()
+    if ("missing required capabilities" in error.lowercase() || "unsupported" in error.lowercase()) {
+        return RELEASE_GUARD_INVALID
+    }
+    if (manifest.error != null || manifest.state == ExecutionState.CANCELLED) return RELEASE_GUARD_INFRASTRUCTURE
+    return when (manifest.evaluation?.verdict) {
+        Verdict.PASS -> RELEASE_GUARD_PASS
+        Verdict.WARNING -> RELEASE_GUARD_WARNING
+        Verdict.FAIL -> RELEASE_GUARD_FAILED
+        Verdict.CANCELLED, null -> RELEASE_GUARD_INFRASTRUCTURE
+    }
+}
+
 /**
  * Post-hoc analysis of an existing logcat (no device). Accepts a logcat.log path, a run folder,
  * or "last" to pick the newest run_* folder in the current directory. Prints the STB build tunnel
@@ -397,7 +545,7 @@ private fun openBrowser(url: String) {
 
 // ---------- arg parsing ----------
 
-private fun parseArgs(args: Array<String>): Map<String, String> {
+private fun parseArgs(args: Array<String>, invalidExitCode: Int = 1): Map<String, String> {
     if (args.isEmpty() || args.contains("--help") || args.contains("-h")) {
         println(USAGE)
         exitProcess(0)
@@ -406,7 +554,7 @@ private fun parseArgs(args: Array<String>): Map<String, String> {
     var i = 0
     while (i < args.size) {
         val a = args[i]
-        if (!a.startsWith("--")) fail("Unexpected argument: $a")
+        if (!a.startsWith("--")) fail("Unexpected argument: $a", invalidExitCode)
         val key = a.removePrefix("--")
         if (key in BOOL_FLAGS) {
             map[key] = "true"
@@ -414,23 +562,24 @@ private fun parseArgs(args: Array<String>): Map<String, String> {
             continue
         }
         val value = args.getOrNull(i + 1)
-            ?: fail("Missing value for --$key")
-        if (value.startsWith("--")) fail("Missing value for --$key")
+            ?: fail("Missing value for --$key", invalidExitCode)
+        if (value.startsWith("--")) fail("Missing value for --$key", invalidExitCode)
         map[key] = value
         i += 2
     }
     val known = setOf(
         "web", "ip", "device", "duration", "interval", "zap-time", "zap-count",
-        "package", "label", "serve", "output", "csv", "adb", "scan-logcat", "output-dir"
+        "package", "label", "serve", "output", "csv", "adb", "scan-logcat", "output-dir",
+        "release-guard", "release-project", "release-project-name", "release-root", "apk", "build-label"
     ) + BOOL_FLAGS
-    map.keys.firstOrNull { it !in known }?.let { fail("Unknown option: --$it") }
+    map.keys.firstOrNull { it !in known }?.let { fail("Unknown option: --$it", invalidExitCode) }
     return map
 }
 
 private fun Map<String, String>.require(key: String): String =
     this[key] ?: fail("Missing required option: --$key\n$USAGE")
 
-private fun fail(msg: String): Nothing {
+private fun fail(msg: String, exitCode: Int = 1): Nothing {
     System.err.println("Error: $msg")
-    exitProcess(1)
+    exitProcess(exitCode)
 }

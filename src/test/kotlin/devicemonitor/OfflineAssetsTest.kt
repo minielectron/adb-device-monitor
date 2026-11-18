@@ -6,6 +6,8 @@ import devicemonitor.presentation.web.DASHBOARD_PAGE
 import devicemonitor.presentation.web.HOME_PAGE
 import devicemonitor.presentation.web.OFFLINE_WEB_ASSETS
 import devicemonitor.presentation.web.PAGE_CSP
+import devicemonitor.presentation.web.PLAYER_DEBUGGER_PAGE
+import devicemonitor.presentation.web.RELEASE_GUARD_PAGE
 import devicemonitor.presentation.web.resolveOfflineAsset
 import java.nio.file.Files
 import kotlin.test.Test
@@ -24,17 +26,64 @@ class OfflineAssetsTest {
         assertContains(COMPARE_PAGE, "src=\"/assets/jspdf.umd.min.js\"")
         assertFalse(remoteAsset.containsMatchIn(DASHBOARD_PAGE))
         assertFalse(remoteAsset.containsMatchIn(COMPARE_PAGE))
+        assertFalse(remoteAsset.containsMatchIn(RELEASE_GUARD_PAGE))
+        assertFalse(remoteAsset.containsMatchIn(PLAYER_DEBUGGER_PAGE))
         OFFLINE_WEB_ASSETS.values.forEach { (resource, _) ->
             assertNotNull(javaClass.classLoader.getResource(resource), "missing bundled resource: $resource")
         }
     }
 
+    @Test fun releaseGuardIsOfflineAndHomeNavigationPreservesDrafts() {
+        assertContains(HOME_PAGE, "href=\"/release-guard\"")
+        assertContains(HOME_PAGE, "aps.home.draft.v1")
+        assertContains(HOME_PAGE, "beforeunload', saveHomeDraft")
+        assertContains(RELEASE_GUARD_PAGE, "aps.releaseGuard.draft.v1")
+        assertContains(RELEASE_GUARD_PAGE, "/api/release/start")
+        assertContains(RELEASE_GUARD_PAGE, "/api/release/status")
+        assertContains(RELEASE_GUARD_PAGE, "/api/release/baseline")
+        assertFalse("window.open(" in RELEASE_GUARD_PAGE)
+    }
+
+    @Test fun playerDebuggerUsesOfflineApisSavedDraftAndRequestedDefaults() {
+        assertContains(HOME_PAGE, "href=\"/player-debugger\"")
+        assertContains(PLAYER_DEBUGGER_PAGE, "aps.playerDebugger.draft.v1")
+        assertContains(PLAYER_DEBUGGER_PAGE, "beforeunload',saveDraft")
+        assertContains(PLAYER_DEBUGGER_PAGE, "/api/player/start")
+        assertContains(PLAYER_DEBUGGER_PAGE, "/api/player/status")
+        assertContains(PLAYER_DEBUGGER_PAGE, "/api/player/timeline")
+        assertContains(PLAYER_DEBUGGER_PAGE, "/api/player/report")
+        assertContains(PLAYER_DEBUGGER_PAGE, "id=\"playerReportViewer\"")
+        assertContains(PLAYER_DEBUGGER_PAGE, "id=\"pdHandoffMap\"")
+        listOf("cpuUtil", "perCoreCpu", "topProcessCpu", "memoryUsed", "psiPressure", "topProcessMemory").forEach { id ->
+            assertContains(PLAYER_DEBUGGER_PAGE, "id=\"$id\" type=\"checkbox\" checked")
+        }
+        assertContains(PLAYER_DEBUGGER_PAGE, "Reported")
+        assertContains(PLAYER_DEBUGGER_PAGE, "Measured")
+        assertContains(PLAYER_DEBUGGER_PAGE, "Inferred")
+        assertContains(PLAYER_DEBUGGER_PAGE, "Adapter unknown")
+    }
+
+    @Test fun homeAndPlayerDebuggerShareBalancedFirstUseMetricDefaults() {
+        listOf("m_cpu", "m_percore", "m_topprocs", "m_mempct", "m_psi", "m_topmem").forEach { id ->
+            assertContains(HOME_PAGE, "id=\"$id\" checked")
+        }
+        assertContains(HOME_PAGE, "id=\"m_pss\"><span>")
+        assertFalse(HOME_PAGE.contains("id=\"m_pss\" checked"))
+
+        listOf("cpuUtil", "perCoreCpu", "topProcessCpu", "memoryUsed", "psiPressure", "topProcessMemory").forEach { id ->
+            assertContains(PLAYER_DEBUGGER_PAGE, "id=\"$id\" type=\"checkbox\" checked")
+        }
+    }
+
     @Test fun diagnosticReportsOpenInTheStatePreservingViewer() {
         assertContains(HOME_PAGE, "id=\"reportViewer\"")
-        assertContains(HOME_PAGE, "var reportPaths = { '/api/snapshot-report': 'Device Snapshot', '/api/procrank-report': 'Memory Snapshot' }")
+        assertContains(HOME_PAGE, "'/api/layout-inspector-report': 'Layout Inspector'")
         assertContains(HOME_PAGE, "Object.prototype.hasOwnProperty.call(reportPaths, path)")
         assertContains(HOME_PAGE, "openReport('/api/snapshot-report', btn)")
         assertContains(HOME_PAGE, "openReport('/api/procrank-report', btn)")
+        assertContains(HOME_PAGE, "openReport('/api/layout-inspector-report', btn)")
+        assertContains(HOME_PAGE, "id=\"layoutBtn\"")
+        assertContains(HOME_PAGE, "/api/layout-inspector-status")
         assertFalse(Regex("""window\.open\(['\"]/api/(?:snapshot|procrank)-report""").containsMatchIn(HOME_PAGE))
     }
 
