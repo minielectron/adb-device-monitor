@@ -1,0 +1,29 @@
+src/main/kotlin/devicemonitor/presentation/web/ReleaseGuardPage.kt
+  s_6a41e6dc5a6d74::t_048138ca976424 33-42,44-45,78-80,82-87,89-90,106,179-181
+  s_6a41e6dc5a6d74::t_23e45a6af6c3fe 43,46
+  s_6a41e6dc5a6d74::t_2f5253da5c5751 199,220,274,291-294
+src/main/kotlin/devicemonitor/application/releaseguard/ScenarioRunner.kt
+  s_6a41e6dc5a6d74::t_02312d1f9f3437 326-329
+src/test/kotlin/devicemonitor/OfflineAssetsTest.kt
+  s_6a41e6dc5a6d74::t_23e45a6af6c3fe 69-76
+src/test/kotlin/devicemonitor/ScenarioRunnerTest.kt
+  s_6a41e6dc5a6d74::t_02312d1f9f3437 98-124,258-259,275
+docs/release-guard.md
+  s_6a41e6dc5a6d74::t_ec9920fc42b903 118-122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0120a3fbc415beca4188e44cceb36ace83db417a",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
