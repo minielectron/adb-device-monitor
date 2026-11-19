@@ -1,8 +1,9 @@
 # Offline Performance Release Guard
 
 **Current state:** implemented in the Studio UI and headless CLI. Release Guard executes repeatable
-Android journeys, captures the same monitoring signals used by Studio, evaluates explicit budgets,
-and writes a local release decision. It is Android-device and player-SDK agnostic.
+Android journeys, captures the same monitoring signals used by Studio, evaluates optional explicit
+budgets, and writes either a local release decision or a neutral evidence-only result. It is
+Android-device and player-SDK agnostic.
 
 ## Execution pipeline
 
@@ -60,6 +61,10 @@ growth percent. It can define:
 - Critical severity, which fails the gate, or warning severity, which produces review status
 - Whether missing/unusable data is required (fail) or optional (not evaluated)
 
+Budgets are optional. A successful scenario with no budgets finishes as **Evidence only / Not
+evaluated** rather than Pass, so the collected logs and measurements cannot be mistaken for release
+approval. Any attempt or infrastructure failure still fails the run.
+
 The engine evaluates only successful measured attempts. A baseline must match the same scenario ID
 and revision. By default its device model, Android version and firmware must also match exactly.
 `--allow-compatible-baseline` permits a different device only for metrics explicitly declared
@@ -77,7 +82,9 @@ attempt directories and registered outputs.
 Each measured attempt requires the device logcat capability. Release Guard clears the buffer when
 capture starts, streams the complete unfiltered run log to `attempt-NN/logcat.log`, and stops the
 stream during finalization even when a journey step fails before enough performance samples exist.
-The log is registered as evidence and can be opened from the result screen.
+The log is registered as evidence and can be opened from the result screen. Release Guard also
+builds a run-level `logcat.log` after each measured iteration. It contains every iteration in order
+with explicit PASS/FAIL boundaries while retaining the original `attempt-NN/logcat.log` files.
 
 Completed exports currently include `report.html`, `report.pdf`, `evaluation.json`,
 `result.junit.xml`, `summary.csv`, and attempt evidence such as monitoring reports, samples and logs.
@@ -91,7 +98,9 @@ the same local SQLite index and files.
 
 Open **Release Guard** from Home to manage projects/scenarios, probe capabilities, run or cancel a
 check, inspect results, promote a completed run with at least one successful attempt to baseline and
-open registered artifacts.
+open registered artifacts. Each journey card can insert a new step directly above or below itself;
+the empty journey state provides **Add first step**. Removing every budget enables evidence-only
+mode without disabling the run action.
 
 The local routes are `/api/release/projects`, `/api/release/scenarios`,
 `/api/release/capabilities`, `/api/release/start`, `/api/release/stop`,
@@ -120,6 +129,7 @@ to stderr.
 | `3` | A release-blocking budget fails. |
 | `4` | Scenario, capability or CLI configuration is invalid. |
 | `5` | ADB, capture, storage, export or cancellation infrastructure fails. |
+| `6` | Evidence was collected without performance budgets; no release decision was made. |
 
 ## Limitations and evidence rules
 

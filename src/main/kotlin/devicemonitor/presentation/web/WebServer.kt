@@ -971,6 +971,7 @@ class WebApp(
             require(run.state in setOf(
                 devicemonitor.domain.releaseguard.ExecutionState.PASSED,
                 devicemonitor.domain.releaseguard.ExecutionState.WARNING,
+                devicemonitor.domain.releaseguard.ExecutionState.EVIDENCE_ONLY,
                 devicemonitor.domain.releaseguard.ExecutionState.FAILED
             )) { "Only a completed run can become a baseline" }
             require(run.attempts.any { it.successful }) { "Run has no successful attempt" }

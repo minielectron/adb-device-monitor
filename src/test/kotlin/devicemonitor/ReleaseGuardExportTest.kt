@@ -65,6 +65,24 @@ class ReleaseGuardExportTest {
         assertContains(xml, "Review &amp; accept")
     }
 
+    @Test fun evidenceOnlyExportsUseNeutralVerdictAndSkippedJunitCase() {
+        val dir = Files.createTempDirectory("release-guard-evidence-only").toFile()
+        val evaluation = ReleaseEvaluation(Verdict.NOT_EVALUATED, emptyList())
+        val manifest = manifest(evaluation).copy(state = ExecutionState.EVIDENCE_ONLY)
+        val outputs = ReleaseGuardReport.write(dir, project(), scenario().copy(budgets = emptyList()), manifest, null)
+
+        val html = outputs.getValue("report.html").readText()
+        assertContains(html, "NOT EVALUATED")
+        assertContains(html, "No performance budgets were configured")
+        val junit = outputs.getValue("result.junit.xml").readText()
+        assertContains(junit, "tests=\"1\"")
+        assertContains(junit, "skipped=\"1\"")
+        assertContains(junit, "No performance budgets configured")
+        val pdfText = PDDocument.load(outputs.getValue("report.pdf")).use(PDFTextStripper()::getText)
+        assertContains(pdfText, "Release Guard: NOT_EVALUATED")
+        assertContains(pdfText, "No performance budgets were configured")
+    }
+
     private fun project() = ProjectRecord(
         id = "player",
         name = "Player QA",

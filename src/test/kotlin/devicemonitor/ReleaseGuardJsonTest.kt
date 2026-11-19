@@ -70,6 +70,12 @@ class ReleaseGuardJsonTest {
             metadata = metadata
         )
         assertEquals(manifest, ReleaseGuardJson.parseManifest(ReleaseGuardJson.manifest(manifest)))
+
+        val evidenceOnly = manifest.copy(
+            state = ExecutionState.EVIDENCE_ONLY,
+            evaluation = ReleaseEvaluation(Verdict.NOT_EVALUATED, emptyList())
+        )
+        assertEquals(evidenceOnly, ReleaseGuardJson.parseManifest(ReleaseGuardJson.manifest(evidenceOnly)))
     }
 
     @Test fun unsupportedSchemaAndUnknownStepFailClearly() {

@@ -44,6 +44,21 @@ class ReleaseGuardEvaluationTest {
         assertEquals(listOf(1), result.results.first().contributingAttempts)
     }
 
+    @Test fun zeroBudgetsProduceNeutralVerdictUnlessExecutionFailed() {
+        val evidenceOnly = EvaluationEngine.evaluate(emptyList(), listOf(attempt(1, "cpu", listOf(40.0))), identity)
+        assertEquals(Verdict.NOT_EVALUATED, evidenceOnly.verdict)
+        assertTrue(evidenceOnly.results.isEmpty())
+        assertTrue(evidenceOnly.executionErrors.isEmpty())
+
+        val failed = EvaluationEngine.evaluate(
+            emptyList(),
+            listOf(AttemptSummary(1, false, error = "device disconnected")),
+            identity
+        )
+        assertEquals(Verdict.FAIL, failed.verdict)
+        assertEquals(listOf("Attempt 1 failed: device disconnected"), failed.executionErrors)
+    }
+
     @Test fun relativeBaselineHonorsIdentityAndNormalizedOptIn() {
         val baseline = BaselineRevision(
             "base-1",

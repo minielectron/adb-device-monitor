@@ -22,6 +22,7 @@ object EvaluationEngine {
         }
         val verdict = when {
             executionErrors.isNotEmpty() || results.any { it.status == BudgetStatus.FAIL } -> Verdict.FAIL
+            budgets.isEmpty() -> Verdict.NOT_EVALUATED
             results.any { it.status == BudgetStatus.WARNING } -> Verdict.WARNING
             else -> Verdict.PASS
         }

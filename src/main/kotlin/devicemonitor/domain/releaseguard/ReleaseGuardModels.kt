@@ -149,7 +149,7 @@ enum class Aggregation { MINIMUM, MAXIMUM, MEAN, MEDIAN, P90, P95, COUNT, RATE, 
 enum class LimitDirection { MAXIMUM, MINIMUM }
 enum class Severity { CRITICAL, WARNING }
 enum class BudgetStatus { PASS, WARNING, FAIL, NOT_EVALUATED }
-enum class Verdict { PASS, WARNING, FAIL, CANCELLED }
+enum class Verdict { PASS, WARNING, FAIL, NOT_EVALUATED, CANCELLED }
 enum class ExecutionState {
     DISCOVER,
     PREFLIGHT,
@@ -161,10 +161,11 @@ enum class ExecutionState {
     EXPORT,
     PASSED,
     WARNING,
+    EVIDENCE_ONLY,
     FAILED,
     CANCELLED;
 
-    fun isTerminal(): Boolean = this in setOf(PASSED, WARNING, FAILED, CANCELLED)
+    fun isTerminal(): Boolean = this in setOf(PASSED, WARNING, EVIDENCE_ONLY, FAILED, CANCELLED)
 }
 
 enum class ScenarioMarkerType { STEP_START, STEP_END, SECTION_START, SECTION_END }

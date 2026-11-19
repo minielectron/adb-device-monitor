@@ -45,7 +45,17 @@ class OfflineAssetsTest {
         assertContains(RELEASE_GUARD_PAGE, "'Deep link URI'")
         assertContains(RELEASE_GUARD_PAGE, "myapp://content/123?source=release-guard")
         assertContains(RELEASE_GUARD_PAGE, "Open full logcat · attempt")
+        assertContains(RELEASE_GUARD_PAGE, "Open complete scenario log")
         assertContains(RELEASE_GUARD_PAGE, "var out={SHELL:true,LOGCAT:true}")
+        assertContains(RELEASE_GUARD_PAGE, "function insertStep(index)")
+        assertContains(RELEASE_GUARD_PAGE, "if(!hadDraft)newScenario()")
+        assertContains(RELEASE_GUARD_PAGE, "Add first step")
+        assertContains(RELEASE_GUARD_PAGE, "Add step above step")
+        assertContains(RELEASE_GUARD_PAGE, "Add step below step")
+        assertFalse("onclick=\"addStep()\"" in RELEASE_GUARD_PAGE)
+        assertContains(RELEASE_GUARD_PAGE, "No performance budgets · evidence-only run")
+        assertContains(RELEASE_GUARD_PAGE, "not_evaluated:'Evidence only'")
+        assertContains(RELEASE_GUARD_PAGE, "EVIDENCE_ONLY")
         assertFalse("window.open(" in RELEASE_GUARD_PAGE)
     }
 

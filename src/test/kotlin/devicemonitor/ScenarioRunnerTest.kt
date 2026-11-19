@@ -104,11 +104,62 @@ class ScenarioRunnerTest {
         }
     }
 
-    private fun fixture(factory: CaptureSessionFactory = CaptureSessionFactory { FakeCapture() }): Fixture {
+    @Test fun zeroBudgetRunIsEvidenceOnlyAndCombinesEveryMeasuredIterationLog() {
+        var captureNumber = 0
+        val factory = CaptureSessionFactory { config ->
+            captureNumber += 1
+            FakeCapture(config.runDirectoryOverride, "raw log iteration $captureNumber\n")
+        }
+        fixture(factory).use { f ->
+            val manifest = f.runner.run(
+                project(),
+                scenario(repetitions = 2),
+                FakeDriver(allCapabilities())
+            )
+
+            assertEquals(ExecutionState.EVIDENCE_ONLY, manifest.state)
+            assertEquals(Verdict.NOT_EVALUATED, manifest.evaluation?.verdict)
+            val combined = f.root.resolve(manifest.artifacts.getValue("logcat.log")).readText()
+            assertTrue(combined.indexOf("raw log iteration 1") < combined.indexOf("raw log iteration 2"))
+            assertContains(combined, "===== ITERATION 1 OF 2 | PASS =====")
+            assertContains(combined, "===== END ITERATION 1 =====")
+            assertContains(combined, "===== ITERATION 2 OF 2 | PASS =====")
+            assertTrue("attempt-01/logcat.log" in manifest.artifacts)
+            assertTrue("attempt-02/logcat.log" in manifest.artifacts)
+        }
+    }
+
+    @Test fun missingIterationLogFailsRunAndLeavesExplicitCombinedEvidence() {
+        fixture(CaptureSessionFactory { FakeCapture() }).use { f ->
+            val manifest = f.runner.run(project(), scenario(), FakeDriver(allCapabilities()))
+
+            assertEquals(ExecutionState.FAILED, manifest.state)
+            assertEquals(Verdict.FAIL, manifest.evaluation?.verdict)
+            assertContains(manifest.attempts.single().error.orEmpty(), "logcat evidence was not created")
+            val combined = f.root.resolve(manifest.artifacts.getValue("logcat.log")).readText()
+            assertContains(combined, "LOGCAT UNAVAILABLE")
+            assertContains(combined, "| FAIL | Required logcat evidence was not created =====")
+        }
+    }
+
+    @Test fun combinedLogNormalizesMultilineFailureBoundary() {
+        fixture().use { f ->
+            val manifest = f.runner.run(
+                project(),
+                scenario(),
+                FakeDriver(allCapabilities(), ScenarioStep.LaunchApp::class.java, "first line\nsecond line")
+            )
+            val combined = f.root.resolve(manifest.artifacts.getValue("logcat.log")).readText()
+            assertContains(combined, "| FAIL | first line second line =====")
+        }
+    }
+
+    private fun fixture(factory: CaptureSessionFactory? = null): Fixture {
         val root = Files.createTempDirectory("release-guard-runner").toFile()
         val store = ArtifactStore(root, clock, { "run" })
         val repository = SqliteRunRepository(root.resolve("guard.db"), clock)
-        return Fixture(repository, ScenarioRunner(repository, store, factory, clock))
+        val activeFactory = factory ?: CaptureSessionFactory { config -> FakeCapture(config.runDirectoryOverride) }
+        return Fixture(root, repository, ScenarioRunner(repository, store, activeFactory, clock))
     }
 
     private fun project() = ProjectRecord(
@@ -121,24 +172,27 @@ class ScenarioRunnerTest {
 
     private fun scenario(
         steps: List<ScenarioStep> = listOf(ScenarioStep.LaunchApp()),
-        budgets: List<PerformanceBudget> = emptyList()
+        budgets: List<PerformanceBudget> = emptyList(),
+        repetitions: Int = 1
     ) = ReleaseScenario(
         id = "browse",
         name = "Browse",
         packageName = "com.example.player",
+        repetitions = repetitions,
         steps = steps,
         budgets = budgets
     )
 
     private fun allCapabilities() = DeviceCapability.entries.toSet()
 
-    private data class Fixture(val repository: SqliteRunRepository, val runner: ScenarioRunner) : AutoCloseable {
+    private data class Fixture(val root: File, val repository: SqliteRunRepository, val runner: ScenarioRunner) : AutoCloseable {
         override fun close() = repository.close()
     }
 
     private class FakeDriver(
         private val capabilities: Set<DeviceCapability>,
-        private val failOn: Class<out ScenarioStep>? = null
+        private val failOn: Class<out ScenarioStep>? = null,
+        private val failureMessage: String = "synthetic step failure"
     ) : DeviceDriver {
         override val serial = "fake-device"
         override fun target(refresh: Boolean) = TargetDevice(
@@ -154,19 +208,25 @@ class ScenarioRunnerTest {
             artifactDirectory: File,
             cancelled: () -> Boolean
         ): StepOutput {
-            if (failOn?.isInstance(step) == true) error("synthetic step failure")
+            if (failOn?.isInstance(step) == true) error(failureMessage)
             return StepOutput("ok")
         }
     }
 
-    private class FakeCapture : CaptureSession {
+    private class FakeCapture(
+        private val directory: File? = null,
+        private val logText: String = "synthetic logcat\n"
+    ) : CaptureSession {
         override var status = CaptureStatus.STARTING
         override val error: String? = null
         private val markers = mutableListOf<ScenarioMarker>()
         private var markerTime = 0.0
 
         override fun start() { status = CaptureStatus.RUNNING }
-        override fun stop() { status = CaptureStatus.DONE }
+        override fun stop() {
+            directory?.resolve("logcat.log")?.writeText(logText)
+            status = CaptureStatus.DONE
+        }
         override fun samples() = listOf(sample(0.0, 40.0), sample(1.0, 60.0), sample(2.0, 55.0))
         override fun anomalies(): List<Anomaly> = emptyList()
         override fun markers(): List<ScenarioMarker> = markers.toList()

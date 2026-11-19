@@ -90,6 +90,7 @@ internal const val RELEASE_GUARD_WARNING = 2
 internal const val RELEASE_GUARD_FAILED = 3
 internal const val RELEASE_GUARD_INVALID = 4
 internal const val RELEASE_GUARD_INFRASTRUCTURE = 5
+internal const val RELEASE_GUARD_NOT_EVALUATED = 6
 
 
 
@@ -453,6 +454,7 @@ internal fun releaseGuardExitCode(manifest: RunManifest): Int {
     return when (manifest.evaluation?.verdict) {
         Verdict.PASS -> RELEASE_GUARD_PASS
         Verdict.WARNING -> RELEASE_GUARD_WARNING
+        Verdict.NOT_EVALUATED -> RELEASE_GUARD_NOT_EVALUATED
         Verdict.FAIL -> RELEASE_GUARD_FAILED
         Verdict.CANCELLED, null -> RELEASE_GUARD_INFRASTRUCTURE
     }

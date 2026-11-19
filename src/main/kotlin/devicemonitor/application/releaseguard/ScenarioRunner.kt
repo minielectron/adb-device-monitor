@@ -9,6 +9,7 @@ import devicemonitor.domain.*
 import devicemonitor.domain.releaseguard.*
 import devicemonitor.presentation.report.ReleaseGuardReport
 import java.io.File
+import java.io.FileOutputStream
 import java.time.Clock
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
@@ -199,13 +200,31 @@ class ScenarioRunner(
                 } catch (e: Exception) {
                     stepError = e.message ?: e.toString()
                 } finally {
-                    capture.stop()
-                    awaitCaptureEnd(capture, 120_000)
+                    try {
+                        capture.stop()
+                        awaitCaptureEnd(capture, 120_000)
+                    } catch (e: Exception) {
+                        if (stepError == null) stepError = e.message ?: e.toString()
+                    }
                 }
                 val markers = capture.markers()
                 allMarkers += markers
-                val successful = stepError == null && capture.status == CaptureStatus.DONE
-                val error = stepError ?: capture.error
+                val attemptLog = File(attemptDir, "logcat.log")
+                val logError = when {
+                    !attemptLog.isFile -> "Required logcat evidence was not created"
+                    attemptLog.length() == 0L -> "Required logcat evidence is empty"
+                    else -> null
+                }
+                val error = stepError ?: capture.error ?: logError
+                val successful = error == null && capture.status == CaptureStatus.DONE
+                val combinedLog = appendCombinedLog(
+                    File(location.directory, "logcat.log"),
+                    attemptLog,
+                    attempt,
+                    scenario.repetitions,
+                    successful,
+                    error
+                )
                 attempts += AttemptSummary(
                     attempt,
                     successful,
@@ -216,6 +235,7 @@ class ScenarioRunner(
                     val key = "attempt-%02d/%s".format(attempt, file.name)
                     artifactMap[key] = artifacts.relative(file)
                 }
+                artifactMap["logcat.log"] = artifacts.relative(combinedLog)
                 persist(
                     ExecutionState.FINALIZE_ARTIFACTS,
                     attempts = attempts,
@@ -260,6 +280,7 @@ class ScenarioRunner(
             val terminal = when (evaluation.verdict) {
                 Verdict.PASS -> ExecutionState.PASSED
                 Verdict.WARNING -> ExecutionState.WARNING
+                Verdict.NOT_EVALUATED -> ExecutionState.EVIDENCE_ONLY
                 Verdict.FAIL -> ExecutionState.FAILED
                 Verdict.CANCELLED -> ExecutionState.CANCELLED
             }
@@ -324,6 +345,34 @@ class ScenarioRunner(
                 throw e
             }
         }
+    }
+
+    private fun appendCombinedLog(
+        combined: File,
+        attemptLog: File,
+        attempt: Int,
+        totalAttempts: Int,
+        successful: Boolean,
+        error: String?
+    ): File {
+        combined.parentFile?.mkdirs()
+        val status = if (successful) "PASS" else "FAIL"
+        val detail = error?.replace(Regex("[\\r\\n]+"), " ")?.trim()?.take(500)?.takeIf { it.isNotEmpty() }
+        val heading = buildString {
+            append("===== ITERATION $attempt OF $totalAttempts | $status")
+            detail?.let { append(" | ").append(it) }
+            append(" =====\n")
+        }
+        FileOutputStream(combined, true).buffered().use { output ->
+            output.write(heading.toByteArray(Charsets.UTF_8))
+            if (attemptLog.isFile && attemptLog.length() > 0L) {
+                attemptLog.inputStream().use { it.copyTo(output) }
+            } else {
+                output.write("LOGCAT UNAVAILABLE\n".toByteArray(Charsets.UTF_8))
+            }
+            output.write("\n===== END ITERATION $attempt =====\n\n".toByteArray(Charsets.UTF_8))
+        }
+        return combined
     }
 
     private fun sessionConfig(

@@ -21,7 +21,7 @@ are [metrics](docs/metrics.md), [Layout Inspector](docs/layout-inspector.md),
 | Procrank Snapshot | Implemented one-shot capture. Tries `procrank`, `su 0 procrank`, `su -c procrank`, then falls back to `ps`. | HTML plus a raw command debug sidecar. The `ps` fallback has RSS/VSS but not real PSS/USS. See [device-and-procrank-snapshot.md](docs/device-and-procrank-snapshot.md). |
 | Lite Layout Inspector | Implemented one-shot capture. Joins `uiautomator dump` element metadata with a `screencap` PNG and maps bounds to the screenshot. | Self-contained `layout-inspector_<timestamp>.html`, searchable elements, click-to-select boundary and in-app Refresh. Secure/custom-rendered surfaces may be absent. See [layout-inspector.md](docs/layout-inspector.md). |
 | Player Debugger | Implemented. Combines captured logcat, Android media/codec/audio/SurfaceFlinger dumps, selected performance metrics, optional app-reported OPTD/1 events and deterministic inference. | Handoff Map, Flight Recorder, Incident Lens, static HTML and sanitized support bundle. Passive evidence cannot always identify a vendor player's logical instance. See [player-debugger.md](docs/player-debugger.md). |
-| Performance Release Guard | Implemented in Studio and headless CLI. Executes versioned Android scenarios, probes capabilities, captures measured repetitions and evaluates absolute/baseline budgets. | Local HTML, PDF, JSON, JUnit XML and CSV evidence with stable CI exit codes. See [release-guard.md](docs/release-guard.md). |
+| Performance Release Guard | Implemented in Studio and headless CLI. Executes versioned Android scenarios, probes capabilities, captures measured repetitions and evaluates optional absolute/baseline budgets. | Local HTML, PDF, JSON, JUnit XML, CSV and combined logcat evidence with stable CI exit codes. See [release-guard.md](docs/release-guard.md). |
 | Diagnostics ZIP | Implemented host/application support export. Reads JVM state, in-flight requests, session summary, a thread dump and application/run log tails. | `adb-monitor-diagnostics_<timestamp>.zip`. It is not a device screenshot, full logcat or Player Debugger export. See [diagnostics.md](docs/diagnostics.md). |
 | CLI and native macOS app | Implemented. CLI calls the same collectors directly; the Tauri app starts the Kotlin engine on a loopback-only port and displays it in the system WebView. | CLI run folders or packaged `.app`/`.dmg`. Loopback HTTP is local IPC, not an internet dependency. See [build/run](docs/build-run-package.md) and [desktop app](docs/desktop-app.md). |
 
@@ -95,7 +95,7 @@ independent one-shot reports. Their HTML, charts, screenshot and data are local 
 
 ### Offline Performance Release Guard
 
-Release Guard turns repeatable Android journeys into an offline release decision for Dev and QA. It stores versioned scenarios, probes device capabilities instead of relying on manufacturer rules, runs warm-ups and measured repetitions, compares explicit budgets with a promoted baseline, and produces local HTML, PDF, JSON, JUnit XML, and CSV evidence. Open **Release Guard** from Studio; drafts survive navigation and restarts.
+Release Guard turns repeatable Android journeys into an offline release decision for Dev and QA. It stores versioned scenarios, probes device capabilities instead of relying on manufacturer rules, runs warm-ups and measured repetitions, compares optional explicit budgets with a promoted baseline, and produces local HTML, PDF, JSON, JUnit XML, CSV, and combined logcat evidence. Without budgets it reports **Evidence only / Not evaluated**. Open **Release Guard** from Studio; drafts survive navigation and restarts.
 
 For a headless CI run:
 
@@ -107,7 +107,7 @@ java -jar build/libs/adb-device-monitor-1.0.0-all.jar \
   --release-json
 ```
 
-The mode is fully offline. Exit codes are stable: `0` pass, `2` warning, `3` budget failure, `4` invalid scenario/capability configuration, and `5` infrastructure failure. Use `--release-project <id>` for a saved scenario ID, `--apk <file>` to install a candidate build first, and `--allow-compatible-baseline` only when cross-device normalized metrics are intentional.
+The mode is fully offline. Exit codes are stable: `0` pass, `2` warning, `3` budget failure, `4` invalid scenario/capability configuration, `5` infrastructure failure, and `6` evidence-only/not evaluated. Use `--release-project <id>` for a saved scenario ID, `--apk <file>` to install a candidate build first, and `--allow-compatible-baseline` only when cross-device normalized metrics are intentional.
 
 ## Metrics collected
 

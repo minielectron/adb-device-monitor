@@ -11,6 +11,10 @@ class ReleaseGuardCliTest {
     @Test fun exitCodesAreStableAcrossVerdictsAndInfrastructureFailures() {
         assertEquals(RELEASE_GUARD_PASS, releaseGuardExitCode(manifest(ExecutionState.PASSED, Verdict.PASS)))
         assertEquals(RELEASE_GUARD_WARNING, releaseGuardExitCode(manifest(ExecutionState.WARNING, Verdict.WARNING)))
+        assertEquals(
+            RELEASE_GUARD_NOT_EVALUATED,
+            releaseGuardExitCode(manifest(ExecutionState.EVIDENCE_ONLY, Verdict.NOT_EVALUATED))
+        )
         assertEquals(RELEASE_GUARD_FAILED, releaseGuardExitCode(manifest(ExecutionState.FAILED, Verdict.FAIL)))
         assertEquals(
             RELEASE_GUARD_INVALID,
