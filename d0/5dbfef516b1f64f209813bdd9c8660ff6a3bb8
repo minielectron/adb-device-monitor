@@ -1,0 +1,59 @@
+src/main/kotlin/devicemonitor/Main.kt
+  s_6a41e6dc5a6d74::t_81bf2c72f0e2df 93,457
+src/main/kotlin/devicemonitor/presentation/report/ReleaseGuardReport.kt
+  s_6a41e6dc5a6d74::t_4e9c143122b34d 67-68,71-73,86-90,93-95,130-132
+src/test/kotlin/devicemonitor/ReleaseGuardJsonTest.kt
+  s_6a41e6dc5a6d74::t_d761bde29c611e 73-78
+src/test/kotlin/devicemonitor/SqliteRunRepositoryTest.kt
+  s_6a41e6dc5a6d74::t_d761bde29c611e 67-69
+src/main/kotlin/devicemonitor/application/releaseguard/ScenarioRunner.kt
+  s_6a41e6dc5a6d74::t_81bf2c72f0e2df 12,212-227,238,283,350-375
+  s_6a41e6dc5a6d74::t_da693a43c13ee6 203-208
+  s_6a41e6dc5a6d74::t_64abe9f96b74aa 376-377
+src/main/kotlin/devicemonitor/presentation/web/WebServer.kt
+  s_6a41e6dc5a6d74::t_81bf2c72f0e2df 974
+src/main/kotlin/devicemonitor/presentation/report/JunitExporter.kt
+  s_6a41e6dc5a6d74::t_81bf2c72f0e2df 5,10-13,33-35
+  s_6a41e6dc5a6d74::t_d40eb4580d74b9 36-37
+src/test/kotlin/devicemonitor/ScenarioRunnerTest.kt
+  s_6a41e6dc5a6d74::t_40677c2872eeab 107-157,161-162,175-176,181,188,194-195,211,216-219,226-229
+src/test/kotlin/devicemonitor/ReleaseGuardEvaluationTest.kt
+  s_6a41e6dc5a6d74::t_40677c2872eeab 47-61
+src/test/kotlin/devicemonitor/ReleaseGuardExportTest.kt
+  s_6a41e6dc5a6d74::t_40677c2872eeab 68-85
+docs/release-guard.md
+  s_6a41e6dc5a6d74::t_59f4a4571224ef 4-6,64-67,85-87,101-103,132
+src/main/kotlin/devicemonitor/domain/releaseguard/ReleaseGuardModels.kt
+  s_6a41e6dc5a6d74::t_81bf2c72f0e2df 152,164,168
+src/main/kotlin/devicemonitor/application/releaseguard/EvaluationEngine.kt
+  s_6a41e6dc5a6d74::t_81bf2c72f0e2df 25
+src/test/kotlin/devicemonitor/ReleaseGuardCliTest.kt
+  s_6a41e6dc5a6d74::t_40677c2872eeab 14-17
+docs/build-run-package.md
+  s_6a41e6dc5a6d74::t_59f4a4571224ef 74,83
+README.md
+  s_6a41e6dc5a6d74::t_59f4a4571224ef 24,98,110
+src/test/kotlin/devicemonitor/OfflineAssetsTest.kt
+  s_6a41e6dc5a6d74::t_d761bde29c611e 48,50,52-58
+  s_6a41e6dc5a6d74::t_40c4ab21e60e2c 51
+src/main/kotlin/devicemonitor/presentation/web/ReleaseGuardPage.kt
+  s_6a41e6dc5a6d74::t_9fcf967f19aa96 33-37,111,202,211,224,227,229
+  s_6a41e6dc5a6d74::t_fca2c626e14840 57
+  s_6a41e6dc5a6d74::t_9c1ef8c157bad9 148,174,234
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d05dbfef516b1f64f209813bdd9c8660ff6a3bb8",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
