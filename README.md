@@ -95,7 +95,7 @@ independent one-shot reports. Their HTML, charts, screenshot and data are local 
 
 ### Offline Performance Release Guard
 
-Release Guard turns repeatable Android journeys into an offline release decision for Dev and QA. It stores versioned scenarios, probes device capabilities instead of relying on manufacturer rules, runs warm-ups and measured repetitions, compares optional explicit budgets with a promoted baseline, and produces local HTML, PDF, JSON, JUnit XML, CSV, and combined logcat evidence. Without budgets it reports **Evidence only / Not evaluated**. Open **Release Guard** from Studio; drafts survive navigation and restarts.
+Release Guard turns repeatable Android journeys into an offline release decision for Dev and QA. It stores versioned scenarios, probes device capabilities instead of relying on manufacturer rules, runs warm-ups and measured repetitions, captures the default CPU/memory diagnostics in parallel, compares optional explicit budgets with a promoted baseline, and produces local HTML, PDF, JSON, JUnit XML, CSV, and combined logcat evidence. Without budgets it reports **Evidence only / Not evaluated**. Open **Release Guard** from Studio; active checks and drafts survive page navigation, and the Run action stays locked until the background check completes or stops.
 
 For a headless CI run:
 

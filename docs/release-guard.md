@@ -53,6 +53,13 @@ Measured attempts reuse `MonitorSession`, so metric sources and transformations 
 in [metrics.md](metrics.md). Step and section boundaries become timestamped scenario markers, which
 allow a budget to evaluate either the whole attempt or one named section.
 
+The scenario capture configuration enables CPU utilization, per-core CPU, top-process CPU, memory
+used, PSI pressure and top-process memory by default. These collectors and required logcat capture
+run concurrently with the journey during every measured repetition; warm-ups remain unmeasured.
+The saved sample interval can be 0.5, 1 or 2 seconds. PSI is marked root-required and is disabled
+when the selected target does not expose both root and PSI capabilities. The other five defaults do
+not require root.
+
 A budget selects a metric and aggregation: minimum, maximum, mean, median, P90, P95, count, rate or
 growth percent. It can define:
 
@@ -101,6 +108,12 @@ check, inspect results, promote a completed run with at least one successful att
 open registered artifacts. Each journey card can insert a new step directly above or below itself;
 the empty journey state provides **Add first step**. Removing every budget enables evidence-only
 mode without disabling the run action.
+
+The check is owned by the background Release Guard service rather than the page. Navigating to Home,
+Dashboard, Compare or Player Debugger does not cancel it. Returning to Release Guard restores the
+current phase, attempt, step and result from `/api/release/status`; **Run release check** remains
+disabled until the active check completes or cancellation is confirmed. Project, scenario, budget
+and capture drafts remain in local browser storage.
 
 The local routes are `/api/release/projects`, `/api/release/scenarios`,
 `/api/release/capabilities`, `/api/release/start`, `/api/release/stop`,

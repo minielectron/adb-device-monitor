@@ -45,6 +45,11 @@ class ReleaseGuardJsonTest {
                     "cpu", "CPU p95", MetricDefinition("cpu", "%", true), Aggregation.P95,
                     absoluteLimit = 80.0, relativeRegressionLimitPct = 10.0
                 )
+            ),
+            capture = CaptureSettings(
+                metrics = setOf(MetricDefinition("cpu_util_pct", "%", true)),
+                intervalSec = 0.5,
+                configured = true
             )
         )
 
@@ -54,6 +59,25 @@ class ReleaseGuardJsonTest {
         assertTrue("\"type\": \"installApk\"" in encoded)
         assertTrue("\"type\": \"launchDeepLink\"" in encoded)
         assertIs<ScenarioStep.Shell>(decoded.steps[19])
+    }
+
+    @Test fun legacyCaptureSettingsDefaultToOneSecond() {
+        val scenario = ReleaseScenario(
+            id = "legacy",
+            name = "Legacy",
+            packageName = "com.example.player",
+            steps = listOf(ScenarioStep.LaunchApp())
+        )
+        val json = JsonParser.parseString(ReleaseGuardJson.scenario(scenario)).asJsonObject
+        json.getAsJsonObject("capture").apply {
+            remove("intervalSec")
+            remove("configured")
+        }
+
+        val decoded = ReleaseGuardJson.parseScenario(json.toString())
+
+        assertEquals(1.0, decoded.capture.intervalSec)
+        assertEquals(false, decoded.capture.configured)
     }
 
     @Test fun manifestsPreserveMetadataAndUnicodePaths() {

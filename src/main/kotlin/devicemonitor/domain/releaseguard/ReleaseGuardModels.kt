@@ -197,7 +197,9 @@ data class PerformanceBudget(
 
 data class CaptureSettings(
     val metrics: Set<MetricDefinition> = emptySet(),
-    val requiredCapabilities: Set<DeviceCapability> = emptySet()
+    val requiredCapabilities: Set<DeviceCapability> = emptySet(),
+    val intervalSec: Double = 1.0,
+    val configured: Boolean = false
 )
 
 data class ReleaseScenario(
@@ -231,6 +233,7 @@ data class ReleaseScenario(
         if (packageName.isBlank()) errors += "Package name is required"
         if (repetitions !in 1..100) errors += "Repetitions must be between 1 and 100"
         if (warmups !in 0..20) errors += "Warmups must be between 0 and 20"
+        if (capture.intervalSec !in 0.25..60.0) errors += "Capture interval must be between 0.25 and 60 seconds"
         if (steps.isEmpty()) errors += "Scenario must contain at least one step"
 
         var openSection: String? = null

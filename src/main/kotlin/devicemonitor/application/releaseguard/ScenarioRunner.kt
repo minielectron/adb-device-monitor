@@ -387,7 +387,7 @@ class ScenarioRunner(
         return SessionConfig(
             target = serial,
             durationSec = 86_400.0,
-            intervalSec = 1.0,
+            intervalSec = scenario.capture.intervalSec,
             packageName = scenario.packageName,
             logcatEnabled = DeviceCapability.LOGCAT in capabilities,
             jankEnabled = enabled("jank_pct", "frame_input_ms", "frame_anim_ms", "frame_layout_ms", "frame_draw_ms") && DeviceCapability.GFXINFO in capabilities,
@@ -398,6 +398,8 @@ class ScenarioRunner(
             csvOverride = File(attemptDir, "samples.csv"),
             runDirectoryOverride = attemptDir,
             cpuUtilEnabled = enabled("cpu", "cpu_util_pct"),
+            perCoreEnabled = enabled("per_core_cpu_pct"),
+            topProcsEnabled = enabled("top_process_cpu_pct"),
             memoryMbEnabled = enabled("memory", "memory_used_mb", "memory_available_mb"),
             memoryPctEnabled = enabled("memory_used_pct"),
             swapEnabled = enabled("swap_used_mb"),
@@ -411,7 +413,8 @@ class ScenarioRunner(
             playbackEnabled = enabled("playback_state", "tunnel_mode") && DeviceCapability.PLAYBACK_DIAGNOSTICS in capabilities,
             appPssEnabled = enabled("pss", "app_pss_mb"),
             appProcCpuEnabled = enabled("app_cpu_pct"),
-            mainThreadCpuEnabled = enabled("main_thread_cpu_pct")
+            mainThreadCpuEnabled = enabled("main_thread_cpu_pct"),
+            topMemEnabled = enabled("top_process_memory_mb")
         )
     }
 

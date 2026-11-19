@@ -59,6 +59,42 @@ class ScenarioRunnerTest {
         }
     }
 
+    @Test fun selectedDiagnosticsShareOneCaptureSessionAtTheConfiguredInterval() {
+        lateinit var received: SessionConfig
+        fixture(CaptureSessionFactory { config ->
+            received = config
+            FakeCapture(config.runDirectoryOverride)
+        }).use { f ->
+            val capture = CaptureSettings(
+                metrics = setOf(
+                    MetricDefinition("cpu_util_pct"),
+                    MetricDefinition("per_core_cpu_pct"),
+                    MetricDefinition("top_process_cpu_pct"),
+                    MetricDefinition("memory_used_mb"),
+                    MetricDefinition("psi_cpu"),
+                    MetricDefinition("top_process_memory_mb")
+                ),
+                intervalSec = 0.5,
+                configured = true
+            )
+            val manifest = f.runner.run(
+                project(),
+                scenario().copy(capture = capture),
+                FakeDriver(allCapabilities())
+            )
+
+            assertEquals(ExecutionState.EVIDENCE_ONLY, manifest.state)
+            assertEquals(0.5, received.intervalSec)
+            assertTrue(received.cpuUtilEnabled)
+            assertTrue(received.perCoreEnabled)
+            assertTrue(received.topProcsEnabled)
+            assertTrue(received.memoryMbEnabled)
+            assertTrue(received.psiEnabled)
+            assertTrue(received.topMemEnabled)
+            assertTrue(received.logcatEnabled)
+        }
+    }
+
     @Test fun failedAttemptKeepsEvidenceAndCannotPass() {
         fixture().use { f ->
             val driver = FakeDriver(allCapabilities(), failOn = ScenarioStep.LaunchApp::class.java)
