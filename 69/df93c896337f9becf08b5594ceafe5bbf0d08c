@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-11-19-release-guard-live-step-focus-design.md
+  s_6a41e6dc5a6d74::t_daa3a34621afcb 1-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "69df93c896337f9becf08b5594ceafe5bbf0d08c",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
