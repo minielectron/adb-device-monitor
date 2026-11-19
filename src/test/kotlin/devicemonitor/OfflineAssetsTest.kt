@@ -66,6 +66,14 @@ class OfflineAssetsTest {
         assertContains(RELEASE_GUARD_PAGE, "releaseBusy||checks.some")
         assertContains(RELEASE_GUARD_PAGE, "updateReadiness();pollStatus();")
         assertContains(RELEASE_GUARD_PAGE, "caps.indexOf('ROOT')>=0&&caps.indexOf('PSI')>=0")
+        assertContains(RELEASE_GUARD_PAGE, "class=\"guard-step-status\"")
+        assertContains(RELEASE_GUARD_PAGE, "row.classList.add('running')")
+        assertContains(RELEASE_GUARD_PAGE, "row.classList.add('done')")
+        assertContains(RELEASE_GUARD_PAGE, "aria-current','step'")
+        assertContains(RELEASE_GUARD_PAGE, "scrollIntoView({behavior:reduced?'auto':'smooth'")
+        assertContains(RELEASE_GUARD_PAGE, "prefers-reduced-motion:reduce")
+        assertContains(RELEASE_GUARD_PAGE, "data-phase=\"WARM_UP\"")
+        assertContains(RELEASE_GUARD_PAGE, "Release ready")
         assertFalse("window.open(" in RELEASE_GUARD_PAGE)
     }
 

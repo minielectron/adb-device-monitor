@@ -323,8 +323,11 @@ class ScenarioRunner(
                 is ScenarioStep.EndSection -> step.section
                 else -> currentSection
             }
+            progress = progress.copy(
+                step = index + 1,
+                message = "${if (measured) "Attempt" else "Warm-up"} $attempt · Running $label"
+            )
             if (measured) {
-                progress = progress.copy(step = index + 1, message = "Running $label")
                 capture?.addMarker(attempt, index + 1, label, section, startType)
             }
             try {

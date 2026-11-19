@@ -115,6 +115,11 @@ current phase, attempt, step and result from `/api/release/status`; **Run releas
 disabled until the active check completes or cancellation is confirmed. Project, scenario, budget
 and capture drafts remain in local browser storage.
 
+During warm-ups and measured captures, the existing journey cards act as the live execution view.
+Completed steps are marked **Done**, the active step is marked **Running** with a phase-colored
+accent, and the page centers that card once when execution advances. Reduced-motion preferences
+disable pulsing and smooth scrolling.
+
 The local routes are `/api/release/projects`, `/api/release/scenarios`,
 `/api/release/capabilities`, `/api/release/start`, `/api/release/stop`,
 `/api/release/status`, `/api/release/result`, `/api/release/baseline` and

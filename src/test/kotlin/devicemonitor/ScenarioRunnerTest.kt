@@ -95,6 +95,33 @@ class ScenarioRunnerTest {
         }
     }
 
+    @Test fun liveProgressTracksWarmUpAndMeasuredJourneySteps() {
+        fixture().use { f ->
+            val observed = mutableListOf<ReleaseGuardProgress>()
+            val scenario = scenario(
+                steps = listOf(
+                    ScenarioStep.LaunchApp("Open player"),
+                    ScenarioStep.Wait(1, "Settle")
+                )
+            ).copy(warmups = 1)
+
+            f.runner.run(
+                project(),
+                scenario,
+                FakeDriver(allCapabilities(), onPerform = { observed += f.runner.progress })
+            )
+
+            assertEquals(listOf(1, 2, 1, 2), observed.map { it.step })
+            assertEquals(listOf(ExecutionState.WARM_UP, ExecutionState.WARM_UP), observed.take(2).map { it.state })
+            assertEquals(
+                listOf(ExecutionState.EXECUTE_AND_CAPTURE, ExecutionState.EXECUTE_AND_CAPTURE),
+                observed.drop(2).map { it.state }
+            )
+            assertContains(observed.first().message, "Warm-up 1 · Running Open player")
+            assertContains(observed.last().message, "Attempt 1 · Running Settle")
+        }
+    }
+
     @Test fun failedAttemptKeepsEvidenceAndCannotPass() {
         fixture().use { f ->
             val driver = FakeDriver(allCapabilities(), failOn = ScenarioStep.LaunchApp::class.java)
@@ -228,7 +255,8 @@ class ScenarioRunnerTest {
     private class FakeDriver(
         private val capabilities: Set<DeviceCapability>,
         private val failOn: Class<out ScenarioStep>? = null,
-        private val failureMessage: String = "synthetic step failure"
+        private val failureMessage: String = "synthetic step failure",
+        private val onPerform: () -> Unit = {}
     ) : DeviceDriver {
         override val serial = "fake-device"
         override fun target(refresh: Boolean) = TargetDevice(
@@ -244,6 +272,7 @@ class ScenarioRunnerTest {
             artifactDirectory: File,
             cancelled: () -> Boolean
         ): StepOutput {
+            onPerform()
             if (failOn?.isInstance(step) == true) error(failureMessage)
             return StepOutput("ok")
         }
