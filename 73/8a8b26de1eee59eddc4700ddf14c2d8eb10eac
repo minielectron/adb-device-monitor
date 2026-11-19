@@ -1,0 +1,44 @@
+src/test/kotlin/devicemonitor/ReleaseGuardJsonTest.kt
+  s_6a41e6dc5a6d74::t_de190c0ec8802e 25,55-56
+src/main/kotlin/devicemonitor/data/storage/ReleaseGuardJson.kt
+  s_6a41e6dc5a6d74::t_d6ad342536e22c 107
+src/main/kotlin/devicemonitor/application/Session.kt
+  s_6a41e6dc5a6d74::t_d6ad342536e22c 689,691-694
+src/test/kotlin/devicemonitor/ReleaseGuardModelTest.kt
+  s_6a41e6dc5a6d74::t_de190c0ec8802e 25,36-60
+src/test/kotlin/devicemonitor/ReleaseGuardArtifactStoreTest.kt
+  s_6a41e6dc5a6d74::t_de190c0ec8802e 23-24
+src/main/kotlin/devicemonitor/data/storage/ArtifactStore.kt
+  s_6a41e6dc5a6d74::t_de190c0ec8802e 40-42
+docs/release-guard.md
+  s_6a41e6dc5a6d74::t_d6ad342536e22c 34,38-43,77-80
+  s_6a41e6dc5a6d74::t_de190c0ec8802e 71-73
+  s_6a41e6dc5a6d74::t_734b6c7ca3cb6f 81
+src/main/kotlin/devicemonitor/data/device/AdbDeviceDriver.kt
+  s_6a41e6dc5a6d74::t_d6ad342536e22c 54-57
+src/test/kotlin/devicemonitor/AdbDeviceDriverTest.kt
+  s_6a41e6dc5a6d74::t_de190c0ec8802e 62-87
+src/test/kotlin/devicemonitor/OfflineAssetsTest.kt
+  s_6a41e6dc5a6d74::t_de190c0ec8802e 44-48
+src/main/kotlin/devicemonitor/presentation/web/ReleaseGuardPage.kt
+  s_6a41e6dc5a6d74::t_d6ad342536e22c 145,201,205,218
+  s_6a41e6dc5a6d74::t_de190c0ec8802e 224
+src/main/kotlin/devicemonitor/domain/releaseguard/ReleaseGuardModels.kt
+  s_6a41e6dc5a6d74::t_d6ad342536e22c 72,217,241,323-346,349
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "738a8b26de1eee59eddc4700ddf14c2d8eb10eac",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
