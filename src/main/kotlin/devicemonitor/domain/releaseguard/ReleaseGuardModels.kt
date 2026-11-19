@@ -168,7 +168,7 @@ enum class ExecutionState {
     fun isTerminal(): Boolean = this in setOf(PASSED, WARNING, EVIDENCE_ONLY, FAILED, CANCELLED)
 }
 
-enum class ScenarioMarkerType { STEP_START, STEP_END, SECTION_START, SECTION_END }
+enum class ScenarioMarkerType { ATTEMPT_START, STEP_START, STEP_END, SECTION_START, SECTION_END, ATTEMPT_END }
 enum class ScenarioMarkerOutcome { RUNNING, PASS, FAIL, SKIP }
 
 data class ScenarioMarker(

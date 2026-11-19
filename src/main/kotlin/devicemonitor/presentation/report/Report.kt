@@ -566,11 +566,12 @@ class PdfReport(
         for (event in scenarioMarkers) {
             val marker = ValueMarker(event.elapsedSec)
             marker.paint = when (event.type) {
+                ScenarioMarkerType.ATTEMPT_START, ScenarioMarkerType.ATTEMPT_END -> Color(230, 170, 75, 150)
                 ScenarioMarkerType.SECTION_START, ScenarioMarkerType.SECTION_END -> Color(125, 92, 210, 170)
                 ScenarioMarkerType.STEP_START, ScenarioMarkerType.STEP_END -> Color(60, 150, 145, 110)
             }
             marker.stroke = zapStroke
-            if (event.type == ScenarioMarkerType.SECTION_START) {
+            if (event.type == ScenarioMarkerType.SECTION_START || event.type == ScenarioMarkerType.ATTEMPT_START) {
                 marker.label = event.section ?: event.label
                 marker.labelFont = java.awt.Font("SansSerif", java.awt.Font.PLAIN, 9)
                 marker.labelPaint = Color(100, 70, 175)

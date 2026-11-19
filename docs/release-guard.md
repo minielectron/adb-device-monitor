@@ -12,7 +12,7 @@ Android-device and player-SDK agnostic.
 3. **Prepare** project, scenario, optional APK and local artifact directories.
 4. Run configured **warm-ups** without using them as measured results.
 5. Run one to 100 measured **repetitions**, recording step/section markers and performance samples.
-6. Finalize attempt artifacts and recover any usable partial evidence.
+6. Finalize one complete scenario evidence set and recover any usable partial evidence.
 7. Evaluate absolute and optional baseline-relative budgets.
 8. Export HTML, PDF, JSON, JUnit XML and CSV evidence.
 
@@ -49,9 +49,11 @@ script.
 
 ## Measurements and budgets
 
-Measured attempts reuse `MonitorSession`, so metric sources and transformations are those documented
+The complete measured scenario reuses one continuous `MonitorSession`, so metric sources and transformations are those documented
 in [metrics.md](metrics.md). Step and section boundaries become timestamped scenario markers, which
-allow a budget to evaluate either the whole attempt or one named section.
+allow a budget to evaluate either the full repetition or one named section. Repetition boundaries
+remain internal to budget aggregation and normalized graphs; Release Guard does not generate
+per-repetition analysis.
 
 The scenario capture configuration enables CPU utilization, per-core CPU, top-process CPU, memory
 used, PSI pressure and top-process memory by default. These collectors and required logcat capture
@@ -83,20 +85,23 @@ The default root is `~/ADB Device Monitor/ReleaseGuard/`; `--release-root` selec
 root. It contains `release-guard.db` as an index plus project/scenario/run artifact folders. Each
 leaf run folder is named `<scenario>_<UTC timestamp>_<short id>` so copied evidence remains
 identifiable without opening its manifest. A run
-directory is confined beneath the configured root and includes an atomic `run.json` manifest,
-attempt directories and registered outputs.
+directory is confined beneath the configured root and includes an atomic `run.json` manifest and
+registered scenario outputs. Step-created evidence such as screenshots may remain grouped by
+repetition, but monitoring evidence is run-level.
 
-Each measured attempt requires the device logcat capability. Release Guard clears the buffer when
-capture starts, streams the complete unfiltered run log to `attempt-NN/logcat.log`, and stops the
-stream during finalization even when a journey step fails before enough performance samples exist.
-The log is registered as evidence and can be opened from the result screen. Release Guard also
-builds a run-level `logcat.log` after each measured iteration. It contains every iteration in order
-with explicit PASS/FAIL boundaries while retaining the original `attempt-NN/logcat.log` files.
+The measured scenario requires the device logcat capability. Release Guard clears the buffer once,
+starts monitoring before the first measured repetition, streams the complete unfiltered scenario to
+one `logcat.log`, and stops monitoring after the final measured repetition. The same session writes
+one `device-info.log`, `samples.csv`, `performance-report.pdf` and `anomalies.log`. Warm-ups are
+excluded. If a measured repetition fails, its execution issue is appended to the run-level
+`anomalies.log`; no per-repetition log or analysis report is created.
 
 Completed exports currently include `report.html`, `report.pdf`, `evaluation.json`,
-`result.junit.xml`, `summary.csv`, and attempt evidence such as monitoring reports, samples and logs.
-Scenario screenshot steps add requested PNG files. The manifest records artifact paths and final
-state so incomplete or corrupt runs can be distinguished during recovery.
+`result.junit.xml`, `summary.csv`, the complete scenario log, device information, anomalies, samples
+and performance graphs. `report.html` normalizes successful repetitions to scenario progress and
+shows the median with a P10–P90 variability band instead of separate repetition reports. Scenario
+screenshot steps add requested PNG files. The manifest records artifact paths and final state so
+incomplete or corrupt runs can be distinguished during recovery.
 
 No cloud account, hosted database, analytics SDK, CDN or internet API is used. The UI and CLI read
 the same local SQLite index and files.

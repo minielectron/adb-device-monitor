@@ -71,7 +71,7 @@ java -jar build/libs/adb-device-monitor-1.0.0-all.jar \
   --release-json
 ```
 
-`--release-json` writes only the absolute evaluation JSON path to stdout; progress stays on stderr. Artifacts under the local root include `report.html`, `report.pdf`, `evaluation.json`, `result.junit.xml`, `summary.csv`, a combined measured-iteration `logcat.log`, and per-attempt reports, samples, and logs. No network service or cloud account is used.
+`--release-json` writes only the absolute evaluation JSON path to stdout; progress stays on stderr. Artifacts under the local root include `report.html`, `report.pdf`, `evaluation.json`, `result.junit.xml`, `summary.csv`, one complete measured-scenario `logcat.log`, device information, consolidated anomalies, samples and performance graphs. Iteration boundaries are internal to aggregation; iteration failures are written to the single anomalies file instead of separate iteration reports. No network service or cloud account is used.
 
 | Exit | Meaning |
 |------|---------|

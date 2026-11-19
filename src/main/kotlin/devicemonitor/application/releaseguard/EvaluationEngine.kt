@@ -14,9 +14,9 @@ object EvaluationEngine {
         allowCompatibleDeviceBaseline: Boolean = false
     ): ReleaseEvaluation {
         val successful = attempts.filter { it.successful }
-        val executionErrors = attempts.filterNot { it.successful }.map {
-            "Attempt ${it.attempt} failed${it.error?.let { message -> ": $message" } ?: ""}"
-        }
+        val executionErrors = if (attempts.any { !it.successful }) {
+            listOf("Scenario execution failed; see anomalies.log")
+        } else emptyList()
         val results = budgets.map { budget ->
             evaluateBudget(budget, successful, currentIdentity, baseline, allowCompatibleDeviceBaseline)
         }

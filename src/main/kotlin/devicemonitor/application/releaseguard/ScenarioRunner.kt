@@ -4,12 +4,13 @@ import devicemonitor.application.MonitorSession
 import devicemonitor.application.SessionConfig
 import devicemonitor.data.adb.Adb
 import devicemonitor.data.device.DeviceDriver
+import devicemonitor.data.logcat.AnomalyScanner
 import devicemonitor.data.storage.*
 import devicemonitor.domain.*
 import devicemonitor.domain.releaseguard.*
 import devicemonitor.presentation.report.ReleaseGuardReport
+import devicemonitor.presentation.report.ScenarioRunEvidence
 import java.io.File
-import java.io.FileOutputStream
 import java.time.Clock
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
@@ -115,6 +116,10 @@ class ScenarioRunner(
             startedAt = startedAt,
             updatedAt = startedAt
         )
+        val attempts = mutableListOf<AttemptSummary>()
+        val allMarkers = mutableListOf<ScenarioMarker>()
+        val executionAnomalies = mutableListOf<Anomaly>()
+        val artifactMap = linkedMapOf<String, String>()
 
         fun persist(
             state: ExecutionState = manifest.state,
@@ -174,79 +179,129 @@ class ScenarioRunner(
                 }
             }
 
-            val attempts = mutableListOf<AttemptSummary>()
-            val allMarkers = mutableListOf<ScenarioMarker>()
-            val artifactMap = linkedMapOf<String, String>()
-            for (attempt in 1..scenario.repetitions) {
-                checkCancelled()
-                val attemptDir = artifacts.attemptDirectory(location, attempt)
-                persist(
-                    ExecutionState.EXECUTE_AND_CAPTURE,
-                    attempts = attempts,
-                    markers = allMarkers,
-                    artifactsMap = artifactMap,
-                    device = identity,
-                    message = "Running measured attempt $attempt of ${scenario.repetitions}",
-                    attempt = attempt,
-                    step = 0
-                )
-                val capture = captureFactory.create(sessionConfig(scenario, driver.serial, attemptDir, target.capabilities))
-                var stepError: String? = null
-                try {
-                    capture.start()
-                    awaitCaptureStart(capture)
-                    executeSteps(scenario, driver, attemptDir, capture, attempt, measured = true)
-                    awaitMinimumSamples(capture, 2, 10_000)
-                } catch (e: Exception) {
-                    stepError = e.message ?: e.toString()
-                } finally {
+            val capture = captureFactory.create(sessionConfig(scenario, driver.serial, location.directory, target.capabilities))
+            var measurementFailure: Exception? = null
+            try {
+                capture.start()
+                awaitCaptureStart(capture)
+                for (attempt in 1..scenario.repetitions) {
+                    checkCancelled()
+                    require(capture.status == CaptureStatus.RUNNING) { capture.error ?: "Performance capture stopped unexpectedly" }
+                    val attemptDir = artifacts.attemptDirectory(location, attempt)
+                    persist(
+                        ExecutionState.EXECUTE_AND_CAPTURE,
+                        attempts = attempts,
+                        markers = capture.markers(),
+                        artifactsMap = artifactMap,
+                        device = identity,
+                        message = "Running measured attempt $attempt of ${scenario.repetitions}",
+                        attempt = attempt,
+                        step = 0
+                    )
+                    val sampleStart = capture.samples().size
+                    capture.addMarker(
+                        attempt, 0, "Measured iteration $attempt", null,
+                        ScenarioMarkerType.ATTEMPT_START
+                    )
+                    var stepError: String? = null
                     try {
-                        capture.stop()
-                        awaitCaptureEnd(capture, 120_000)
+                        executeSteps(scenario, driver, attemptDir, capture, attempt, measured = true)
                     } catch (e: Exception) {
-                        if (stepError == null) stepError = e.message ?: e.toString()
+                        if (e is InterruptedException) throw e
+                        stepError = e.message ?: e.toString()
                     }
+                    if (capture.status == CaptureStatus.RUNNING) {
+                        awaitMinimumSamples(capture, sampleStart + 2, 10_000)
+                    } else if (stepError == null) {
+                        stepError = capture.error ?: "Performance capture stopped unexpectedly"
+                    }
+                    capture.addMarker(
+                        attempt, scenario.steps.size + 1, "Measured iteration $attempt", null,
+                        ScenarioMarkerType.ATTEMPT_END,
+                        if (stepError == null) ScenarioMarkerOutcome.PASS else ScenarioMarkerOutcome.FAIL,
+                        stepError
+                    )
+                    val markers = capture.markers().filter { it.attempt == attempt }
+                    val range = attemptRange(markers)
+                    val samples = range?.let { window -> capture.samples().filter { it.elapsedSec in window } }.orEmpty()
+                    val anomalies = range?.let { window -> filteredAnomalies(capture.anomalies(), window) }.orEmpty()
+                    val attemptError = stepError ?: if (range == null) "Measured iteration boundary is incomplete" else null
+                    val successful = attemptError == null && capture.status == CaptureStatus.RUNNING
+                    attempts += AttemptSummary(
+                        attempt,
+                        successful,
+                        extractMetrics(scenario.budgets, samples, anomalies, markers),
+                        attemptError
+                    )
+                    attemptError?.let { error ->
+                        executionAnomalies += Anomaly(
+                            now(),
+                            markers.lastOrNull { it.type == ScenarioMarkerType.ATTEMPT_END }?.elapsedSec,
+                            "Scenario iteration failure",
+                            "Measured repetition $attempt: ${error.replace(Regex("\\s+"), " ").trim()}"
+                        )
+                    }
+                    attemptDir.walkTopDown().filter { it.isFile }.forEach { file ->
+                        val key = "attempt-%02d/%s".format(attempt, file.name)
+                        artifactMap[key] = artifacts.relative(file)
+                    }
+                    persist(
+                        ExecutionState.EXECUTE_AND_CAPTURE,
+                        attempts = attempts,
+                        markers = capture.markers(),
+                        artifactsMap = artifactMap,
+                        device = identity,
+                        message = "Completed measured attempt $attempt",
+                        attempt = attempt,
+                        step = scenario.steps.size
+                    )
+                    checkCancelled()
                 }
-                val markers = capture.markers()
-                allMarkers += markers
-                val attemptLog = File(attemptDir, "logcat.log")
-                val logError = when {
-                    !attemptLog.isFile -> "Required logcat evidence was not created"
-                    attemptLog.length() == 0L -> "Required logcat evidence is empty"
-                    else -> null
+            } catch (e: Exception) {
+                measurementFailure = e
+            } finally {
+                progress = progress.copy(state = ExecutionState.FINALIZE_ARTIFACTS, message = "Finalizing scenario evidence")
+                try {
+                    capture.stop()
+                    awaitCaptureEnd(capture, 120_000)
+                } catch (e: Exception) {
+                    if (measurementFailure == null) measurementFailure = e
                 }
-                val error = stepError ?: capture.error ?: logError
-                val successful = error == null && capture.status == CaptureStatus.DONE
-                val combinedLog = appendCombinedLog(
-                    File(location.directory, "logcat.log"),
-                    attemptLog,
-                    attempt,
-                    scenario.repetitions,
-                    successful,
-                    error
-                )
-                attempts += AttemptSummary(
-                    attempt,
-                    successful,
-                    extractMetrics(scenario.budgets, capture.samples(), capture.anomalies(), markers),
-                    error
-                )
-                attemptDir.walkTopDown().filter { it.isFile }.forEach { file ->
-                    val key = "attempt-%02d/%s".format(attempt, file.name)
-                    artifactMap[key] = artifacts.relative(file)
-                }
-                artifactMap["logcat.log"] = artifacts.relative(combinedLog)
-                persist(
-                    ExecutionState.FINALIZE_ARTIFACTS,
-                    attempts = attempts,
-                    markers = allMarkers,
-                    artifactsMap = artifactMap,
-                    device = identity,
-                    message = "Finalized attempt $attempt",
-                    attempt = attempt,
-                    step = scenario.steps.size
+            }
+
+            allMarkers += capture.markers()
+            val logFile = File(location.directory, "logcat.log")
+            val logError = when {
+                !logFile.isFile -> "Required scenario logcat evidence was not created"
+                logFile.length() == 0L -> "Required scenario logcat evidence is empty"
+                else -> null
+            }
+            val captureError = capture.error ?: logError
+            if (captureError != null) {
+                if (attempts.isEmpty()) attempts += AttemptSummary(1, false, error = captureError)
+                else attempts[attempts.lastIndex] = attempts.last().copy(successful = false, error = captureError)
+                executionAnomalies += Anomaly(now(), capture.samples().lastOrNull()?.elapsedSec, "Capture failure", captureError)
+            }
+            measurementFailure?.takeUnless { it is InterruptedException }?.let { failure ->
+                executionAnomalies += Anomaly(
+                    now(), capture.samples().lastOrNull()?.elapsedSec, "Scenario execution failure",
+                    (failure.message ?: failure.toString()).replace(Regex("\\s+"), " ").trim()
                 )
             }
+            val scenarioAnomalies = (capture.anomalies() + executionAnomalies).distinctBy { it.type to it.detail }
+            AnomalyScanner.writeReport(scenarioAnomalies, File(location.directory, "anomalies.log"))
+            registerRunArtifacts(location, artifactMap)
+            persist(
+                ExecutionState.FINALIZE_ARTIFACTS,
+                attempts = attempts,
+                markers = allMarkers,
+                artifactsMap = artifactMap,
+                device = identity,
+                message = "Finalized complete scenario capture",
+                attempt = attempts.size,
+                step = scenario.steps.size
+            )
+            measurementFailure?.let { throw it }
 
             checkCancelled()
             persist(
@@ -275,7 +330,14 @@ class ScenarioRunner(
                 message = "Writing result artifacts"
             )
             val exportManifest = manifest.copy(artifacts = artifactMap.toMap())
-            ReleaseGuardReport.write(location.directory, project, scenario, exportManifest, selectedBaseline)
+            ReleaseGuardReport.write(
+                location.directory,
+                project,
+                scenario,
+                exportManifest,
+                selectedBaseline,
+                ScenarioRunEvidence(capture.samples(), scenarioAnomalies, allMarkers)
+            )
                 .forEach { (name, file) -> artifactMap[name] = artifacts.relative(file) }
             val terminal = when (evaluation.verdict) {
                 Verdict.PASS -> ExecutionState.PASSED
@@ -350,38 +412,19 @@ class ScenarioRunner(
         }
     }
 
-    private fun appendCombinedLog(
-        combined: File,
-        attemptLog: File,
-        attempt: Int,
-        totalAttempts: Int,
-        successful: Boolean,
-        error: String?
-    ): File {
-        combined.parentFile?.mkdirs()
-        val status = if (successful) "PASS" else "FAIL"
-        val detail = error?.replace(Regex("[\\r\\n]+"), " ")?.trim()?.take(500)?.takeIf { it.isNotEmpty() }
-        val heading = buildString {
-            append("===== ITERATION $attempt OF $totalAttempts | $status")
-            detail?.let { append(" | ").append(it) }
-            append(" =====\n")
+    private fun registerRunArtifacts(location: RunLocation, artifactMap: MutableMap<String, String>) {
+        listOf(
+            "logcat.log", "device-info.log", "anomalies.log", "samples.csv",
+            "performance-report.pdf", "run.log"
+        ).forEach { name ->
+            location.directory.resolve(name).takeIf(File::isFile)?.let { artifactMap[name] = artifacts.relative(it) }
         }
-        FileOutputStream(combined, true).buffered().use { output ->
-            output.write(heading.toByteArray(Charsets.UTF_8))
-            if (attemptLog.isFile && attemptLog.length() > 0L) {
-                attemptLog.inputStream().use { it.copyTo(output) }
-            } else {
-                output.write("LOGCAT UNAVAILABLE\n".toByteArray(Charsets.UTF_8))
-            }
-            output.write("\n===== END ITERATION $attempt =====\n\n".toByteArray(Charsets.UTF_8))
-        }
-        return combined
     }
 
     private fun sessionConfig(
         scenario: ReleaseScenario,
         serial: String,
-        attemptDir: File,
+        runDirectory: File,
         capabilities: Set<DeviceCapability>
     ): SessionConfig {
         val metrics = (scenario.capture.metrics.map { it.id } + scenario.budgets.map { it.metric.id })
@@ -396,10 +439,10 @@ class ScenarioRunner(
             jankEnabled = enabled("jank_pct", "frame_input_ms", "frame_anim_ms", "frame_layout_ms", "frame_draw_ms") && DeviceCapability.GFXINFO in capabilities,
             perfettoEnabled = enabled("perfetto") && DeviceCapability.PERFETTO in capabilities,
             label = "release-guard",
-            outputDir = attemptDir.parentFile.absolutePath,
-            outputOverride = File(attemptDir, "report.pdf"),
-            csvOverride = File(attemptDir, "samples.csv"),
-            runDirectoryOverride = attemptDir,
+            outputDir = runDirectory.parentFile.absolutePath,
+            outputOverride = File(runDirectory, "performance-report.pdf"),
+            csvOverride = File(runDirectory, "samples.csv"),
+            runDirectoryOverride = runDirectory,
             cpuUtilEnabled = enabled("cpu", "cpu_util_pct"),
             perCoreEnabled = enabled("per_core_cpu_pct"),
             topProcsEnabled = enabled("top_process_cpu_pct"),
@@ -451,6 +494,12 @@ class ScenarioRunner(
     private fun sectionRange(section: String, markers: List<ScenarioMarker>): ClosedFloatingPointRange<Double>? {
         val start = markers.firstOrNull { it.type == ScenarioMarkerType.SECTION_START && it.section == section }?.elapsedSec
         val end = markers.lastOrNull { it.type == ScenarioMarkerType.SECTION_END && it.section == section }?.elapsedSec
+        return if (start != null && end != null && end >= start) start..end else null
+    }
+
+    private fun attemptRange(markers: List<ScenarioMarker>): ClosedFloatingPointRange<Double>? {
+        val start = markers.firstOrNull { it.type == ScenarioMarkerType.ATTEMPT_START }?.elapsedSec
+        val end = markers.lastOrNull { it.type == ScenarioMarkerType.ATTEMPT_END }?.elapsedSec
         return if (start != null && end != null && end >= start) start..end else null
     }
 

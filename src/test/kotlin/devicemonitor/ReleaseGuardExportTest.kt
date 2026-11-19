@@ -2,9 +2,12 @@ package devicemonitor
 
 import devicemonitor.data.storage.ProjectRecord
 import devicemonitor.data.storage.RunManifest
+import devicemonitor.domain.Anomaly
+import devicemonitor.domain.Sample
 import devicemonitor.domain.releaseguard.*
 import devicemonitor.presentation.report.JunitExporter
 import devicemonitor.presentation.report.ReleaseGuardReport
+import devicemonitor.presentation.report.ScenarioRunEvidence
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.text.PDFTextStripper
 import java.nio.file.Files
@@ -83,6 +86,49 @@ class ReleaseGuardExportTest {
         assertContains(pdfText, "No performance budgets were configured")
     }
 
+    @Test fun scenarioReportAggregatesRepetitionsIntoNormalizedGraphs() {
+        val dir = Files.createTempDirectory("release-guard-aggregate").toFile()
+        val scenario = scenario().copy(
+            repetitions = 2,
+            capture = CaptureSettings(
+                metrics = setOf(MetricDefinition("cpu_util_pct", "%", true)),
+                configured = true
+            )
+        )
+        val manifest = manifest(evaluation()).copy(
+            attempts = listOf(
+                AttemptSummary(1, true, listOf(MetricSeries("cpu_util_pct", values = listOf(40.0, 60.0)))),
+                AttemptSummary(2, true, listOf(MetricSeries("cpu_util_pct", values = listOf(50.0, 70.0))))
+            )
+        )
+        val markers = listOf(
+            ScenarioMarker(0.0, 1, 0, "Measured iteration 1", type = ScenarioMarkerType.ATTEMPT_START),
+            ScenarioMarker(10.0, 1, 2, "Measured iteration 1", type = ScenarioMarkerType.ATTEMPT_END, outcome = ScenarioMarkerOutcome.PASS),
+            ScenarioMarker(12.0, 2, 0, "Measured iteration 2", type = ScenarioMarkerType.ATTEMPT_START),
+            ScenarioMarker(22.0, 2, 2, "Measured iteration 2", type = ScenarioMarkerType.ATTEMPT_END, outcome = ScenarioMarkerOutcome.PASS)
+        )
+        val samples = (0..10).map { sample(it.toDouble(), 40.0 + it) } +
+            (12..22).map { sample(it.toDouble(), 50.0 + it - 12) }
+        val evidence = ScenarioRunEvidence(
+            samples,
+            listOf(Anomaly("11-19 10:00:00.000", 8.0, "ANR", "synthetic anomaly")),
+            markers
+        )
+
+        val html = ReleaseGuardReport.write(dir, project(), scenario, manifest, baseline(), evidence)
+            .getValue("report.html").readText()
+
+        assertContains(html, "Normalized performance profile")
+        assertContains(html, "CPU utilization")
+        assertContains(html, "P10–P90 variability")
+        assertContains(html, "ANR")
+        assertContains(html, "2 repetition(s)")
+        assertFalse("<h2>Attempts</h2>" in html)
+        assertFalse("Execution health" in html)
+        assertContains(html, "class=\"chart-band\"")
+        assertContains(html, "class=\"chart-line\"")
+    }
+
     private fun project() = ProjectRecord(
         id = "player",
         name = "Player QA",
@@ -128,5 +174,28 @@ class ReleaseGuardExportTest {
         "baseline-1",
         BaselineIdentity("QA Device", "14", "build-1", "browse", 2),
         listOf(AttemptSummary(1, true))
+    )
+
+    private fun sample(t: Double, cpu: Double) = Sample(
+        elapsedSec = t,
+        cpuUtilPct = cpu,
+        cpuIdlePct = 100.0 - cpu,
+        cpuPsiSomeAvg10 = 0.0,
+        memPsiSomeAvg10 = 0.0,
+        memPsiFullAvg10 = 0.0,
+        ioPsiSomeAvg10 = 0.0,
+        memTotalMb = 4096.0,
+        memUsedMb = 2048.0,
+        memUsedPct = 50.0,
+        memAvailableMb = 2048.0,
+        cachedMb = 512.0,
+        swapUsedMb = 0.0,
+        load1 = 1.0,
+        perCoreUtilPct = listOf(cpu, cpu - 5),
+        netRxKbps = 0.0,
+        netTxKbps = 0.0,
+        cpuTempC = 40.0,
+        cpuFreqMhz = 1200.0,
+        majorFaultsPerSec = 0.0
     )
 }

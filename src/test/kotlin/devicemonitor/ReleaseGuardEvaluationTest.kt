@@ -56,7 +56,7 @@ class ReleaseGuardEvaluationTest {
             identity
         )
         assertEquals(Verdict.FAIL, failed.verdict)
-        assertEquals(listOf("Attempt 1 failed: device disconnected"), failed.executionErrors)
+        assertEquals(listOf("Scenario execution failed; see anomalies.log"), failed.executionErrors)
     }
 
     @Test fun relativeBaselineHonorsIdentityAndNormalizedOptIn() {
@@ -122,7 +122,7 @@ class ReleaseGuardEvaluationTest {
         assertEquals(Verdict.FAIL, result.verdict)
         assertEquals(BudgetStatus.FAIL, result.results[0].status)
         assertEquals(BudgetStatus.NOT_EVALUATED, result.results[1].status)
-        assertEquals(listOf("Attempt 2 failed: device disconnected"), result.executionErrors)
+        assertEquals(listOf("Scenario execution failed; see anomalies.log"), result.executionErrors)
     }
 
     @Test fun minimumDirectionTreatsLowerCurrentValueAsRegression() {

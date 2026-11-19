@@ -143,7 +143,8 @@ class ScenarioRunnerTest {
             assertFalse(manifest.attempts.single().successful)
             assertEquals(Verdict.FAIL, manifest.evaluation?.verdict)
             assertTrue(manifest.markers.any { it.outcome == ScenarioMarkerOutcome.FAIL })
-            assertTrue(manifest.evaluation?.executionErrors?.single()?.contains("synthetic step failure") == true)
+            assertEquals(listOf("Scenario execution failed; see anomalies.log"), manifest.evaluation?.executionErrors)
+            assertContains(f.root.resolve(manifest.artifacts.getValue("anomalies.log")).readText(), "synthetic step failure")
         }
     }
 
@@ -167,11 +168,11 @@ class ScenarioRunnerTest {
         }
     }
 
-    @Test fun zeroBudgetRunIsEvidenceOnlyAndCombinesEveryMeasuredIterationLog() {
+    @Test fun zeroBudgetRunUsesOneCaptureAndOneScenarioEvidenceSet() {
         var captureNumber = 0
         val factory = CaptureSessionFactory { config ->
             captureNumber += 1
-            FakeCapture(config.runDirectoryOverride, "raw log iteration $captureNumber\n")
+            FakeCapture(config.runDirectoryOverride, "raw full scenario log\n")
         }
         fixture(factory).use { f ->
             val manifest = f.runner.run(
@@ -182,38 +183,40 @@ class ScenarioRunnerTest {
 
             assertEquals(ExecutionState.EVIDENCE_ONLY, manifest.state)
             assertEquals(Verdict.NOT_EVALUATED, manifest.evaluation?.verdict)
-            val combined = f.root.resolve(manifest.artifacts.getValue("logcat.log")).readText()
-            assertTrue(combined.indexOf("raw log iteration 1") < combined.indexOf("raw log iteration 2"))
-            assertContains(combined, "===== ITERATION 1 OF 2 | PASS =====")
-            assertContains(combined, "===== END ITERATION 1 =====")
-            assertContains(combined, "===== ITERATION 2 OF 2 | PASS =====")
-            assertTrue("attempt-01/logcat.log" in manifest.artifacts)
-            assertTrue("attempt-02/logcat.log" in manifest.artifacts)
+            assertEquals(1, captureNumber)
+            assertEquals("raw full scenario log\n", f.root.resolve(manifest.artifacts.getValue("logcat.log")).readText())
+            listOf("device-info.log", "anomalies.log", "samples.csv", "performance-report.pdf").forEach {
+                assertTrue(it in manifest.artifacts, "$it should be registered once at run level")
+            }
+            assertFalse(manifest.artifacts.keys.any { it.matches(Regex("attempt-\\d+/logcat\\.log")) })
+            assertEquals(2, manifest.markers.count { it.type == ScenarioMarkerType.ATTEMPT_START })
+            assertEquals(2, manifest.markers.count { it.type == ScenarioMarkerType.ATTEMPT_END })
         }
     }
 
-    @Test fun missingIterationLogFailsRunAndLeavesExplicitCombinedEvidence() {
+    @Test fun missingScenarioLogFailsRunWithoutInventingEvidence() {
         fixture(CaptureSessionFactory { FakeCapture() }).use { f ->
             val manifest = f.runner.run(project(), scenario(), FakeDriver(allCapabilities()))
 
             assertEquals(ExecutionState.FAILED, manifest.state)
             assertEquals(Verdict.FAIL, manifest.evaluation?.verdict)
-            assertContains(manifest.attempts.single().error.orEmpty(), "logcat evidence was not created")
-            val combined = f.root.resolve(manifest.artifacts.getValue("logcat.log")).readText()
-            assertContains(combined, "LOGCAT UNAVAILABLE")
-            assertContains(combined, "| FAIL | Required logcat evidence was not created =====")
+            assertContains(manifest.attempts.single().error.orEmpty(), "scenario logcat evidence was not created")
+            assertFalse("logcat.log" in manifest.artifacts)
         }
     }
 
-    @Test fun combinedLogNormalizesMultilineFailureBoundary() {
+    @Test fun failedIterationPreservesRawScenarioLogAndOriginalError() {
         fixture().use { f ->
             val manifest = f.runner.run(
                 project(),
                 scenario(),
                 FakeDriver(allCapabilities(), ScenarioStep.LaunchApp::class.java, "first line\nsecond line")
             )
-            val combined = f.root.resolve(manifest.artifacts.getValue("logcat.log")).readText()
-            assertContains(combined, "| FAIL | first line second line =====")
+            assertEquals("synthetic logcat\n", f.root.resolve(manifest.artifacts.getValue("logcat.log")).readText())
+            assertContains(manifest.attempts.single().error.orEmpty(), "first line\nsecond line")
+            val anomalies = f.root.resolve(manifest.artifacts.getValue("anomalies.log")).readText()
+            assertContains(anomalies, "Scenario iteration failure")
+            assertContains(anomalies, "Measured repetition 1: first line second line")
         }
     }
 
@@ -289,10 +292,19 @@ class ScenarioRunnerTest {
 
         override fun start() { status = CaptureStatus.RUNNING }
         override fun stop() {
-            directory?.resolve("logcat.log")?.writeText(logText)
+            directory?.let { dir ->
+                dir.resolve("logcat.log").writeText(logText)
+                dir.resolve("device-info.log").writeText("QA Device\n")
+                dir.resolve("anomalies.log").writeText("No anomalies\n")
+                dir.resolve("samples.csv").writeText("elapsedSec,cpuUtilPct\n0,40\n")
+                dir.resolve("performance-report.pdf").writeText("synthetic performance report")
+            }
             status = CaptureStatus.DONE
         }
-        override fun samples() = listOf(sample(0.0, 40.0), sample(1.0, 60.0), sample(2.0, 55.0))
+        override fun samples(): List<Sample> {
+            val count = maxOf(3, (markerTime * 4).toInt() + 3)
+            return (0 until count).map { index -> sample(index * .25, 40.0 + index % 20) }
+        }
         override fun anomalies(): List<Anomaly> = emptyList()
         override fun markers(): List<ScenarioMarker> = markers.toList()
         override fun addMarker(

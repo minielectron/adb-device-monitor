@@ -17,6 +17,10 @@ This replaces the current model that creates and finalizes one monitor session p
 
 ## Run-level artifact contract
 
+Measured repetitions do not produce separate analysis artifacts or result actions. Their boundaries
+exist only for normalization and budget aggregation. Any execution issue within a repetition is
+consolidated into the run-level `anomalies.log` and affects the overall run verdict.
+
 The run folder contains one primary set of evidence:
 
 - `logcat.log`: complete unfiltered logcat for all measured repetitions.

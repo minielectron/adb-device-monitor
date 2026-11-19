@@ -149,7 +149,7 @@ object AnomalyScanner {
                 w.appendLine("No anomalies detected.")
                 return
             }
-            w.appendLine("# device time | time since run start | type | logcat line")
+            w.appendLine("# device time | time since run start | type | detail")
             for (a in anomalies) {
                 val t = a.elapsedSec?.let { "t=%.1fs".format(it) } ?: "t=?"
                 w.appendLine("${a.deviceTime} | $t | ${a.type} | ${a.detail}")
