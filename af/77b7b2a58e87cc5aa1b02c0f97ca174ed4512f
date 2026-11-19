@@ -1,0 +1,19 @@
+docs/superpowers/specs/2026-11-19-release-guard-scenario-report-design.md
+  s_6a41e6dc5a6d74::t_5bf71d80aaed22 1-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "af77b7b2a58e87cc5aa1b02c0f97ca174ed4512f",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
