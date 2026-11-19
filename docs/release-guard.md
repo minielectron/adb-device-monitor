@@ -31,9 +31,15 @@ phones, tablets, TVs, STBs and emulators while making device restrictions explic
 ## Supported scenario steps
 
 Scenarios are versioned JSON (`schemaVersion: 1`) and can install/uninstall an APK, clear data,
-launch or force-stop the app, grant a permission, wait, begin/end a named section, press logical
+launch or force-stop the app, launch a package-scoped deep link, grant a permission, wait, begin/end a named section, press logical
 keys, tap a selector or percentage coordinate, swipe, enter text, wait for an element/activity/log
 pattern/process, capture a PNG screenshot, or run an explicit shell command.
+
+A deep-link step accepts an absolute URI with a scheme, such as
+`myapp://content/123?source=release-guard`. Release Guard validates it before execution, quotes it as
+one shell argument, and runs `am start -W -a android.intent.action.VIEW -d <uri> <scenario-package>`.
+The scenario package is mandatory and cannot be overridden by the step, so Android cannot fall back
+to a handler in another application.
 
 Element selectors can use resource ID, accessibility description or text, with an optional
 percentage-coordinate fallback. UI hierarchy comes from `uiautomator`; input uses Android shell
@@ -62,9 +68,16 @@ normalized across devices.
 ## Local storage and artifacts
 
 The default root is `~/ADB Device Monitor/ReleaseGuard/`; `--release-root` selects another local
-root. It contains `release-guard.db` as an index plus project/scenario/run artifact folders. A run
+root. It contains `release-guard.db` as an index plus project/scenario/run artifact folders. Each
+leaf run folder is named `<scenario>_<UTC timestamp>_<short id>` so copied evidence remains
+identifiable without opening its manifest. A run
 directory is confined beneath the configured root and includes an atomic `run.json` manifest,
 attempt directories and registered outputs.
+
+Each measured attempt requires the device logcat capability. Release Guard clears the buffer when
+capture starts, streams the complete unfiltered run log to `attempt-NN/logcat.log`, and stops the
+stream during finalization even when a journey step fails before enough performance samples exist.
+The log is registered as evidence and can be opened from the result screen.
 
 Completed exports currently include `report.html`, `report.pdf`, `evaluation.json`,
 `result.junit.xml`, `summary.csv`, and attempt evidence such as monitoring reports, samples and logs.

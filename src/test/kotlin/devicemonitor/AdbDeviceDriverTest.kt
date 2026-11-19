@@ -59,4 +59,30 @@ class AdbDeviceDriverTest {
         assertTrue(commands.any { "input text 'hello;%srm%s-rf%s/'" in it })
         assertTrue(commands.filter { "input text" in it }.all { it.startsWith("4|") })
     }
+
+    @Test fun launchesDeepLinkOnlyInsideScenarioPackage() {
+        val dir = Files.createTempDirectory("release-guard-deep-link")
+        val calls = dir.resolve("calls.txt")
+        val adbFile = dir.resolve("adb").toFile()
+        adbFile.writeText(
+            """#!/bin/sh
+            echo "${'$'}#|${'$'}*" >> "$calls"
+            """.trimIndent()
+        )
+        assertTrue(adbFile.setExecutable(true))
+        val driver = AdbDeviceDriver(Adb(adbFile.absolutePath), "device-1")
+
+        val output = driver.perform(
+            ScenarioStep.LaunchDeepLink("myapp://content/123?source=guard&autoplay=true"),
+            "com.example.player",
+            dir.resolve("artifacts").toFile()
+        )
+
+        assertEquals("Deep link launched", output.message)
+        assertTrue(
+            calls.toFile().readLines().any {
+                it == "4|-s device-1 shell am start -W -a android.intent.action.VIEW -d 'myapp://content/123?source=guard&autoplay=true' 'com.example.player'"
+            }
+        )
+    }
 }

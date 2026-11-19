@@ -20,6 +20,8 @@ class ReleaseGuardArtifactStoreTest {
         val first = store.createRun("Player / QA", "Cold launch")
         val second = store.createRun("Player / QA", "Cold launch")
         assertNotEquals(first.runId, second.runId)
+        assertTrue(first.runId.startsWith("Cold_launch_20261116_101530_123_"))
+        assertEquals(first.runId, first.directory.name)
         assertTrue(first.directory.toPath().startsWith(root.toPath()))
         assertTrue("Player_QA" in first.directory.absolutePath)
 

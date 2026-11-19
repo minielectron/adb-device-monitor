@@ -69,6 +69,7 @@ sealed class ScenarioStep {
     data class UninstallPackage(override val name: String? = null) : ScenarioStep()
     data class ClearAppData(override val name: String? = null) : ScenarioStep()
     data class LaunchApp(override val name: String? = null) : ScenarioStep()
+    data class LaunchDeepLink(val uri: String, override val name: String? = null) : ScenarioStep()
     data class ForceStopApp(override val name: String? = null) : ScenarioStep()
     data class GrantPermission(val permission: String, override val name: String? = null) : ScenarioStep()
     data class Wait(val durationMs: Long, override val name: String? = null) : ScenarioStep()
@@ -213,6 +214,7 @@ data class ReleaseScenario(
     fun requiredCapabilities(): Set<DeviceCapability> =
         buildSet {
             add(DeviceCapability.SHELL)
+            add(DeviceCapability.LOGCAT)
             steps.forEach { addAll(it.requiredCapabilities()) }
             addAll(capture.requiredCapabilities)
             capture.metrics.forEach { addAll(it.requiredCapabilities()) }
@@ -236,6 +238,7 @@ data class ReleaseScenario(
             val prefix = "Step ${index + 1}"
             when (step) {
                 is ScenarioStep.InstallApk -> if (step.path.isBlank()) errors += "$prefix APK path is required"
+                is ScenarioStep.LaunchDeepLink -> validateDeepLink(step.uri, prefix, errors)
                 is ScenarioStep.GrantPermission -> if (step.permission.isBlank()) errors += "$prefix permission is required"
                 is ScenarioStep.Wait -> if (step.durationMs !in 1..MAX_TIMEOUT_MS) errors += "$prefix wait must be between 1 and $MAX_TIMEOUT_MS ms"
                 is ScenarioStep.BeginSection -> {
@@ -317,8 +320,33 @@ data class ReleaseScenario(
         if (timeoutMs !in 1..MAX_TIMEOUT_MS) errors += "$prefix timeout must be between 1 and $MAX_TIMEOUT_MS ms"
     }
 
+    private fun validateDeepLink(value: String, prefix: String, errors: MutableList<String>) {
+        if (value.isBlank()) {
+            errors += "$prefix deep link URI is required"
+            return
+        }
+        if (value.length > MAX_DEEP_LINK_LENGTH) {
+            errors += "$prefix deep link URI must not exceed $MAX_DEEP_LINK_LENGTH characters"
+            return
+        }
+        if (value.any(Char::isISOControl)) {
+            errors += "$prefix deep link URI must not contain control characters"
+            return
+        }
+        val uri = try {
+            java.net.URI(value)
+        } catch (_: java.net.URISyntaxException) {
+            errors += "$prefix deep link URI is invalid; encode spaces and special characters"
+            return
+        }
+        if (!uri.isAbsolute || uri.scheme.isNullOrBlank()) {
+            errors += "$prefix deep link URI must be absolute and include a scheme"
+        }
+    }
+
     companion object {
         private const val MAX_TIMEOUT_MS = 600_000L
+        private const val MAX_DEEP_LINK_LENGTH = 4_096
     }
 }
 

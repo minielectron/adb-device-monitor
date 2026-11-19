@@ -51,6 +51,10 @@ class AdbDeviceDriver(
                 "monkey -p ${shellQuote(packageName)} -c android.intent.category.LAUNCHER 1",
                 "Application launched"
             )
+            is ScenarioStep.LaunchDeepLink -> checkedShell(
+                "am start -W -a android.intent.action.VIEW -d ${shellQuote(step.uri)} ${shellQuote(packageName)}",
+                "Deep link launched"
+            )
             is ScenarioStep.ForceStopApp -> checkedShell("am force-stop ${shellQuote(packageName)}", "Application stopped")
             is ScenarioStep.GrantPermission -> {
                 require(SAFE_PERMISSION.matches(step.permission)) { "Invalid Android permission '${step.permission}'" }

@@ -22,6 +22,7 @@ class ReleaseGuardModelTest {
         assertEquals(
             setOf(
                 DeviceCapability.SHELL,
+                DeviceCapability.LOGCAT,
                 DeviceCapability.UI_HIERARCHY,
                 DeviceCapability.TOUCH_INPUT,
                 DeviceCapability.SCREEN_CAPTURE
@@ -32,7 +33,31 @@ class ReleaseGuardModelTest {
 
     @Test fun dpadScenarioDoesNotRequireTouch() {
         val scenario = scenario(steps = listOf(ScenarioStep.PressKey(LogicalKey.DPAD_CENTER)))
-        assertEquals(setOf(DeviceCapability.SHELL, DeviceCapability.DPAD_INPUT), scenario.requiredCapabilities())
+        assertEquals(
+            setOf(DeviceCapability.SHELL, DeviceCapability.LOGCAT, DeviceCapability.DPAD_INPUT),
+            scenario.requiredCapabilities()
+        )
+    }
+
+    @Test fun deepLinksMustBeAbsoluteSafeUrisAndOnlyRequireStandardRunCapabilities() {
+        val valid = scenario(steps = listOf(ScenarioStep.LaunchDeepLink("myapp://content/123?source=release-guard")))
+        assertTrue(valid.validate().isEmpty())
+        assertEquals(setOf(DeviceCapability.SHELL, DeviceCapability.LOGCAT), valid.requiredCapabilities())
+
+        val invalid = scenario(
+            steps = listOf(
+                ScenarioStep.LaunchDeepLink(""),
+                ScenarioStep.LaunchDeepLink("content/123"),
+                ScenarioStep.LaunchDeepLink("myapp://content/has space"),
+                ScenarioStep.LaunchDeepLink("myapp://content\n123"),
+                ScenarioStep.LaunchDeepLink("myapp://" + "a".repeat(4_096))
+            )
+        ).validate()
+        assertTrue(invalid.any { "URI is required" in it })
+        assertTrue(invalid.any { "absolute and include a scheme" in it })
+        assertTrue(invalid.any { "URI is invalid" in it })
+        assertTrue(invalid.any { "control characters" in it })
+        assertTrue(invalid.any { "must not exceed 4096" in it })
     }
 
     @Test fun validationReportsStructureCoordinatesTimeoutsAndBudgets() {

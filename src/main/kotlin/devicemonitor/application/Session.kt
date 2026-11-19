@@ -683,15 +683,15 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         mediaSnapshotRun = false
         mediaSnapshotThread?.interrupt()
         mediaSnapshotThread?.join(2000)
+        logcatProc?.let {
+            it.destroy()
+            it.waitFor(2, TimeUnit.SECONDS)
+            logcatProc = null
+        }
         if (outputsWritten || samples.size < 2) return
         outputsWritten = true
         val dir = runDir ?: return
         val info = info ?: return
-
-        logcatProc?.let {
-            it.destroy()
-            it.waitFor(2, TimeUnit.SECONDS)
-        }
 
         val lf = File(dir, "logcat.log")
         passivePlaybackProbe?.scanNew(lf)?.let { found ->

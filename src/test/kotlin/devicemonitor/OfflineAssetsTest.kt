@@ -41,6 +41,11 @@ class OfflineAssetsTest {
         assertContains(RELEASE_GUARD_PAGE, "/api/release/start")
         assertContains(RELEASE_GUARD_PAGE, "/api/release/status")
         assertContains(RELEASE_GUARD_PAGE, "/api/release/baseline")
+        assertContains(RELEASE_GUARD_PAGE, "['launchDeepLink','Launch deep link']")
+        assertContains(RELEASE_GUARD_PAGE, "'Deep link URI'")
+        assertContains(RELEASE_GUARD_PAGE, "myapp://content/123?source=release-guard")
+        assertContains(RELEASE_GUARD_PAGE, "Open full logcat · attempt")
+        assertContains(RELEASE_GUARD_PAGE, "var out={SHELL:true,LOGCAT:true}")
         assertFalse("window.open(" in RELEASE_GUARD_PAGE)
     }
 

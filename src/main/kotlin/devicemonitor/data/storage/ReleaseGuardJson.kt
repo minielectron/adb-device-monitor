@@ -104,6 +104,7 @@ object ReleaseGuardJson {
                 "uninstallPackage" to ScenarioStep.UninstallPackage::class.java,
                 "clearAppData" to ScenarioStep.ClearAppData::class.java,
                 "launchApp" to ScenarioStep.LaunchApp::class.java,
+                "launchDeepLink" to ScenarioStep.LaunchDeepLink::class.java,
                 "forceStopApp" to ScenarioStep.ForceStopApp::class.java,
                 "grantPermission" to ScenarioStep.GrantPermission::class.java,
                 "wait" to ScenarioStep.Wait::class.java,

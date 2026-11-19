@@ -22,6 +22,7 @@ class ReleaseGuardJsonTest {
                 ScenarioStep.UninstallPackage(),
                 ScenarioStep.ClearAppData(),
                 ScenarioStep.LaunchApp(),
+                ScenarioStep.LaunchDeepLink("myapp://content/123?source=release-guard"),
                 ScenarioStep.ForceStopApp(),
                 ScenarioStep.GrantPermission("android.permission.POST_NOTIFICATIONS"),
                 ScenarioStep.Wait(100),
@@ -51,7 +52,8 @@ class ReleaseGuardJsonTest {
         val decoded = ReleaseGuardJson.parseScenario(encoded)
         assertEquals(scenario, decoded)
         assertTrue("\"type\": \"installApk\"" in encoded)
-        assertIs<ScenarioStep.Shell>(decoded.steps[18])
+        assertTrue("\"type\": \"launchDeepLink\"" in encoded)
+        assertIs<ScenarioStep.Shell>(decoded.steps[19])
     }
 
     @Test fun manifestsPreserveMetadataAndUnicodePaths() {
