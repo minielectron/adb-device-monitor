@@ -26,7 +26,7 @@ class ReleaseGuardExportTest {
         val outputs = ReleaseGuardReport.write(dir, project(), scenario(), manifest, baseline())
 
         assertEquals(
-            setOf("evaluation.json", "result.junit.xml", "summary.csv", "report.html", "report.pdf"),
+            setOf("evaluation.json", "result.junit.xml", "summary.csv", "report.html", "interactive-performance-report.html", "report.pdf"),
             outputs.keys
         )
         outputs.values.forEach { assertTrue(it.isFile && it.length() > 0, "missing output ${it.name}") }
@@ -37,6 +37,17 @@ class ReleaseGuardExportTest {
         assertContains(html, "<svg")
         assertFalse(Regex("(?:src|href)=[\"']https?://", RegexOption.IGNORE_CASE).containsMatchIn(html))
         assertFalse("<script" in html.lowercase())
+
+        val interactive = outputs.getValue("interactive-performance-report.html").readText()
+        assertContains(interactive, "Interactive performance")
+        assertContains(interactive, "Scenario events &amp; anomalies")
+        assertContains(interactive, "CPU Utilization (%)")
+        assertContains(interactive, "App PSS breakdown (MB)")
+        assertContains(interactive, "var report = JSON.parse")
+        assertContains(interactive, "run-1")
+        assertFalse(Regex("(?:src|href)=[\"']https?://", RegexOption.IGNORE_CASE).containsMatchIn(interactive))
+        assertFalse(Regex("<script[^>]+src=", RegexOption.IGNORE_CASE).containsMatchIn(interactive))
+        assertFalse("fetch(" in interactive)
 
         val json = outputs.getValue("evaluation.json").readText()
         assertContains(json, "\"verdict\": \"FAIL\"")
@@ -164,6 +175,35 @@ class ReleaseGuardExportTest {
             project(), scenario, manifest, null, ScenarioRunEvidence(listOf(sample(0.0, 40.0)), markers = markers)
         ).getValue("report.html").readText()
         assertContains(unavailable, "App PSS data unavailable")
+    }
+
+    @Test fun interactiveReportEmbedsCompleteScenarioEvidenceAndHandlesNoSamples() {
+        val markers = listOf(
+            ScenarioMarker(0.0, 1, 1, "Launch", type = ScenarioMarkerType.STEP_START),
+            ScenarioMarker(2.0, 1, 1, "Launch", type = ScenarioMarkerType.STEP_END, outcome = ScenarioMarkerOutcome.FAIL, detail = "Timeout")
+        )
+        val evidence = ScenarioRunEvidence(
+            samples = listOf(sample(1.0, 42.0, PssSample(100.0, 40.0, 20.0, 10.0, 2.0, 8.0, 12.0, 8.0))),
+            anomalies = listOf(Anomaly("11-20 10:00:00.000", 1.5, "ANR", "App did not respond")),
+            markers = markers
+        )
+        val report = ReleaseGuardReport.write(
+            Files.createTempDirectory("release-guard-interactive").toFile(),
+            project(), scenario(), manifest(evaluation()), baseline(), evidence
+        ).getValue("interactive-performance-report.html").readText()
+
+        assertContains(report, "App did not respond")
+        assertContains(report, "Timeout")
+        assertContains(report, "Java heap")
+        assertContains(report, "Visible time range")
+        assertContains(report, "decimation")
+        assertContains(report, "scenarioEvidence")
+
+        val unavailable = ReleaseGuardReport.write(
+            Files.createTempDirectory("release-guard-interactive-empty").toFile(),
+            project(), scenario(), manifest(evaluation()), baseline()
+        ).getValue("interactive-performance-report.html").readText()
+        assertContains(unavailable, "No performance samples were captured for this scenario")
     }
 
     private fun project() = ProjectRecord(

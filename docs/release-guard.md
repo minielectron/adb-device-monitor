@@ -94,16 +94,28 @@ repetition, but monitoring evidence is run-level.
 The measured scenario requires the device logcat capability. Release Guard clears the buffer once,
 starts monitoring before the first measured repetition, streams the complete unfiltered scenario to
 one `logcat.log`, and stops monitoring after the final measured repetition. The same session writes
-one `device-info.log`, `samples.csv`, `performance-report.pdf` and `anomalies.log`. Warm-ups are
+one `device-info.log`, `samples.csv`, `performance-report.pdf`,
+`interactive-performance-report.html` and `anomalies.log`. Warm-ups are
 excluded. If a measured repetition fails, its execution issue is appended to the run-level
 `anomalies.log`; no per-repetition log or analysis report is created.
 
-Completed exports currently include `report.html`, `report.pdf`, `evaluation.json`,
+Completed exports currently include `report.html`, `interactive-performance-report.html`,
+`report.pdf`, `evaluation.json`,
 `result.junit.xml`, `summary.csv`, the complete scenario log, device information, anomalies, samples
 and performance graphs. `report.html` normalizes successful repetitions to scenario progress and
 shows the median with a P10–P90 variability band instead of separate repetition reports. Scenario
 screenshot steps add requested PNG files. The manifest records artifact paths and final state so
 incomplete or corrupt runs can be distinguished during recovery.
+
+`interactive-performance-report.html` is the complete-scenario companion to the static exports. It
+uses the same metric groups, cards, colors and charts as Live Dashboard. Hovering shows exact
+time/value pairs; legends toggle series; the synchronized time controls focus every chart; search
+filters metric cards; and each card recalculates visible-range minimum, average and maximum values.
+Scenario steps and anomalies appear both as chart markers and in the event table. Raw captured
+samples, device metadata, markers, anomalies, styles and the bundled Chart.js runtime are embedded
+directly in the file, so it can be copied to another machine and opened without Studio, a server or
+an internet connection. Metrics with no captured values are omitted and a run with no samples shows
+an explicit unavailable state.
 
 No cloud account, hosted database, analytics SDK, CDN or internet API is used. The UI and CLI read
 the same local SQLite index and files.

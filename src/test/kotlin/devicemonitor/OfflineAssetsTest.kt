@@ -8,6 +8,7 @@ import devicemonitor.presentation.web.OFFLINE_WEB_ASSETS
 import devicemonitor.presentation.web.PAGE_CSP
 import devicemonitor.presentation.web.PLAYER_DEBUGGER_PAGE
 import devicemonitor.presentation.web.RELEASE_GUARD_PAGE
+import devicemonitor.presentation.web.RELEASE_ARTIFACT_CSP
 import devicemonitor.presentation.web.resolveOfflineAsset
 import java.nio.file.Files
 import kotlin.test.Test
@@ -167,6 +168,11 @@ class OfflineAssetsTest {
         assertNull(resolveOfflineAsset("/assets/chart.umd.js/extra"))
         assertContains(PAGE_CSP, "default-src 'self'")
         assertContains(PAGE_CSP, "connect-src 'self'")
+        assertContains(RELEASE_ARTIFACT_CSP, "frame-ancestors 'self'")
+    }
+
+    @Test fun releaseGuardOffersThePortableInteractivePerformanceReport() {
+        assertContains(RELEASE_GUARD_PAGE, "'interactive-performance-report.html':'Open interactive performance report'")
     }
 
     @Test fun generatedDiagnosticsAreStandaloneAndServerRendered() {

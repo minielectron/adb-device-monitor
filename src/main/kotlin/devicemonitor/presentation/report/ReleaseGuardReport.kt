@@ -45,12 +45,20 @@ object ReleaseGuardReport {
             "result.junit.xml" to directory.resolve("result.junit.xml"),
             "summary.csv" to directory.resolve("summary.csv"),
             "report.html" to directory.resolve("report.html"),
+            "interactive-performance-report.html" to directory.resolve("interactive-performance-report.html"),
             "report.pdf" to directory.resolve("report.pdf")
         )
         outputs.getValue("evaluation.json").writeText(ReleaseGuardJson.evaluation(evaluation))
         outputs.getValue("result.junit.xml").writeText(JunitExporter.export("${project.name} / ${scenario.name}", evaluation))
         outputs.getValue("summary.csv").writeText(csv(manifest))
         outputs.getValue("report.html").writeText(html(project, scenario, manifest, baseline, evidence))
+        InteractivePerformanceReport.write(
+            outputs.getValue("interactive-performance-report.html"),
+            project,
+            scenario,
+            manifest,
+            evidence
+        )
         writePdf(outputs.getValue("report.pdf"), project, scenario, manifest, baseline, evidence)
         return outputs
     }
