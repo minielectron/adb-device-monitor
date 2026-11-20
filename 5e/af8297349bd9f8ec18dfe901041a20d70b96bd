@@ -1,0 +1,20 @@
+docs/superpowers/specs/2026-11-20-release-guard-interactive-timeline-design.md
+  s_6a41e6dc5a6d74::t_18d7a581ecb351 1-37,40-42,44-48,51-63,67-72,75-76,79-134
+  s_6a41e6dc5a6d74::t_705cc514d9ddca 38-39,43,49-50,64-66,73-74,77-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5eaf8297349bd9f8ec18dfe901041a20d70b96bd",
+  "prompts": {},
+  "sessions": {
+    "s_6a41e6dc5a6d74": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d8d3-9ff2-7de1-85db-022632bf6477",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Prakash sharma <prakash.sharma1@telekom-digital.com>"
+    }
+  }
+}
