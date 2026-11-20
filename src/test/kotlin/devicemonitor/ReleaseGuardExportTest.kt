@@ -195,7 +195,12 @@ class ReleaseGuardExportTest {
         assertContains(report, "App did not respond")
         assertContains(report, "Timeout")
         assertContains(report, "Java heap")
-        assertContains(report, "Visible time range")
+        assertContains(report, "Scenario timeline")
+        assertContains(report, "Wheel or pinch to zoom")
+        assertContains(report, "id=\"zoomIn\"")
+        assertContains(report, "id=\"navWindow\"")
+        assertContains(report, "evidenceClusters(candidates,viewStart,viewEnd,24)")
+        assertContains(report, "Shift-drag to zoom")
         assertContains(report, "decimation")
         assertContains(report, "scenarioEvidence")
 
@@ -204,6 +209,51 @@ class ReleaseGuardExportTest {
             project(), scenario(), manifest(evaluation()), baseline()
         ).getValue("interactive-performance-report.html").readText()
         assertContains(unavailable, "No performance samples were captured for this scenario")
+    }
+
+    @Test fun interactiveReportClustersDenseLongRunEvidence() {
+        val duration = 5_118.0
+        val samples = (0 until 2_054).map { index ->
+            val progress = index.toDouble() / 2_053.0
+            sample(
+                progress * duration,
+                35.0 + index % 30,
+                PssSample(
+                    100.0 + progress * 30.0,
+                    50.0 + progress * 35.0,
+                    30.0 + index % 10,
+                    28.0 + index % 12,
+                    3.0 + index % 2,
+                    40.0 + index % 20,
+                    12.0 + progress * 6.0,
+                    80.0 + index % 25
+                )
+            )
+        }
+        val markers = (0 until 3_000).map { index ->
+            ScenarioMarker(
+                elapsedSec = index.toDouble() / 2_999.0 * duration,
+                attempt = index / 3 + 1,
+                stepIndex = index % 3 + 1,
+                label = "Step ${index % 3 + 1}",
+                type = ScenarioMarkerType.STEP_START
+            )
+        }
+        val anomalies = (0 until 717).map { index ->
+            Anomaly("11-20 10:00:00.000", index.toDouble() / 716.0 * duration, "ANR", "Dense fixture $index")
+        }
+        val file = ReleaseGuardReport.write(
+            Files.createTempDirectory("release-guard-interactive-dense").toFile(),
+            project(), scenario(), manifest(evaluation()), baseline(), ScenarioRunEvidence(samples, anomalies, markers)
+        ).getValue("interactive-performance-report.html")
+        val report = file.readText()
+
+        assertTrue(report.length > 1_000_000)
+        assertContains(report, "Dense fixture 716")
+        assertContains(report, "evidenceClusters(evidence,fullStart,fullEnd")
+        assertContains(report, "Math.floor(width/8)")
+        assertContains(report, "marks=evidenceClusters(candidates,viewStart,viewEnd,24)")
+        assertFalse("var marks = (report.markers || []).concat" in report)
     }
 
     private fun project() = ProjectRecord(

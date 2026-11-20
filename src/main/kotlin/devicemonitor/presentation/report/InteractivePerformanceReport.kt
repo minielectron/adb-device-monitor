@@ -82,13 +82,29 @@ $STUDIO_UI_CSS
   .fact .k { color:var(--quiet); font-size:9px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
   .fact .v { margin-top:5px; overflow:hidden; color:var(--text); font-size:13px; font-weight:750; text-overflow:ellipsis; white-space:nowrap; }
   .fact.ok .v { color:var(--green); } .fact.warn .v { color:var(--amber); } .fact.bad .v { color:var(--red); }
-  .control-grid { display:grid; grid-template-columns:minmax(220px,1fr) minmax(280px,2fr) auto; align-items:end; gap:14px; }
+  .control-grid { display:grid; grid-template-columns:minmax(220px,1fr) auto; align-items:end; gap:14px; }
   .field label { display:block; margin-bottom:7px; color:var(--quiet); font-size:9px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
   .field input[type=search] { width:100%; min-height:39px; padding:0 12px; border:1px solid var(--line); border-radius:10px; outline:0; color:var(--text); background:var(--surface-soft); }
   .field input[type=search]:focus { border-color:rgba(232,182,109,.55); box-shadow:0 0 0 3px rgba(232,182,109,.08); }
-  .range-head { display:flex; justify-content:space-between; gap:12px; margin-bottom:7px; color:var(--quiet); font:9px/1.3 ui-monospace,Menlo,monospace; }
-  .range-inputs { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-  .range-inputs input { width:100%; accent-color:var(--gold); }
+  .timeline-actions { display:flex; align-items:center; justify-content:flex-end; gap:7px; }
+  .timeline-actions .studio-button { min-width:38px; padding-inline:10px; }
+  .timeline-wrap { margin-top:14px; padding:12px; border:1px solid var(--line); border-radius:13px; background:rgba(0,0,0,.2); }
+  .timeline-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:9px; }
+  .timeline-label { color:var(--quiet); font-size:9px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+  .timeline-readout { color:var(--muted); font:10px/1.3 ui-monospace,Menlo,monospace; }
+  .navigator { position:relative; height:76px; overflow:hidden; border:1px solid var(--line); border-radius:10px; background:#0b0c0c; touch-action:none; user-select:none; }
+  .navigator canvas { position:absolute; inset:0 0 18px; width:100%; height:58px; }
+  .nav-shade { position:absolute; top:0; bottom:18px; background:rgba(3,3,3,.62); pointer-events:none; }
+  .nav-shade.left { left:0; } .nav-shade.right { right:0; }
+  .nav-window { position:absolute; top:0; bottom:18px; min-width:8px; border:1px solid rgba(232,182,109,.75); border-radius:5px; background:rgba(232,182,109,.08); box-shadow:0 0 0 1px rgba(0,0,0,.55),inset 0 0 24px rgba(232,182,109,.05); cursor:grab; }
+  .nav-window.dragging { cursor:grabbing; }
+  .nav-handle { position:absolute; top:0; bottom:0; width:12px; border:0; padding:0; background:transparent; cursor:ew-resize; }
+  .nav-handle:after { content:""; position:absolute; top:50%; left:50%; width:3px; height:22px; border-radius:3px; background:var(--gold-bright); box-shadow:0 0 0 1px rgba(0,0,0,.65); transform:translate(-50%,-50%); }
+  .nav-handle.start { left:-6px; } .nav-handle.end { right:-6px; }
+  .event-rail { position:absolute; left:0; right:0; bottom:0; height:18px; border-top:1px solid var(--line); background:rgba(255,255,255,.018); }
+  .event-cluster { position:absolute; top:5px; width:5px; height:8px; padding:0; border:0; border-radius:5px; background:var(--violet); transform:translateX(-50%); cursor:help; }
+  .event-cluster.anomaly { background:var(--red); } .event-cluster.failed { background:var(--amber); }
+  .gesture-help { margin:8px 2px 0; color:var(--quiet); font-size:9px; line-height:1.5; }
   .metric-catalog { display:grid; gap:30px; }
   .metric-group { min-width:0; }
   .metric-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
@@ -96,6 +112,8 @@ $STUDIO_UI_CSS
   .card:hover { border-color:var(--line-strong); transform:translateY(-2px); }
   .card h3 { margin:0 0 8px; color:var(--text); font-size:12px; letter-spacing:-.01em; }
   .chartbox { position:relative; height:210px; }
+  .chartbox canvas { cursor:grab; touch-action:none; }
+  .chartbox canvas.dragging { cursor:grabbing; }
   .chart-stats { display:flex; flex-wrap:wrap; gap:2px 0; margin-top:8px; padding-top:7px; border-top:1px solid var(--line); }
   .srow { display:flex; align-items:baseline; gap:10px; width:100%; color:var(--muted); font-size:10px; line-height:1.6; }
   .sname { min-width:70px; max-width:110px; overflow:hidden; color:var(--quiet); font-size:9px; text-overflow:ellipsis; white-space:nowrap; }
@@ -109,7 +127,7 @@ $STUDIO_UI_CSS
   td:last-child { word-break:break-word; overflow-wrap:anywhere; font:10px/1.5 ui-monospace,Menlo,monospace; }
   .tag { display:inline-flex; padding:3px 7px; border-radius:999px; color:#fff; font-size:9px; font-weight:800; letter-spacing:.04em; }
   .tag.anomaly { background:#a65d28; } .tag.scenario { background:#6254a8; } .tag.fail { background:#923e43; }
-  @media(max-width:900px){.metric-grid{grid-template-columns:1fr}.control-grid{grid-template-columns:1fr}.control-grid .studio-button{width:100%}}
+  @media(max-width:900px){.metric-grid{grid-template-columns:1fr}.control-grid{grid-template-columns:1fr}.timeline-actions{justify-content:flex-start}}
   @media(max-width:720px){.studio-appbar{flex-wrap:wrap}.report-context{order:3;flex:1 0 100%}.report-lead{display:block}.report-shell{padding-top:24px}.health-panel,.controls,.events-panel{padding:16px}.card .chartbox{height:190px}}
 </style>
 </head>
@@ -122,7 +140,10 @@ $STUDIO_UI_CSS
 <main class="studio-shell report-shell">
   <section class="report-lead studio-enter"><div><p class="studio-eyebrow">Release Guard evidence</p><h1>Scenario under observation.</h1><p class="report-lead-copy">Explore the complete measured run with the same visual language as Live Dashboard. Hover for exact values, toggle series from legends, filter metrics, and focus any time range.</p></div><span class="studio-status ok">Self-contained report</span></section>
   <section class="health-panel studio-panel studio-enter"><div class="studio-section-head"><div><h2 class="studio-section-title">Run at a glance</h2><p class="studio-section-copy">Device identity and complete-scenario evidence coverage.</p></div></div><div class="facts" id="facts"></div></section>
-  <section class="controls studio-panel studio-enter"><div class="control-grid"><div class="field"><label for="search">Find a metric</label><input id="search" type="search" placeholder="CPU, PSS, rendering…"></div><div class="field"><div class="range-head"><span>Visible time range</span><span id="rangeLabel">—</span></div><div class="range-inputs"><input id="rangeStart" type="range" aria-label="Range start"><input id="rangeEnd" type="range" aria-label="Range end"></div></div><button class="studio-button" id="reset" type="button">Reset view</button></div></section>
+  <section class="controls studio-panel studio-enter">
+    <div class="control-grid"><div class="field"><label for="search">Find a metric</label><input id="search" type="search" placeholder="CPU, PSS, rendering…"></div><div class="timeline-actions" aria-label="Timeline controls"><button class="studio-button" id="zoomOut" type="button" title="Zoom out">−</button><button class="studio-button" id="zoomIn" type="button" title="Zoom in">+</button><button class="studio-button" id="reset" type="button">Reset view</button></div></div>
+    <div class="timeline-wrap"><div class="timeline-head"><span class="timeline-label">Scenario timeline</span><span class="timeline-readout" id="rangeLabel">—</span></div><div class="navigator" id="navigator"><canvas id="navigatorCanvas" aria-hidden="true"></canvas><div class="nav-shade left" id="navShadeLeft"></div><div class="nav-shade right" id="navShadeRight"></div><div class="nav-window" id="navWindow"><button class="nav-handle start" id="navStart" type="button" aria-label="Visible range start"></button><button class="nav-handle end" id="navEnd" type="button" aria-label="Visible range end"></button></div><div class="event-rail" id="eventRail" aria-label="Clustered scenario events"></div></div><p class="gesture-help">Wheel or pinch to zoom · drag a chart to pan · Shift-drag to zoom a precise interval · drag the navigator window or handles to move through the run.</p></div>
+  </section>
   <div class="empty studio-panel" id="empty">No performance samples were captured for this scenario.</div>
   <div class="metric-catalog" id="catalog">
     <section class="metric-group" data-group="system"><div class="studio-section-head"><div><p class="studio-eyebrow">01 · Device</p><h2 class="studio-section-title">System</h2><p class="studio-section-copy">Compute, thermal, load, and network behavior.</p></div></div><div class="metric-grid"></div></section>
@@ -232,28 +253,54 @@ private const val REPORT_SCRIPT = """
   Chart.defaults.borderColor = 'rgba(255,255,255,.08)';
   Chart.defaults.font.family = 'Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif';
 
-  var markerPlugin = {
+  var fullStart=0,fullEnd=1,viewStart=0,viewEnd=1,minWindow=1,viewportFrame=0;
+  var evidence=(report.markers||[]).filter(function(m){return Number.isFinite(m.t);}).map(function(m){return {t:m.t,kind:'marker',type:m.type,outcome:m.outcome,label:m.label};})
+    .concat((report.anomalies||[]).filter(function(a){return Number.isFinite(a.t);}).map(function(a){return {t:a.t,kind:'anomaly',type:a.type,outcome:'fail',label:a.detail};}));
+
+  function evidenceClusters(events,start,end,limit) {
+    if(!events.length||end<=start||limit<=0)return [];
+    var slots={};
+    events.forEach(function(event){
+      if(event.t<start||event.t>end)return;
+      var slot=Math.min(limit-1,Math.max(0,Math.floor((event.t-start)/(end-start)*limit)));
+      var cluster=slots[slot]||(slots[slot]={sum:0,count:0,anomaly:false,failed:false,labels:[]});
+      cluster.sum+=event.t;cluster.count++;cluster.anomaly=cluster.anomaly||event.kind==='anomaly';cluster.failed=cluster.failed||event.outcome==='fail';
+      if(cluster.labels.length<3)cluster.labels.push(event.type||event.label||'event');
+    });
+    return Object.keys(slots).map(function(key){var c=slots[key];c.t=c.sum/c.count;return c;}).sort(function(a,b){return a.t-b.t;});
+  }
+
+  var interactionPlugin = {
     id:'scenarioEvidence',
     afterDatasetsDraw:function(chart) {
-      var x = chart.scales.x, area = chart.chartArea, ctx = chart.ctx;
-      var marks = (report.markers || []).concat((report.anomalies || []).map(function(a){return {t:a.t,label:a.type,outcome:'fail',anomaly:true};}));
+      var x=chart.scales.x,area=chart.chartArea,ctx=chart.ctx,span=viewEnd-viewStart,close=span<=(fullEnd-fullStart)*.05;
+      var candidates=evidence.filter(function(event){
+        if(event.kind==='anomaly')return true;
+        if(event.type==='attempt_start'||event.type==='section_start'||event.outcome==='fail')return true;
+        return close&&(event.type==='step_start'||event.type==='step_end');
+      });
+      var marks=evidenceClusters(candidates,viewStart,viewEnd,24);
       ctx.save();
-      marks.forEach(function(m) {
-        if (!Number.isFinite(m.t) || m.t < x.min || m.t > x.max) return;
-        var px = x.getPixelForValue(m.t);
-        ctx.strokeStyle = m.anomaly || m.outcome === 'fail' ? 'rgba(255,118,118,.68)' : 'rgba(158,140,255,.32)';
-        ctx.setLineDash(m.anomaly ? [4,3] : [2,4]);
-        ctx.beginPath(); ctx.moveTo(px,area.top); ctx.lineTo(px,area.bottom); ctx.stroke();
+      marks.forEach(function(m){
+        var px=x.getPixelForValue(m.t);
+        ctx.strokeStyle=m.anomaly?'rgba(255,118,118,.66)':m.failed?'rgba(244,180,95,.55)':'rgba(158,140,255,.32)';
+        ctx.lineWidth=m.count>1?2:1;ctx.setLineDash(close?[4,4]:[]);
+        ctx.beginPath();ctx.moveTo(px,area.top);ctx.lineTo(px,close?area.bottom:area.top+11);ctx.stroke();
       });
       ctx.restore();
+    },
+    afterDraw:function(chart){
+      var selection=chart._rangeSelection;if(!selection)return;
+      var area=chart.chartArea,left=Math.max(area.left,Math.min(selection.start,selection.end)),right=Math.min(area.right,Math.max(selection.start,selection.end)),ctx=chart.ctx;
+      ctx.save();ctx.fillStyle='rgba(232,182,109,.12)';ctx.strokeStyle='rgba(255,214,154,.85)';ctx.setLineDash([4,3]);ctx.fillRect(left,area.top,right-left,area.bottom-area.top);ctx.strokeRect(left,area.top,right-left,area.bottom-area.top);ctx.restore();
     }
   };
-  Chart.register(markerPlugin);
+  Chart.register(interactionPlugin);
 
   function safe(value) { return value == null ? '' : String(value); }
   function esc(value) { return safe(value).replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c];}); }
   function fmt(value) { if (!Number.isFinite(value)) return '—'; var a=Math.abs(value); return a>=1000?value.toFixed(0):a>=100?value.toFixed(1):value.toFixed(2); }
-  function point(key) { return samples.filter(function(p){return Number.isFinite(p[key]);}).map(function(p){return {x:p.t,y:p[key]};}); }
+  function clock(value){if(!Number.isFinite(value))return '—';var h=Math.floor(value/3600),m=Math.floor(value%3600/60),s=value%60;return(h?h+':':'')+(h?String(m).padStart(2,'0'):m)+':'+s.toFixed(2).padStart(5,'0');}
   function seriesFor(def) {
     if (def.dynamic === 'cores') {
       var count=samples.reduce(function(n,p){return Math.max(n,(p.cores||[]).length);},0);
@@ -270,15 +317,17 @@ private const val REPORT_SCRIPT = """
     }
     return (def.s||[]).map(function(s){return [s[0],function(p){return p[s[1]];}];});
   }
-  function valuesFor(getter) { return samples.map(function(p){var y=getter(p);return Number.isFinite(y)?{x:p.t,y:y}:null;}).filter(Boolean); }
-  function stats(dataset, start, end) {
-    var values=dataset.data.filter(function(p){return p.x>=start&&p.x<=end&&Number.isFinite(p.y);}).map(function(p){return p.y;});
+  function valuesFor(getter) {
+    var values=samples.map(function(p){var y=getter(p);return Number.isFinite(y)&&Number.isFinite(p.t)?{x:p.t,y:y}:null;}).filter(Boolean).sort(function(a,b){return a.x-b.x;});
+    return values.reduce(function(out,p){if(out.length&&out[out.length-1].x===p.x)out[out.length-1]=p;else out.push(p);return out;},[]);
+  }
+  function stats(points, start, end) {
+    var values=points.filter(function(p){return p.x>=start&&p.x<=end&&Number.isFinite(p.y);}).map(function(p){return p.y;});
     if(!values.length)return null;
     return {min:Math.min.apply(null,values),max:Math.max.apply(null,values),avg:values.reduce(function(a,b){return a+b;},0)/values.length};
   }
   function renderStats(item) {
-    var start=Number(document.getElementById('rangeStart').value),end=Number(document.getElementById('rangeEnd').value);
-    item.stats.innerHTML=item.chart.data.datasets.map(function(ds){var s=stats(ds,start,end);if(!s)return '';return '<div class="srow"><span class="sname">'+esc(ds.label)+'</span><span class="sval"><span class="sl">min</span>'+fmt(s.min)+'</span><span class="sval"><span class="sl">avg</span>'+fmt(s.avg)+'</span><span class="sval"><span class="sl">max</span>'+fmt(s.max)+'</span></div>';}).join('');
+    item.stats.innerHTML=item.chart.data.datasets.map(function(ds){var s=stats(ds._fullData||ds.data,viewStart,viewEnd);if(!s)return '';return '<div class="srow"><span class="sname">'+esc(ds.label)+'</span><span class="sval"><span class="sl">min</span>'+fmt(s.min)+'</span><span class="sval"><span class="sl">avg</span>'+fmt(s.avg)+'</span><span class="sval"><span class="sl">max</span>'+fmt(s.max)+'</span></div>';}).join('');
   }
   function buildChart(def,index) {
     var series=seriesFor(def).map(function(s){return {label:s[0],data:valuesFor(s[1])};}).filter(function(s){return s.data.length;});
@@ -287,19 +336,69 @@ private const val REPORT_SCRIPT = """
     var card=document.createElement('article');card.className='card';card.dataset.title=def.t.toLowerCase();
     card.innerHTML='<h3>'+def.t+'</h3><div class="chartbox"><canvas></canvas></div><div class="chart-stats"></div>';
     group.appendChild(card);
-    var datasets=series.map(function(s,i){return {label:s.label,data:s.data,borderColor:colors[i%colors.length],backgroundColor:colors[i%colors.length],borderWidth:2,pointRadius:0,pointHitRadius:8,tension:.15};});
-    var scales={x:{type:'linear',title:{display:true,text:'time (s)'}},y:{beginAtZero:true}};if(def.max)scales.y.max=def.max;
+    var datasets=series.map(function(s,i){return {label:s.label,data:s.data,_fullData:s.data,borderColor:colors[i%colors.length],backgroundColor:colors[i%colors.length],borderWidth:2,pointRadius:0,pointHitRadius:8,tension:.15};});
+    var scales={x:{type:'linear',min:viewStart,max:viewEnd,title:{display:true,text:'time (s)'}},y:{beginAtZero:true}};if(def.max)scales.y.max=def.max;
     var chart=new Chart(card.querySelector('canvas'),{type:'line',data:{datasets:datasets},options:{animation:false,responsive:true,maintainAspectRatio:false,parsing:false,normalized:true,interaction:{mode:'nearest',intersect:false},plugins:{legend:{labels:{boxWidth:12,font:{size:10}}},decimation:{enabled:true,algorithm:'lttb',samples:900},tooltip:{callbacks:{title:function(items){return items.length?'t = '+fmt(items[0].parsed.x)+' s':'';}}}},scales:scales}});
-    var item={chart:chart,card:card,stats:card.querySelector('.chart-stats')};charts.push(item);renderStats(item);
+    var item={chart:chart,card:card,stats:card.querySelector('.chart-stats')};charts.push(item);attachChartGestures(item);renderStats(item);
   }
   function updateGroups() {
     document.querySelectorAll('.metric-group').forEach(function(group){group.style.display=Array.prototype.some.call(group.querySelector('.metric-grid').children,function(card){return card.style.display!=='none';})?'block':'none';});
   }
-  function applyRange() {
-    var startInput=document.getElementById('rangeStart'),endInput=document.getElementById('rangeEnd');
-    var start=Number(startInput.value),end=Number(endInput.value);if(start>end){var swap=start;start=end;end=swap;}
-    startInput.value=start;endInput.value=end;document.getElementById('rangeLabel').textContent=fmt(start)+'s — '+fmt(end)+'s';
-    charts.forEach(function(item){item.chart.options.scales.x.min=start;item.chart.options.scales.x.max=end;item.chart.update('none');renderStats(item);});
+  function clampRange(start,end){
+    var center=(start+end)/2,span=Math.max(minWindow,end-start);start=center-span/2;end=center+span/2;
+    if(start<fullStart){end+=fullStart-start;start=fullStart;}if(end>fullEnd){start-=end-fullEnd;end=fullEnd;}
+    return [Math.max(fullStart,start),Math.min(fullEnd,end)];
+  }
+  function setViewport(start,end){var range=clampRange(start,end);viewStart=range[0];viewEnd=range[1];if(!viewportFrame)viewportFrame=requestAnimationFrame(flushViewport);}
+  function flushViewport(){viewportFrame=0;charts.forEach(function(item){item.chart.options.scales.x.min=viewStart;item.chart.options.scales.x.max=viewEnd;item.chart.update('none');renderStats(item);});syncNavigator();}
+  function zoomAt(anchor,factor){var span=Math.max(minWindow,Math.min(fullEnd-fullStart,(viewEnd-viewStart)*factor)),ratio=(anchor-viewStart)/(viewEnd-viewStart);setViewport(anchor-span*ratio,anchor+span*(1-ratio));}
+  function panBy(delta){setViewport(viewStart+delta,viewEnd+delta);}
+  function resetView(){document.getElementById('search').value='';charts.forEach(function(item){item.card.style.display='';});setViewport(fullStart,fullEnd);updateGroups();}
+  function syncNavigator(){
+    var total=fullEnd-fullStart,left=(viewStart-fullStart)/total*100,right=(fullEnd-viewEnd)/total*100,windowEl=document.getElementById('navWindow');
+    document.getElementById('navShadeLeft').style.width=left+'%';document.getElementById('navShadeRight').style.width=right+'%';windowEl.style.left=left+'%';windowEl.style.right=right+'%';
+    document.getElementById('rangeLabel').textContent=clock(viewStart)+' — '+clock(viewEnd)+' · '+clock(viewEnd-viewStart);
+    document.getElementById('navStart').setAttribute('aria-valuetext',clock(viewStart));document.getElementById('navEnd').setAttribute('aria-valuetext',clock(viewEnd));
+    document.getElementById('zoomOut').disabled=viewEnd-viewStart>=total-.001;
+  }
+  function attachChartGestures(item){
+    var canvas=item.chart.canvas,state=null;
+    canvas.addEventListener('wheel',function(event){
+      event.preventDefault();var span=viewEnd-viewStart;
+      if(Math.abs(event.deltaX)>Math.abs(event.deltaY)&&!event.ctrlKey){panBy(event.deltaX/canvas.clientWidth*span);return;}
+      var area=item.chart.chartArea,px=Math.max(area.left,Math.min(area.right,event.offsetX)),anchor=item.chart.scales.x.getValueForPixel(px);zoomAt(anchor,event.deltaY>0?1.12:1/1.12);
+    },{passive:false});
+    canvas.addEventListener('pointerdown',function(event){
+      if(event.button!==0)return;var area=item.chart.chartArea;if(event.offsetX<area.left||event.offsetX>area.right||event.offsetY<area.top||event.offsetY>area.bottom)return;
+      state={mode:event.shiftKey?'select':'pan',x:event.offsetX,start:viewStart,end:viewEnd};canvas.classList.add('dragging');canvas.setPointerCapture(event.pointerId);
+      if(state.mode==='select'){item.chart._rangeSelection={start:event.offsetX,end:event.offsetX};item.chart.draw();}
+    });
+    canvas.addEventListener('pointermove',function(event){if(!state)return;if(state.mode==='pan'){var width=item.chart.chartArea.right-item.chart.chartArea.left,delta=-(event.offsetX-state.x)/width*(state.end-state.start);setViewport(state.start+delta,state.end+delta);}else{item.chart._rangeSelection.end=event.offsetX;item.chart.draw();}});
+    function finish(event){if(!state)return;if(state.mode==='select'&&Math.abs(event.offsetX-state.x)>6){var a=item.chart.scales.x.getValueForPixel(Math.min(state.x,event.offsetX)),b=item.chart.scales.x.getValueForPixel(Math.max(state.x,event.offsetX));setViewport(a,b);}state=null;item.chart._rangeSelection=null;canvas.classList.remove('dragging');item.chart.draw();}
+    canvas.addEventListener('pointerup',finish);canvas.addEventListener('pointercancel',function(){state=null;item.chart._rangeSelection=null;canvas.classList.remove('dragging');item.chart.draw();});canvas.addEventListener('dblclick',resetView);
+  }
+  function primaryOverview(){var keys=['cpu','pss','memUsed','memUsedPct'];for(var i=0;i<keys.length;i++){var key=keys[i],points=valuesFor(function(p){return p[key];});if(points.length)return points;}return [];}
+  function drawNavigator(){
+    var canvas=document.getElementById('navigatorCanvas'),rect=canvas.getBoundingClientRect(),ratio=window.devicePixelRatio||1,width=Math.max(1,Math.round(rect.width*ratio)),height=Math.max(1,Math.round(rect.height*ratio));canvas.width=width;canvas.height=height;var ctx=canvas.getContext('2d'),points=primaryOverview();ctx.clearRect(0,0,width,height);if(!points.length)return;
+    var low=Math.min.apply(null,points.map(function(p){return p.y;})),high=Math.max.apply(null,points.map(function(p){return p.y;}));if(high===low)high=low+1;
+    ctx.beginPath();points.forEach(function(p,index){var x=(p.x-fullStart)/(fullEnd-fullStart)*width,y=height-4-(p.y-low)/(high-low)*(height-8);if(index)ctx.lineTo(x,y);else ctx.moveTo(x,y);});ctx.lineTo(width,height);ctx.lineTo(0,height);ctx.closePath();var gradient=ctx.createLinearGradient(0,0,0,height);gradient.addColorStop(0,'rgba(232,182,109,.30)');gradient.addColorStop(1,'rgba(232,182,109,.02)');ctx.fillStyle=gradient;ctx.fill();ctx.beginPath();points.forEach(function(p,index){var x=(p.x-fullStart)/(fullEnd-fullStart)*width,y=height-4-(p.y-low)/(high-low)*(height-8);if(index)ctx.lineTo(x,y);else ctx.moveTo(x,y);});ctx.strokeStyle='#e8b66d';ctx.lineWidth=Math.max(1,ratio);ctx.stroke();
+  }
+  function renderEventRail(){
+    var rail=document.getElementById('eventRail'),width=Math.max(1,rail.clientWidth),clusters=evidenceClusters(evidence,fullStart,fullEnd,Math.max(1,Math.floor(width/8)));
+    rail.innerHTML=clusters.map(function(c){var cls=c.anomaly?' anomaly':c.failed?' failed':'',left=(c.t-fullStart)/(fullEnd-fullStart)*100,title=c.count+' event'+(c.count===1?'':'s')+' · '+clock(c.t)+' · '+c.labels.join(', ');return '<button class="event-cluster'+cls+'" type="button" style="left:'+left+'%" title="'+esc(title)+'" aria-label="'+esc(title)+'"></button>';}).join('');
+  }
+  function initNavigator(){
+    var nav=document.getElementById('navigator'),windowEl=document.getElementById('navWindow'),drag=null;
+    function timeAt(event){var rect=nav.getBoundingClientRect();return fullStart+Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width))*(fullEnd-fullStart);}
+    nav.addEventListener('pointerdown',function(event){
+      if(event.button!==0||event.target.classList.contains('event-cluster'))return;var mode=event.target.id==='navStart'?'start':event.target.id==='navEnd'?'end':windowEl.contains(event.target)?'pan':'recenter',at=timeAt(event);
+      if(mode==='recenter'){var span=viewEnd-viewStart;setViewport(at-span/2,at+span/2);mode='pan';}
+      drag={mode:mode,x:event.clientX,start:viewStart,end:viewEnd};windowEl.classList.add('dragging');nav.setPointerCapture(event.pointerId);
+    });
+    nav.addEventListener('pointermove',function(event){if(!drag)return;var at=timeAt(event),rect=nav.getBoundingClientRect(),delta=(event.clientX-drag.x)/rect.width*(fullEnd-fullStart);if(drag.mode==='start')setViewport(at,drag.end);else if(drag.mode==='end')setViewport(drag.start,at);else setViewport(drag.start+delta,drag.end+delta);});
+    function end(){drag=null;windowEl.classList.remove('dragging');}nav.addEventListener('pointerup',end);nav.addEventListener('pointercancel',end);
+    ['navStart','navEnd'].forEach(function(id){document.getElementById(id).addEventListener('keydown',function(event){if(event.key!=='ArrowLeft'&&event.key!=='ArrowRight')return;event.preventDefault();var delta=(viewEnd-viewStart)*.05*(event.key==='ArrowLeft'?-1:1);if(id==='navStart')setViewport(viewStart+delta,viewEnd);else setViewport(viewStart,viewEnd+delta);});});
+    drawNavigator();renderEventRail();syncNavigator();
   }
   function renderFacts() {
     var device=report.device||{},verdict=safe(report.verdict||'evidence only').replace(/_/g,' '),status=verdict.toLowerCase()==='fail'?'bad':verdict.toLowerCase()==='warning'?'warn':'ok';
@@ -312,14 +411,15 @@ private const val REPORT_SCRIPT = """
     document.getElementById('events').innerHTML=events.length?events.map(function(e){return '<tr><td>'+fmt(e.t)+'s</td><td><span class="tag '+e.tag+'">'+esc(e.kind)+'</span></td><td>'+esc(e.attempt)+'</td><td>'+esc(e.detail)+'</td></tr>';}).join(''):'<tr><td colspan="4">No scenario events or anomalies were recorded.</td></tr>';
   }
 
+  samples=samples.filter(function(p){return Number.isFinite(p.t);}).sort(function(a,b){return a.t-b.t;});
   renderFacts();renderEvents();
   if(!samples.length){document.getElementById('empty').style.display='block';document.getElementById('catalog').style.display='none';return;}
-  var times=samples.map(function(p){return p.t;}).filter(Number.isFinite),min=Math.min.apply(null,times),max=Math.max.apply(null,times);if(min===max)max=min+1;
-  ['rangeStart','rangeEnd'].forEach(function(id){var el=document.getElementById(id);el.min=min;el.max=max;el.step=Math.max((max-min)/1000,.01);});
-  document.getElementById('rangeStart').value=min;document.getElementById('rangeEnd').value=max;
-  defs.forEach(buildChart);applyRange();updateGroups();
-  document.getElementById('rangeStart').addEventListener('input',applyRange);document.getElementById('rangeEnd').addEventListener('input',applyRange);
-  document.getElementById('reset').addEventListener('click',function(){document.getElementById('rangeStart').value=min;document.getElementById('rangeEnd').value=max;document.getElementById('search').value='';charts.forEach(function(item){item.card.style.display='';});applyRange();updateGroups();});
+  var times=samples.map(function(p){return p.t;});fullStart=Math.min.apply(null,times);fullEnd=Math.max.apply(null,times);if(fullStart===fullEnd)fullEnd=fullStart+1;viewStart=fullStart;viewEnd=fullEnd;minWindow=Math.max(1,(fullEnd-fullStart)/10000);
+  defs.forEach(buildChart);initNavigator();updateGroups();
+  document.getElementById('zoomOut').addEventListener('click',function(){zoomAt((viewStart+viewEnd)/2,2);});
+  document.getElementById('zoomIn').addEventListener('click',function(){zoomAt((viewStart+viewEnd)/2,.5);});
+  document.getElementById('reset').addEventListener('click',resetView);
   document.getElementById('search').addEventListener('input',function(e){var q=e.target.value.trim().toLowerCase();charts.forEach(function(item){item.card.style.display=!q||item.card.dataset.title.indexOf(q)>=0?'':'none';});updateGroups();});
+  window.addEventListener('resize',function(){drawNavigator();renderEventRail();syncNavigator();});
 }());
 """

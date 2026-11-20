@@ -109,9 +109,13 @@ incomplete or corrupt runs can be distinguished during recovery.
 
 `interactive-performance-report.html` is the complete-scenario companion to the static exports. It
 uses the same metric groups, cards, colors and charts as Live Dashboard. Hovering shows exact
-time/value pairs; legends toggle series; the synchronized time controls focus every chart; search
-filters metric cards; and each card recalculates visible-range minimum, average and maximum values.
-Scenario steps and anomalies appear both as chart markers and in the event table. Raw captured
+time/value pairs; legends toggle series; and one shared timeline navigator focuses every chart.
+Wheel or pinch zooms around the pointer, chart dragging pans, Shift-drag selects a precise range,
+and the navigator window and handles scroll or resize the visible interval. Search filters metric
+cards, while each card recalculates visible-range minimum, average and maximum values. Dense scenario
+steps and anomalies are clustered in the navigator rail; charts adaptively expose individual markers
+only when zoomed closely enough to keep metric lines readable. The event table retains the complete
+unclustered record. Raw captured
 samples, device metadata, markers, anomalies, styles and the bundled Chart.js runtime are embedded
 directly in the file, so it can be copied to another machine and opened without Studio, a server or
 an internet connection. Metrics with no captured values are omitted and a run with no samples shows
