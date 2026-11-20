@@ -20,6 +20,8 @@ class ReleaseGuardArtifactStoreTest {
         val first = store.createRun("Player / QA", "Cold launch")
         val second = store.createRun("Player / QA", "Cold launch")
         assertNotEquals(first.runId, second.runId)
+        assertTrue(first.runId.startsWith("Cold_launch_20261116_101530_123_"))
+        assertEquals(first.runId, first.directory.name)
         assertTrue(first.directory.toPath().startsWith(root.toPath()))
         assertTrue("Player_QA" in first.directory.absolutePath)
 
@@ -61,9 +63,11 @@ class ReleaseGuardArtifactStoreTest {
         val root = Files.createTempDirectory("release-guard-register").toFile()
         val store = ArtifactStore(root, idFactory = { "run" })
         val run = store.createRun("p", "s")
-        val attempt = store.attemptDirectory(run, 1)
+        val attempt = store.attemptPath(run, 1)
+        assertFalse(attempt.exists())
         val source = Files.createTempFile("samples", ".csv").toFile().apply { writeText("time,cpu\n0,10") }
         val copied = store.registerOutput(attempt, "samples.csv", source)
+        assertTrue(attempt.isDirectory)
         assertEquals(source.readText(), copied.readText())
         assertTrue(store.relative(copied).endsWith("attempt-01/samples.csv"))
 

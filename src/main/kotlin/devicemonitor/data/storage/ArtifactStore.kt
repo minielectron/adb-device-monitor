@@ -37,16 +37,16 @@ class ArtifactStore(
     fun createRun(projectName: String, scenarioName: String): RunLocation {
         val stamp = RUN_STAMP.format(clock.instant())
         val nonce = sanitizeSegment(idFactory()).take(24)
-        val runId = "${stamp}_$nonce"
-        val directory = inside(sanitizeSegment(projectName), sanitizeSegment(scenarioName), runId)
+        val scenarioSegment = sanitizeSegment(scenarioName)
+        val runId = "${scenarioSegment}_${stamp}_$nonce"
+        val directory = inside(sanitizeSegment(projectName), scenarioSegment, runId)
         Files.createDirectories(directory)
         return RunLocation(runId, directory.toFile(), directory.resolve("run.json").toFile())
     }
 
-    fun attemptDirectory(run: RunLocation, attempt: Int): File {
+    fun attemptPath(run: RunLocation, attempt: Int): File {
         require(attempt > 0) { "Attempt number must be positive" }
         val path = ensureInside(run.directory.toPath().resolve("attempt-%02d".format(attempt)))
-        Files.createDirectories(path)
         return path.toFile()
     }
 

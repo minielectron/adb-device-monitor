@@ -59,6 +59,95 @@ class ScenarioRunnerTest {
         }
     }
 
+    @Test fun selectedDiagnosticsShareOneCaptureSessionAtTheConfiguredInterval() {
+        lateinit var received: SessionConfig
+        fixture(CaptureSessionFactory { config ->
+            received = config
+            FakeCapture(config.runDirectoryOverride)
+        }).use { f ->
+            val capture = CaptureSettings(
+                metrics = setOf(
+                    MetricDefinition("cpu_util_pct"),
+                    MetricDefinition("per_core_cpu_pct"),
+                    MetricDefinition("top_process_cpu_pct"),
+                    MetricDefinition("memory_used_mb"),
+                    MetricDefinition("psi_cpu"),
+                    MetricDefinition("top_process_memory_mb"),
+                    MetricDefinition("app_pss_mb")
+                ),
+                intervalSec = 0.5,
+                configured = true
+            )
+            val manifest = f.runner.run(
+                project(),
+                scenario().copy(capture = capture),
+                FakeDriver(allCapabilities())
+            )
+
+            assertEquals(ExecutionState.EVIDENCE_ONLY, manifest.state)
+            assertEquals(0.5, received.intervalSec)
+            assertTrue(received.cpuUtilEnabled)
+            assertTrue(received.perCoreEnabled)
+            assertTrue(received.topProcsEnabled)
+            assertTrue(received.memoryMbEnabled)
+            assertTrue(received.psiEnabled)
+            assertTrue(received.topMemEnabled)
+            assertTrue(received.appPssEnabled)
+            assertTrue(received.logcatEnabled)
+        }
+    }
+
+    @Test fun appPssDefaultsOnButAnExplicitCaptureSelectionCanDisableIt() {
+        var defaultEnabled = false
+        fixture(CaptureSessionFactory { config ->
+            defaultEnabled = config.appPssEnabled
+            FakeCapture(config.runDirectoryOverride)
+        }).use { f ->
+            f.runner.run(project(), scenario(), FakeDriver(allCapabilities()))
+        }
+        var configuredEnabled = true
+        fixture(CaptureSessionFactory { config ->
+            configuredEnabled = config.appPssEnabled
+            FakeCapture(config.runDirectoryOverride)
+        }).use { f ->
+            f.runner.run(
+                project(),
+                scenario().copy(capture = CaptureSettings(metrics = emptySet(), configured = true)),
+                FakeDriver(allCapabilities())
+            )
+        }
+
+        assertTrue(defaultEnabled)
+        assertFalse(configuredEnabled)
+    }
+
+    @Test fun liveProgressTracksWarmUpAndMeasuredJourneySteps() {
+        fixture().use { f ->
+            val observed = mutableListOf<ReleaseGuardProgress>()
+            val scenario = scenario(
+                steps = listOf(
+                    ScenarioStep.LaunchApp("Open player"),
+                    ScenarioStep.Wait(1, "Settle")
+                )
+            ).copy(warmups = 1)
+
+            f.runner.run(
+                project(),
+                scenario,
+                FakeDriver(allCapabilities(), onPerform = { observed += f.runner.progress })
+            )
+
+            assertEquals(listOf(1, 2, 1, 2), observed.map { it.step })
+            assertEquals(listOf(ExecutionState.WARM_UP, ExecutionState.WARM_UP), observed.take(2).map { it.state })
+            assertEquals(
+                listOf(ExecutionState.EXECUTE_AND_CAPTURE, ExecutionState.EXECUTE_AND_CAPTURE),
+                observed.drop(2).map { it.state }
+            )
+            assertContains(observed.first().message, "Warm-up 1 · Running Open player")
+            assertContains(observed.last().message, "Attempt 1 · Running Settle")
+        }
+    }
+
     @Test fun failedAttemptKeepsEvidenceAndCannotPass() {
         fixture().use { f ->
             val driver = FakeDriver(allCapabilities(), failOn = ScenarioStep.LaunchApp::class.java)
@@ -80,7 +169,8 @@ class ScenarioRunnerTest {
             assertFalse(manifest.attempts.single().successful)
             assertEquals(Verdict.FAIL, manifest.evaluation?.verdict)
             assertTrue(manifest.markers.any { it.outcome == ScenarioMarkerOutcome.FAIL })
-            assertTrue(manifest.evaluation?.executionErrors?.single()?.contains("synthetic step failure") == true)
+            assertEquals(listOf("Scenario execution failed; see anomalies.log"), manifest.evaluation?.executionErrors)
+            assertContains(f.root.resolve(manifest.artifacts.getValue("anomalies.log")).readText(), "synthetic step failure")
         }
     }
 
@@ -104,11 +194,80 @@ class ScenarioRunnerTest {
         }
     }
 
-    private fun fixture(factory: CaptureSessionFactory = CaptureSessionFactory { FakeCapture() }): Fixture {
+    @Test fun zeroBudgetRunUsesOneCaptureAndOneScenarioEvidenceSet() {
+        var captureNumber = 0
+        val factory = CaptureSessionFactory { config ->
+            captureNumber += 1
+            FakeCapture(config.runDirectoryOverride, "raw full scenario log\n")
+        }
+        fixture(factory).use { f ->
+            val manifest = f.runner.run(
+                project(),
+                scenario(repetitions = 2),
+                FakeDriver(allCapabilities())
+            )
+
+            assertEquals(ExecutionState.EVIDENCE_ONLY, manifest.state)
+            assertEquals(Verdict.NOT_EVALUATED, manifest.evaluation?.verdict)
+            assertEquals(1, captureNumber)
+            assertEquals("raw full scenario log\n", f.root.resolve(manifest.artifacts.getValue("logcat.log")).readText())
+            listOf("device-info.log", "anomalies.log", "samples.csv", "performance-report.pdf").forEach {
+                assertTrue(it in manifest.artifacts, "$it should be registered once at run level")
+            }
+            assertFalse(manifest.artifacts.keys.any { it.matches(Regex("attempt-\\d+/logcat\\.log")) })
+            val runDirectory = f.root.resolve(manifest.artifacts.getValue("logcat.log")).parentFile
+            assertFalse(runDirectory.listFiles().orEmpty().any { it.name.startsWith("attempt-") })
+            assertEquals(2, manifest.markers.count { it.type == ScenarioMarkerType.ATTEMPT_START })
+            assertEquals(2, manifest.markers.count { it.type == ScenarioMarkerType.ATTEMPT_END })
+        }
+    }
+
+    @Test fun fileProducingStepCreatesAndRegistersItsAttemptDirectory() {
+        fixture().use { f ->
+            val manifest = f.runner.run(
+                project(),
+                scenario(steps = listOf(ScenarioStep.CaptureScreenshot("evidence.png"))),
+                FakeDriver(allCapabilities())
+            )
+
+            val path = manifest.artifacts.getValue("attempt-01/evidence.png")
+            assertTrue(f.root.resolve(path).isFile)
+            assertTrue(f.root.resolve(path).parentFile.name == "attempt-01")
+        }
+    }
+
+    @Test fun missingScenarioLogFailsRunWithoutInventingEvidence() {
+        fixture(CaptureSessionFactory { FakeCapture() }).use { f ->
+            val manifest = f.runner.run(project(), scenario(), FakeDriver(allCapabilities()))
+
+            assertEquals(ExecutionState.FAILED, manifest.state)
+            assertEquals(Verdict.FAIL, manifest.evaluation?.verdict)
+            assertContains(manifest.attempts.single().error.orEmpty(), "scenario logcat evidence was not created")
+            assertFalse("logcat.log" in manifest.artifacts)
+        }
+    }
+
+    @Test fun failedIterationPreservesRawScenarioLogAndOriginalError() {
+        fixture().use { f ->
+            val manifest = f.runner.run(
+                project(),
+                scenario(),
+                FakeDriver(allCapabilities(), ScenarioStep.LaunchApp::class.java, "first line\nsecond line")
+            )
+            assertEquals("synthetic logcat\n", f.root.resolve(manifest.artifacts.getValue("logcat.log")).readText())
+            assertContains(manifest.attempts.single().error.orEmpty(), "first line\nsecond line")
+            val anomalies = f.root.resolve(manifest.artifacts.getValue("anomalies.log")).readText()
+            assertContains(anomalies, "Scenario iteration failure")
+            assertContains(anomalies, "Measured repetition 1: first line second line")
+        }
+    }
+
+    private fun fixture(factory: CaptureSessionFactory? = null): Fixture {
         val root = Files.createTempDirectory("release-guard-runner").toFile()
         val store = ArtifactStore(root, clock, { "run" })
         val repository = SqliteRunRepository(root.resolve("guard.db"), clock)
-        return Fixture(repository, ScenarioRunner(repository, store, factory, clock))
+        val activeFactory = factory ?: CaptureSessionFactory { config -> FakeCapture(config.runDirectoryOverride) }
+        return Fixture(root, repository, ScenarioRunner(repository, store, activeFactory, clock))
     }
 
     private fun project() = ProjectRecord(
@@ -121,24 +280,28 @@ class ScenarioRunnerTest {
 
     private fun scenario(
         steps: List<ScenarioStep> = listOf(ScenarioStep.LaunchApp()),
-        budgets: List<PerformanceBudget> = emptyList()
+        budgets: List<PerformanceBudget> = emptyList(),
+        repetitions: Int = 1
     ) = ReleaseScenario(
         id = "browse",
         name = "Browse",
         packageName = "com.example.player",
+        repetitions = repetitions,
         steps = steps,
         budgets = budgets
     )
 
     private fun allCapabilities() = DeviceCapability.entries.toSet()
 
-    private data class Fixture(val repository: SqliteRunRepository, val runner: ScenarioRunner) : AutoCloseable {
+    private data class Fixture(val root: File, val repository: SqliteRunRepository, val runner: ScenarioRunner) : AutoCloseable {
         override fun close() = repository.close()
     }
 
     private class FakeDriver(
         private val capabilities: Set<DeviceCapability>,
-        private val failOn: Class<out ScenarioStep>? = null
+        private val failOn: Class<out ScenarioStep>? = null,
+        private val failureMessage: String = "synthetic step failure",
+        private val onPerform: () -> Unit = {}
     ) : DeviceDriver {
         override val serial = "fake-device"
         override fun target(refresh: Boolean) = TargetDevice(
@@ -154,20 +317,41 @@ class ScenarioRunnerTest {
             artifactDirectory: File,
             cancelled: () -> Boolean
         ): StepOutput {
-            if (failOn?.isInstance(step) == true) error("synthetic step failure")
+            onPerform()
+            if (failOn?.isInstance(step) == true) error(failureMessage)
+            if (step is ScenarioStep.CaptureScreenshot) {
+                artifactDirectory.mkdirs()
+                val file = artifactDirectory.resolve(step.fileName).apply { writeText("synthetic png") }
+                return StepOutput("ok", file)
+            }
             return StepOutput("ok")
         }
     }
 
-    private class FakeCapture : CaptureSession {
+    private class FakeCapture(
+        private val directory: File? = null,
+        private val logText: String = "synthetic logcat\n"
+    ) : CaptureSession {
         override var status = CaptureStatus.STARTING
         override val error: String? = null
         private val markers = mutableListOf<ScenarioMarker>()
         private var markerTime = 0.0
 
         override fun start() { status = CaptureStatus.RUNNING }
-        override fun stop() { status = CaptureStatus.DONE }
-        override fun samples() = listOf(sample(0.0, 40.0), sample(1.0, 60.0), sample(2.0, 55.0))
+        override fun stop() {
+            directory?.let { dir ->
+                dir.resolve("logcat.log").writeText(logText)
+                dir.resolve("device-info.log").writeText("QA Device\n")
+                dir.resolve("anomalies.log").writeText("No anomalies\n")
+                dir.resolve("samples.csv").writeText("elapsedSec,cpuUtilPct\n0,40\n")
+                dir.resolve("performance-report.pdf").writeText("synthetic performance report")
+            }
+            status = CaptureStatus.DONE
+        }
+        override fun samples(): List<Sample> {
+            val count = maxOf(3, (markerTime * 4).toInt() + 3)
+            return (0 until count).map { index -> sample(index * .25, 40.0 + index % 20) }
+        }
         override fun anomalies(): List<Anomaly> = emptyList()
         override fun markers(): List<ScenarioMarker> = markers.toList()
         override fun addMarker(

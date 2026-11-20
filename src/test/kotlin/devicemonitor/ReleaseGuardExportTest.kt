@@ -2,9 +2,13 @@ package devicemonitor
 
 import devicemonitor.data.storage.ProjectRecord
 import devicemonitor.data.storage.RunManifest
+import devicemonitor.domain.Anomaly
+import devicemonitor.domain.PssSample
+import devicemonitor.domain.Sample
 import devicemonitor.domain.releaseguard.*
 import devicemonitor.presentation.report.JunitExporter
 import devicemonitor.presentation.report.ReleaseGuardReport
+import devicemonitor.presentation.report.ScenarioRunEvidence
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.text.PDFTextStripper
 import java.nio.file.Files
@@ -22,7 +26,7 @@ class ReleaseGuardExportTest {
         val outputs = ReleaseGuardReport.write(dir, project(), scenario(), manifest, baseline())
 
         assertEquals(
-            setOf("evaluation.json", "result.junit.xml", "summary.csv", "report.html", "report.pdf"),
+            setOf("evaluation.json", "result.junit.xml", "summary.csv", "report.html", "interactive-performance-report.html", "report.pdf"),
             outputs.keys
         )
         outputs.values.forEach { assertTrue(it.isFile && it.length() > 0, "missing output ${it.name}") }
@@ -33,6 +37,17 @@ class ReleaseGuardExportTest {
         assertContains(html, "<svg")
         assertFalse(Regex("(?:src|href)=[\"']https?://", RegexOption.IGNORE_CASE).containsMatchIn(html))
         assertFalse("<script" in html.lowercase())
+
+        val interactive = outputs.getValue("interactive-performance-report.html").readText()
+        assertContains(interactive, "Interactive performance")
+        assertContains(interactive, "Scenario events &amp; anomalies")
+        assertContains(interactive, "CPU Utilization (%)")
+        assertContains(interactive, "App PSS breakdown (MB)")
+        assertContains(interactive, "var report = JSON.parse")
+        assertContains(interactive, "run-1")
+        assertFalse(Regex("(?:src|href)=[\"']https?://", RegexOption.IGNORE_CASE).containsMatchIn(interactive))
+        assertFalse(Regex("<script[^>]+src=", RegexOption.IGNORE_CASE).containsMatchIn(interactive))
+        assertFalse("fetch(" in interactive)
 
         val json = outputs.getValue("evaluation.json").readText()
         assertContains(json, "\"verdict\": \"FAIL\"")
@@ -63,6 +78,182 @@ class ReleaseGuardExportTest {
         assertContains(xml, "skipped=\"1\"")
         assertContains(xml, "Memory &lt;warning&gt;")
         assertContains(xml, "Review &amp; accept")
+    }
+
+    @Test fun evidenceOnlyExportsUseNeutralVerdictAndSkippedJunitCase() {
+        val dir = Files.createTempDirectory("release-guard-evidence-only").toFile()
+        val evaluation = ReleaseEvaluation(Verdict.NOT_EVALUATED, emptyList())
+        val manifest = manifest(evaluation).copy(state = ExecutionState.EVIDENCE_ONLY)
+        val outputs = ReleaseGuardReport.write(dir, project(), scenario().copy(budgets = emptyList()), manifest, null)
+
+        val html = outputs.getValue("report.html").readText()
+        assertContains(html, "NOT EVALUATED")
+        assertContains(html, "No performance budgets were configured")
+        val junit = outputs.getValue("result.junit.xml").readText()
+        assertContains(junit, "tests=\"1\"")
+        assertContains(junit, "skipped=\"1\"")
+        assertContains(junit, "No performance budgets configured")
+        val pdfText = PDDocument.load(outputs.getValue("report.pdf")).use(PDFTextStripper()::getText)
+        assertContains(pdfText, "Release Guard: NOT_EVALUATED")
+        assertContains(pdfText, "No performance budgets were configured")
+    }
+
+    @Test fun scenarioReportAggregatesRepetitionsIntoNormalizedGraphs() {
+        val dir = Files.createTempDirectory("release-guard-aggregate").toFile()
+        val scenario = scenario().copy(
+            repetitions = 2,
+            capture = CaptureSettings(
+                metrics = setOf(MetricDefinition("cpu_util_pct", "%", true)),
+                configured = true
+            )
+        )
+        val manifest = manifest(evaluation()).copy(
+            attempts = listOf(
+                AttemptSummary(1, true, listOf(MetricSeries("cpu_util_pct", values = listOf(40.0, 60.0)))),
+                AttemptSummary(2, true, listOf(MetricSeries("cpu_util_pct", values = listOf(50.0, 70.0))))
+            )
+        )
+        val markers = listOf(
+            ScenarioMarker(0.0, 1, 0, "Measured iteration 1", type = ScenarioMarkerType.ATTEMPT_START),
+            ScenarioMarker(10.0, 1, 2, "Measured iteration 1", type = ScenarioMarkerType.ATTEMPT_END, outcome = ScenarioMarkerOutcome.PASS),
+            ScenarioMarker(12.0, 2, 0, "Measured iteration 2", type = ScenarioMarkerType.ATTEMPT_START),
+            ScenarioMarker(22.0, 2, 2, "Measured iteration 2", type = ScenarioMarkerType.ATTEMPT_END, outcome = ScenarioMarkerOutcome.PASS)
+        )
+        val samples = (0..10).map { sample(it.toDouble(), 40.0 + it) } +
+            (12..22).map { sample(it.toDouble(), 50.0 + it - 12) }
+        val evidence = ScenarioRunEvidence(
+            samples,
+            listOf(Anomaly("11-19 10:00:00.000", 8.0, "ANR", "synthetic anomaly")),
+            markers
+        )
+
+        val html = ReleaseGuardReport.write(dir, project(), scenario, manifest, baseline(), evidence)
+            .getValue("report.html").readText()
+
+        assertContains(html, "Normalized performance profile")
+        assertContains(html, "CPU utilization")
+        assertContains(html, "P10–P90 variability")
+        assertContains(html, "ANR")
+        assertContains(html, "2 repetition(s)")
+        assertFalse("<h2>Attempts</h2>" in html)
+        assertFalse("Execution health" in html)
+        assertContains(html, "class=\"chart-band\"")
+        assertContains(html, "class=\"chart-line\"")
+    }
+
+    @Test fun scenarioReportSummarizesAppPssHeapBreakdownAndHandlesMissingData() {
+        val scenario = scenario().copy(
+            budgets = emptyList(),
+            capture = CaptureSettings(
+                metrics = setOf(MetricDefinition("app_pss_mb", "MB", true)),
+                configured = true
+            )
+        )
+        val manifest = manifest(ReleaseEvaluation(Verdict.NOT_EVALUATED, emptyList())).copy(
+            state = ExecutionState.EVIDENCE_ONLY
+        )
+        val markers = listOf(
+            ScenarioMarker(0.0, 1, 0, "Measured iteration 1", type = ScenarioMarkerType.ATTEMPT_START),
+            ScenarioMarker(1.0, 1, 2, "Measured iteration 1", type = ScenarioMarkerType.ATTEMPT_END, outcome = ScenarioMarkerOutcome.PASS)
+        )
+        val pssSamples = listOf(
+            sample(0.0, 40.0, PssSample(100.0, 40.0, 20.0, 10.0, 2.0, 8.0, 12.0, 8.0)),
+            sample(1.0, 45.0, PssSample(120.0, 60.0, 30.0, 12.0, 3.0, 14.0, 14.0, 9.0))
+        )
+
+        val html = ReleaseGuardReport.write(
+            Files.createTempDirectory("release-guard-pss").toFile(),
+            project(), scenario, manifest, null, ScenarioRunEvidence(pssSamples, markers = markers)
+        ).getValue("report.html").readText()
+        assertContains(html, "Application PSS")
+        assertContains(html, "App memory breakdown")
+        assertContains(html, "Java heap")
+        assertContains(html, "<td>50 MB</td><td>60 MB</td>")
+
+        val unavailable = ReleaseGuardReport.write(
+            Files.createTempDirectory("release-guard-pss-unavailable").toFile(),
+            project(), scenario, manifest, null, ScenarioRunEvidence(listOf(sample(0.0, 40.0)), markers = markers)
+        ).getValue("report.html").readText()
+        assertContains(unavailable, "App PSS data unavailable")
+    }
+
+    @Test fun interactiveReportEmbedsCompleteScenarioEvidenceAndHandlesNoSamples() {
+        val markers = listOf(
+            ScenarioMarker(0.0, 1, 1, "Launch", type = ScenarioMarkerType.STEP_START),
+            ScenarioMarker(2.0, 1, 1, "Launch", type = ScenarioMarkerType.STEP_END, outcome = ScenarioMarkerOutcome.FAIL, detail = "Timeout")
+        )
+        val evidence = ScenarioRunEvidence(
+            samples = listOf(sample(1.0, 42.0, PssSample(100.0, 40.0, 20.0, 10.0, 2.0, 8.0, 12.0, 8.0))),
+            anomalies = listOf(Anomaly("11-20 10:00:00.000", 1.5, "ANR", "App did not respond")),
+            markers = markers
+        )
+        val report = ReleaseGuardReport.write(
+            Files.createTempDirectory("release-guard-interactive").toFile(),
+            project(), scenario(), manifest(evaluation()), baseline(), evidence
+        ).getValue("interactive-performance-report.html").readText()
+
+        assertContains(report, "App did not respond")
+        assertContains(report, "Timeout")
+        assertContains(report, "Java heap")
+        assertContains(report, "Scenario timeline")
+        assertContains(report, "Wheel or pinch to zoom")
+        assertContains(report, "id=\"zoomIn\"")
+        assertContains(report, "id=\"navWindow\"")
+        assertContains(report, "evidenceClusters(candidates,viewStart,viewEnd,24)")
+        assertContains(report, "Shift-drag to zoom")
+        assertContains(report, "decimation")
+        assertContains(report, "scenarioEvidence")
+
+        val unavailable = ReleaseGuardReport.write(
+            Files.createTempDirectory("release-guard-interactive-empty").toFile(),
+            project(), scenario(), manifest(evaluation()), baseline()
+        ).getValue("interactive-performance-report.html").readText()
+        assertContains(unavailable, "No performance samples were captured for this scenario")
+    }
+
+    @Test fun interactiveReportClustersDenseLongRunEvidence() {
+        val duration = 5_118.0
+        val samples = (0 until 2_054).map { index ->
+            val progress = index.toDouble() / 2_053.0
+            sample(
+                progress * duration,
+                35.0 + index % 30,
+                PssSample(
+                    100.0 + progress * 30.0,
+                    50.0 + progress * 35.0,
+                    30.0 + index % 10,
+                    28.0 + index % 12,
+                    3.0 + index % 2,
+                    40.0 + index % 20,
+                    12.0 + progress * 6.0,
+                    80.0 + index % 25
+                )
+            )
+        }
+        val markers = (0 until 3_000).map { index ->
+            ScenarioMarker(
+                elapsedSec = index.toDouble() / 2_999.0 * duration,
+                attempt = index / 3 + 1,
+                stepIndex = index % 3 + 1,
+                label = "Step ${index % 3 + 1}",
+                type = ScenarioMarkerType.STEP_START
+            )
+        }
+        val anomalies = (0 until 717).map { index ->
+            Anomaly("11-20 10:00:00.000", index.toDouble() / 716.0 * duration, "ANR", "Dense fixture $index")
+        }
+        val file = ReleaseGuardReport.write(
+            Files.createTempDirectory("release-guard-interactive-dense").toFile(),
+            project(), scenario(), manifest(evaluation()), baseline(), ScenarioRunEvidence(samples, anomalies, markers)
+        ).getValue("interactive-performance-report.html")
+        val report = file.readText()
+
+        assertTrue(report.length > 1_000_000)
+        assertContains(report, "Dense fixture 716")
+        assertContains(report, "evidenceClusters(evidence,fullStart,fullEnd")
+        assertContains(report, "Math.floor(width/8)")
+        assertContains(report, "marks=evidenceClusters(candidates,viewStart,viewEnd,24)")
+        assertFalse("var marks = (report.markers || []).concat" in report)
     }
 
     private fun project() = ProjectRecord(
@@ -110,5 +301,29 @@ class ReleaseGuardExportTest {
         "baseline-1",
         BaselineIdentity("QA Device", "14", "build-1", "browse", 2),
         listOf(AttemptSummary(1, true))
+    )
+
+    private fun sample(t: Double, cpu: Double, pss: PssSample? = null) = Sample(
+        elapsedSec = t,
+        cpuUtilPct = cpu,
+        cpuIdlePct = 100.0 - cpu,
+        cpuPsiSomeAvg10 = 0.0,
+        memPsiSomeAvg10 = 0.0,
+        memPsiFullAvg10 = 0.0,
+        ioPsiSomeAvg10 = 0.0,
+        memTotalMb = 4096.0,
+        memUsedMb = 2048.0,
+        memUsedPct = 50.0,
+        memAvailableMb = 2048.0,
+        cachedMb = 512.0,
+        swapUsedMb = 0.0,
+        load1 = 1.0,
+        perCoreUtilPct = listOf(cpu, cpu - 5),
+        netRxKbps = 0.0,
+        netTxKbps = 0.0,
+        cpuTempC = 40.0,
+        cpuFreqMhz = 1200.0,
+        majorFaultsPerSec = 0.0,
+        pss = pss
     )
 }

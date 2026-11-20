@@ -41,7 +41,13 @@ object ReleaseGuardJson {
         .create()
 
     fun scenario(value: ReleaseScenario): String = gson.toJson(value)
-    fun parseScenario(json: String): ReleaseScenario = checked(gson.fromJson(json, ReleaseScenario::class.java))
+    fun parseScenario(json: String): ReleaseScenario {
+        val parsed = gson.fromJson(json, ReleaseScenario::class.java)
+        val compatible = if (parsed.capture.intervalSec <= 0.0) {
+            parsed.copy(capture = parsed.capture.copy(intervalSec = 1.0))
+        } else parsed
+        return checked(compatible)
+    }
 
     fun project(value: ProjectRecord): String = gson.toJson(value)
     fun parseProject(json: String): ProjectRecord = checked(gson.fromJson(json, ProjectRecord::class.java))
@@ -104,6 +110,7 @@ object ReleaseGuardJson {
                 "uninstallPackage" to ScenarioStep.UninstallPackage::class.java,
                 "clearAppData" to ScenarioStep.ClearAppData::class.java,
                 "launchApp" to ScenarioStep.LaunchApp::class.java,
+                "launchDeepLink" to ScenarioStep.LaunchDeepLink::class.java,
                 "forceStopApp" to ScenarioStep.ForceStopApp::class.java,
                 "grantPermission" to ScenarioStep.GrantPermission::class.java,
                 "wait" to ScenarioStep.Wait::class.java,

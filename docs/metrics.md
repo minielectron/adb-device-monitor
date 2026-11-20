@@ -6,10 +6,12 @@ by `MetricsCollector` (`data/metrics/`). Most core metrics come from **one batch
 `===MARKER===` lines and is parsed by `Snapshot`. Optional/expensive metrics use extra reads, some on
 a background thread.
 
-For each metric below: **source** (how it's collected), **read** (how to interpret the number), and
-**dev use** (what it tells you).
+Collection is controlled by `SessionConfig`. In the Home UI's first-use state, CPU utilization,
+per-core CPU, top-process CPU, memory used, PSI and top-process memory are enabled. CLI defaults and
+specialized workflows can differ, and a restored browser draft overrides the Home defaults. For each
+metric below: **source** (how it is collected), **read** (how to interpret it), and **dev use**.
 
-## Core (always sampled)
+## Device and system signals
 
 ### System CPU utilization — `cpu` (%)
 - **Source:** `/proc/stat` aggregate `cpu` line; utilization = busy-ticks Δ / total-ticks Δ between
@@ -59,7 +61,7 @@ For each metric below: **source** (how it's collected), **read** (how to interpr
 - **Source:** `/proc/net/dev` byte deltas across all non-loopback interfaces. **Dev use:** correlate
   buffering/playback stalls with throughput dips.
 
-## Optional (opt-in per run)
+## Package and heavier signals
 
 ### App PSS — `pss` + breakdown (`pssJava`, `pssNative`, `pssCode`, `pssStack`, `pssGfx`, `pssPriv`, `pssSys`) (MB)
 - **Source:** `dumpsys meminfo <pkg>` (requires `--package`). PSS = proportional set size (shared pages
@@ -81,15 +83,15 @@ For each metric below: **source** (how it's collected), **read** (how to interpr
 - **Dev use:** attributes system CPU to specific processes live; the dashboard chart is interactive.
 
 ### Top Process Memory — `memprocs[]` ({pid, n, mb})  *(RSS)*
-- **Source:** a single `ps -A -o PID,RSS,NAME` (header-aware parser handles device `ps` variants);
-  RSS in KiB → MB. Runs on the background collector with adaptive back-off. **procrank is deliberately
-  not used here** (it walks pagemap, is heavy, and needs root — see the Procrank *Snapshot* feature for
-  a one-shot PSS view).
+- **Source:** bounded `ps` column strategies selected for the Android implementation, with a
+  `/proc/[pid]/stat` fallback; RSS is converted to MB. It runs on the background collector with
+  adaptive back-off. **procrank is deliberately not used here** (it walks pagemap, is heavy, and
+  commonly needs root — see the Procrank Snapshot for a one-shot PSS view).
 - **Read:** RSS over-counts shared pages, but it's a cheap, reliable ranking of the biggest processes.
 - **Dev use:** spot which process is growing during a repro without root or per-tick overhead.
 
 ### Direct reclaim / s — `reclaim`
-- **Source:** counted from logcat (`--playback`/logcat enabled). **Dev use:** confirms the kernel hit
+- **Source:** counted from the captured logcat when logcat and this signal are enabled. **Dev use:** confirms the kernel hit
   the `min` watermark and allocations are blocking — a hard memory-pressure signal.
 
 ## Logcat anomalies & events — `Anomaly` (`domain/Anomaly.kt`)
@@ -99,11 +101,11 @@ For each metric below: **source** (how it's collected), **read** (how to interpr
 - **Read:** each anomaly has device time, elapsed seconds, type, and a detail string; shown on the
   dashboard timeline and in the report. **Dev use:** ties a metric spike to a concrete kernel/app event.
 
-## STB playback — `video`, `tunnel`  (`--playback`)
-- **Source:** `Playback.Tracker` replays the logcat tail into a player state machine (onSourceLoad →
-  onReady → onPlaying …) and reads the build's tunnel-mode flag.
-- **Dev use:** overlay player-state transitions on the metric charts to see how tunneled vs
-  non-tunneled playback shifts load between the app and media/HAL processes.
+## Tunnel mode — `tunnel` (`--playback`)
+- **Source:** `Playback.Tracker` reads explicit MediaCodec/ACodec/CCodec TUNNELED or NON-TUNNELED
+  configuration lines plus the optional `isTunneledPlaybackEnabled` build flag.
+- **Dev use:** compare tunneled and non-tunneled runs to see how decode work shifts between the app
+  and media/HAL processes. Generic monitoring does not parse project-specific player lifecycles.
 
 ## Player Debugger evidence
 
@@ -114,7 +116,7 @@ labelled by origin:
 |---|---|---|
 | **Reported** (`APP_REPORTED`) | The app explicitly emitted a valid OPTD event | session/player lifecycle, buffer, first frame, A/V availability, quality, errors, handoffs |
 | **Measured** (`DEVICE_MEASURED`) | The tool observed the Android device directly | CPU/memory/PSI/process samples and bounded media snapshots |
-| **Log parsed** (`LOG_PARSED`) | A known platform/log pattern was recognized | ANR, Java/native crash, codec, DRM and audio failures, passive player state |
+| **Log parsed** (`LOG_PARSED`) | A known platform/log pattern was recognized | ANR, Java/native crash, codec, DRM, audio and tunnel evidence |
 | **Inferred** (`ENGINE_INFERRED`) | The engine reconstructed a relationship from other evidence | synthetic session/player boundaries, missing endpoints, correlated incidents |
 | **Unavailable** | The device/app did not expose the signal | displayed as unavailable, never silently converted to healthy |
 
@@ -127,6 +129,11 @@ The Player Debugger capture form enables a balanced first-use set by default: CP
 per-core CPU, top-process CPU, memory used, PSI pressure stalls, and top-process memory. Logcat is
 required. Changes are saved in local browser storage and restored after navigation or application
 restart; returning Home does not reset the draft. Unreadable OEM signals remain `n/a`.
+
+Home marks PSI Pressure Stall and CPU Temperature with a red `ROOT` indicator. These controls are
+disabled unless the selected device currently reports rooted ADB, and their saved selections return
+when a rooted device is selected. Player Debugger applies the same rule to PSI Pressure Stall. Top
+Process CPU, Main-thread CPU and Media/HAL CPU remain selectable on non-rooted devices.
 
 ## CSV / programmatic reading
 

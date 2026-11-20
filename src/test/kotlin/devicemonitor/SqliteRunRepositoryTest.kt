@@ -64,6 +64,9 @@ class SqliteRunRepositoryTest {
             val evaluation = ReleaseEvaluation(Verdict.WARNING, emptyList())
             repository.saveEvaluation(location.runId, evaluation)
             assertEquals(evaluation, repository.evaluation(location.runId))
+            val evidenceOnly = ReleaseEvaluation(Verdict.NOT_EVALUATED, emptyList())
+            repository.saveEvaluation(location.runId, evidenceOnly)
+            assertEquals(evidenceOnly, repository.evaluation(location.runId))
         }
     }
 

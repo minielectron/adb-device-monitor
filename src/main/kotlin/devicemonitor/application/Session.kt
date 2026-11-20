@@ -53,7 +53,7 @@ data class SessionConfig(
     val topProcsEnabled: Boolean = false,   // top-10 process CPU% — reads /proc/*/stat per tick
     val topMemEnabled: Boolean = false,     // top processes by memory (PSS) — procrank (root) / dumpsys (non-root)
     val fpsEnabled: Boolean = false,        // device FPS (screen + video) via SurfaceFlinger --latency
-    val playbackEnabled: Boolean = false,   // STB: tunnel mode + video player state from logcat tail
+    val playbackEnabled: Boolean = false,   // MediaCodec tunnel mode from logcat tail
     val playerDebugEnabled: Boolean = false, // normalized passive + optional OPTD events from the shared logcat stream
     // App metrics (require a package)
     val appPssEnabled: Boolean = true,      // dumpsys meminfo — PSS total + breakdown (default ON)
@@ -533,7 +533,6 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
                     }
                 }
                 if (config.playbackEnabled) {
-                    videoState = found.videoState
                     tunnelMode = found.tunnelMode
                     if (buildTunnelEnabled == null && found.buildTunnelEnabled != null)
                         buildTunnelEnabled = found.buildTunnelEnabled
@@ -583,8 +582,7 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
             val mediaText = totalMedia?.let { "  media %.0f%%".format(it) } ?: ""
             val playText = if (config.playbackEnabled && passivePlaybackProbe != null) {
                 buildString {
-                    if (videoState != null) append("  vid=$videoState")
-                    if (tunnelMode != null && tunnelMode != "n/a") append("  tunnel=$tunnelMode")
+                    if (tunnelMode != null) append("  tunnel=$tunnelMode")
                 }
             } else ""
             println(
@@ -685,15 +683,15 @@ class MonitorSession(private val adb: Adb, val config: SessionConfig) {
         mediaSnapshotRun = false
         mediaSnapshotThread?.interrupt()
         mediaSnapshotThread?.join(2000)
+        logcatProc?.let {
+            it.destroy()
+            it.waitFor(2, TimeUnit.SECONDS)
+            logcatProc = null
+        }
         if (outputsWritten || samples.size < 2) return
         outputsWritten = true
         val dir = runDir ?: return
         val info = info ?: return
-
-        logcatProc?.let {
-            it.destroy()
-            it.waitFor(2, TimeUnit.SECONDS)
-        }
 
         val lf = File(dir, "logcat.log")
         passivePlaybackProbe?.scanNew(lf)?.let { found ->

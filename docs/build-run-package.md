@@ -45,7 +45,7 @@ Key options (full list via `--help`):
 | `--jank` | UI jank % + frame-phase breakdown (needs `--package`) |
 | `--profile` | ART sampling profiler → top main-thread methods table (needs debuggable app) |
 | `--perfetto` | record a Perfetto system trace for the run |
-| `--playback` | STB: track player state + tunnel mode from logcat |
+| `--playback` | track MediaCodec tunnel mode from logcat |
 | `--sidecar` (with `--web`) | backend mode for the native app: loopback only, exits when stdin closes — see [desktop-app.md](desktop-app.md) |
 | `--zap-time <ms>` / `--zap-count <n>` | channel-zapping stress test (sends CHANNEL_UP) |
 | `--label <name>` | tag the run/folder/report (e.g. `tunnel-on`) for comparisons |
@@ -71,7 +71,7 @@ java -jar build/libs/adb-device-monitor-1.0.0-all.jar \
   --release-json
 ```
 
-`--release-json` writes only the absolute evaluation JSON path to stdout; progress stays on stderr. Artifacts under the local root include `report.html`, `report.pdf`, `evaluation.json`, `result.junit.xml`, `summary.csv`, attempt reports, samples, and logs. No network service or cloud account is used.
+`--release-json` writes only the absolute evaluation JSON path to stdout; progress stays on stderr. Artifacts under the local root include `report.html`, `report.pdf`, `evaluation.json`, `result.junit.xml`, `summary.csv`, one complete measured-scenario `logcat.log`, device information, consolidated anomalies, samples and performance graphs. Iteration boundaries are internal to aggregation; iteration failures are written to the single anomalies file instead of separate iteration reports. No network service or cloud account is used.
 
 | Exit | Meaning |
 |------|---------|
@@ -80,6 +80,7 @@ java -jar build/libs/adb-device-monitor-1.0.0-all.jar \
 | `3` | a release-blocking budget fails |
 | `4` | invalid scenario, missing required capability, or bad CLI configuration |
 | `5` | ADB, capture, storage, export, or cancellation infrastructure failure |
+| `6` | evidence collected without budgets; no release decision |
 
 Optional flags: `--release-project <id>` for a saved scenario, `--release-project-name <name>` for a file, `--apk <candidate.apk>` to install before the journey, and `--allow-compatible-baseline` for explicitly normalized cross-device budgets.
 
@@ -103,9 +104,11 @@ DEBUG lines go to the files only (the terminal shows INFO and above). What to gr
 | `[client] error @ /dashboard: …` | JavaScript errors from the browser (onerror, unhandled rejections, console.error) |
 | `[run]`, `[loop]`, `[collector]`, `[top-mem]`, `[stop]` | run lifecycle |
 
-**Export diagnostics** (link on the home page and dashboard, or `GET /api/diagnostics`) downloads a
-zip with `info.txt` (build, JVM, session state/config), `threads.txt` (live thread dump) and the
-tails of both logs. If the UI hangs, export this first — it works even while a run is stuck.
+**Export Diagnostics** (Home/Dashboard navigation or `GET /api/diagnostics`) downloads
+`adb-monitor-diagnostics_<timestamp>.zip` containing `info.txt`, `threads.txt`, up to the latest
+3 MiB of `adb-monitor.log`, and up to the latest 3 MiB of `run.log` when available. This is host/JVM
+support evidence; it does not include a screenshot, hierarchy, full device logcat, Player Debugger
+capture or Release Guard evidence. See [diagnostics.md](diagnostics.md) for the exact boundary.
 
 ## Tests
 
@@ -119,11 +122,17 @@ scripts/smoke-test.sh     # end-to-end against scripts/fake-adb.sh: start → st
 
 ## Package as a macOS app
 
-`packaging/package-macos.sh` runs `./gradlew fatJar` and wraps the jar with `jpackage` into a
-`.app`/`.dmg` that opens the web dashboard on launch (no separate Java install needed).
+`desktop/build-macos.sh` builds the fat jar, prepares a bundled jlink Java runtime and builds the
+Tauri `.app` and `.dmg` (no Java install needed on the target Mac):
+
+```bash
+desktop/build-macos.sh          # release .app + .dmg
+desktop/build-macos.sh dev      # launch a development build
+desktop/build-macos.sh prepare  # refresh app.jar and the runtime only
+```
 
 > **Important:** the `.app` bundles a *frozen copy* of the jar taken at package time. After changing
-> code you must re-run the packaging script (or run the jar directly) — relaunching the old `.app`
+> code you must re-run the build script (or run the jar directly) — relaunching the old `.app`
 > runs the old jar. The dashboard build badge (bottom-right) shows which build is actually live.
 
 ## adb discovery

@@ -1,22 +1,57 @@
 # adb-device-monitor
 
-Kotlin tool that monitors any `adb`-connected Android device (phone, TV, STB, Fire Stick) over USB or TCP/IP, samples live system metrics, and renders a PDF report with graphs. Comes with **ADB Performance Studio** — a web UI for configuring and watching runs live — plus a scriptable CLI.
+ADB Performance Studio is a Kotlin/JVM tool for Dev and QA that monitors any authorized,
+`adb`-connected Android phone, tablet, TV, STB, Fire TV device or emulator over USB or TCP/IP. It
+ships as a native macOS application, local web application and scriptable CLI. Runtime collection,
+analysis and reports remain local; no cloud account or internet API is required.
 
-> 📚 **Detailed docs** live in [`docs/`](docs/): [architecture](docs/architecture.md) (the layered
-> package structure), [metrics](docs/metrics.md), [web dashboard](docs/web-dashboard.md),
-> [device & procrank snapshots](docs/device-and-procrank-snapshot.md), and
-> [reports & comparison](docs/reports-and-comparison.md). The code is organized in clean-architecture
-> layers (`domain / data / application / presentation`).
+Detailed documentation starts at [`docs/README.md`](docs/README.md). The main technical references
+are [metrics](docs/metrics.md), [Layout Inspector](docs/layout-inspector.md),
+[Player Debugger](docs/player-debugger.md), [Release Guard](docs/release-guard.md), and
+[Diagnostics](docs/diagnostics.md).
+
+## Current feature state
+
+| Feature | State and data source | Local output / important limit |
+|---|---|---|
+| Home and run configuration | Implemented. Lists devices from `adb devices -l`, reads device properties, and creates a `SessionConfig`. The initial Home selection enables CPU utilization, per-core CPU, top-process CPU, memory used, PSI and top-process memory; the saved form draft overrides those defaults on return. | Starts one monitoring session at a time. Package-specific metrics need a valid running package; unavailable Android sources remain blank. |
+| Live Dashboard | Implemented. Polls the local `/api/session` endpoint and renders the `Sample` stream collected from `/proc`, sysfs, dumpsys and optional logcat. | Live charts, health badges, zap/scenario/anomaly events and Stop/report controls. Browser rendering does not create a second measurement stream. See [web-dashboard.md](docs/web-dashboard.md). |
+| PDF, CSV and Run Comparison | Implemented. PDF and CSV serialize the completed `Sample` stream; comparison reads two stored `samples.csv` files. | `report.pdf`, `samples.csv` and local comparison view. Comparison only charts columns present in both runs. See [reports-and-comparison.md](docs/reports-and-comparison.md). |
+| Device Snapshot | Implemented one-shot capture. Uses `getprop`, `uname`, CPU sysfs, `/proc/meminfo`, launcher resolution and `dumpsys meminfo`. | Self-contained `device-snapshot_<timestamp>.html`; process categorization is heuristic. |
+| Procrank Snapshot | Implemented one-shot capture. Tries `procrank`, `su 0 procrank`, `su -c procrank`, then falls back to `ps`. | HTML plus a raw command debug sidecar. The `ps` fallback has RSS/VSS but not real PSS/USS. See [device-and-procrank-snapshot.md](docs/device-and-procrank-snapshot.md). |
+| Lite Layout Inspector | Implemented one-shot capture. Joins `uiautomator dump` element metadata with a `screencap` PNG and maps bounds to the screenshot. | Self-contained `layout-inspector_<timestamp>.html`, searchable elements, click-to-select boundary and in-app Refresh. Secure/custom-rendered surfaces may be absent. See [layout-inspector.md](docs/layout-inspector.md). |
+| Player Debugger | Implemented. Combines captured logcat, Android media/codec/audio/SurfaceFlinger dumps, selected performance metrics, optional app-reported OPTD/1 events and deterministic inference. | Handoff Map, Flight Recorder, Incident Lens, static HTML and sanitized support bundle. Passive evidence cannot always identify a vendor player's logical instance. See [player-debugger.md](docs/player-debugger.md). |
+| Performance Release Guard | Implemented in Studio and headless CLI. Executes versioned Android scenarios, probes capabilities, captures measured repetitions and evaluates optional absolute/baseline budgets. | One scenario-level HTML/PDF report, JSON, JUnit XML, CSV, complete logcat and consolidated anomalies with stable CI exit codes. See [release-guard.md](docs/release-guard.md). |
+| Diagnostics ZIP | Implemented host/application support export. Reads JVM state, in-flight requests, session summary, a thread dump and application/run log tails. | `adb-monitor-diagnostics_<timestamp>.zip`. It is not a device screenshot, full logcat or Player Debugger export. See [diagnostics.md](docs/diagnostics.md). |
+| CLI and native macOS app | Implemented. CLI calls the same collectors directly; the Tauri app starts the Kotlin engine on a loopback-only port and displays it in the system WebView. | CLI run folders or packaged `.app`/`.dmg`. Loopback HTTP is local IPC, not an internet dependency. See [build/run](docs/build-run-package.md) and [desktop app](docs/desktop-app.md). |
+
+## How the displayed data is obtained
+
+The application distinguishes four evidence types:
+
+- **Measured:** Android counters and snapshots such as `/proc/stat`, `/proc/meminfo`, PSI, sysfs,
+  `dumpsys gfxinfo`, `dumpsys meminfo`, SurfaceFlinger latency and screenshots.
+- **Log parsed:** bounded patterns and OPTD lines read from the locally captured
+  `logcat -v threadtime` file.
+- **App reported:** valid OPTD/1 telemetry emitted by the application under test.
+- **Inferred:** counter deltas, rates, health thresholds, player relationships and deterministic
+  incident/budget rules derived from stored evidence.
+
+Unsupported, blocked or empty Android sources are shown as unavailable, partial or fallback data;
+they are not silently treated as healthy. The exact command and transformation for every monitoring
+signal is in [docs/metrics.md](docs/metrics.md).
 
 ## Web UI (ADB Performance Studio)
 
 ```bash
-gradle fatJar
+./gradlew fatJar
 java -jar build/libs/adb-device-monitor-1.0.0-all.jar --web 8080
 # open http://localhost:8080
 ```
 
-The home page shows every adb-connected device as a card (serial, model, Android version, authorization state, auto-refreshing). On userdebug/eng builds an **⚡ Enable root** button runs `adb root` (the card shows "✓ adbd running as root" once active — useful for reading `/data/anr`, protected logs, etc.); on production builds the button is hidden since adbd can't run as root there. Pick a device, configure the run in the browser and press **Start**:
+The Home page shows connected devices, authorization state and live availability. On userdebug/eng
+builds, **Enable root** runs `adb root`; production builds hide it because production adbd cannot
+restart as root. Pick an authorized device, configure the run and press **Start**:
 
 - duration and sampling interval
 - **Channel zapping** toggle — CHANNEL_UP every N ms, optional stop-after-n-zaps
@@ -24,7 +59,17 @@ The home page shows every adb-connected device as a card (serial, model, Android
 - **App package** — enables the PSS memory breakdown
 - **UI jank tracking** toggle — janky-frame % per tick from `dumpsys gfxinfo`
 
-The live dashboard shows all charts updating in real time, a zap/anomaly event feed, live **health verdict badges** (CPU, Memory, Thermal incl. throttling detection, UI Jank, Stability), a Stop button, and a PDF download button when the run finishes. Only one session runs at a time; everything is still written to the run folder. The terminal keeps printing progress, and Ctrl+C in the terminal shuts the studio down (a running session still writes its report).
+The Home form and metric selections are saved locally so navigating to another Studio screen and
+back does not reset unsaved changes. The live dashboard shows the selected charts, event feed,
+health badges, Stop control and completed PDF. Only one performance session, Player Debugger capture
+or Release Guard check owns the collectors at a time.
+
+### Quick Diagnostics versus Diagnostics
+
+The three Home **Quick diagnostics** cards inspect the selected Android device without starting a
+monitoring run: Device Snapshot, Procrank Snapshot and Layout Inspector. The top navigation
+**Diagnostics** action instead downloads a small host/JVM support ZIP for troubleshooting Studio.
+It does not perform a fresh device capture. See [docs/diagnostics.md](docs/diagnostics.md).
 
 ### Offline Player Debugger
 
@@ -34,8 +79,10 @@ dumpsys and device metrics on standard Android devices; apps can optionally emit
 line protocol for precise session and player identity. It does not import or depend on CastLabs,
 MediaKind, multicast, DVB, ExoPlayer or any other player SDK.
 
-The first-use diagnostic set is enabled by default and user changes are restored after navigation and
-restart. Captures, reports and the index stay under `~/ADB Device Monitor/PlayerDebugger/`. The
+The first-use set enables CPU utilization, per-core CPU, top-process CPU, memory used, PSI and
+top-process memory; package PSS and app process CPU are also enabled by the current API defaults.
+User changes are restored after navigation and restart. Captures, reports and the index stay under
+`~/ADB Device Monitor/PlayerDebugger/`. The
 Handoff Map, synchronized Flight Recorder and Incident Lens remain usable offline, and static HTML
 evidence opens inside the desktop application. Sanitized support bundles hash identifiers, redact
 sensitive text, omit raw JSON, screenshots, media, traces and DRM material, and can be previewed
@@ -43,11 +90,12 @@ before export. Integration and QA details are in
 [docs/player-debugger.md](docs/player-debugger.md); the optional zero-dependency Android emitter is in
 [`integrations/android-optd/`](integrations/android-optd/).
 
-The home page also has two **one-click deep-dive snapshots** (no run required): **📸 Device Snapshot** — a device capabilities + memory-footprint report (PSS-by-category donut + process table), and **📊 Procrank Snapshot** — per-process VSS/RSS/PSS/USS as a top-15 bar chart and a sortable table. Both are rendered server-side as self-contained interactive HTML. See [docs/device-and-procrank-snapshot.md](docs/device-and-procrank-snapshot.md).
+The Home page also provides Device Snapshot, Procrank Snapshot and Lite Layout Inspector as
+independent one-shot reports. Their HTML, charts, screenshot and data are local and self-contained.
 
 ### Offline Performance Release Guard
 
-Release Guard turns repeatable Android journeys into an offline release decision for Dev and QA. It stores versioned scenarios, probes device capabilities instead of relying on manufacturer rules, runs warm-ups and measured repetitions, compares explicit budgets with a promoted baseline, and produces local HTML, PDF, JSON, JUnit XML, and CSV evidence. Open **Release Guard** from Studio; drafts survive navigation and restarts.
+Release Guard turns repeatable Android journeys into an offline release decision for Dev and QA. It stores versioned scenarios, probes device capabilities instead of relying on manufacturer rules, supports up to 1,000 measured repetitions, captures the default CPU, system memory and App PSS heap diagnostics in one continuous measured-scenario session, compares optional explicit budgets with a promoted baseline, and produces local static HTML/PDF summaries plus a portable interactive performance report, JSON, JUnit XML, CSV, complete logcat, device details and consolidated anomalies. The interactive report embeds the complete captured dataset and bundled chart runtime in one file, matches Live Dashboard, and supports hover details, series toggles, metric filtering and synchronized time-range inspection without a server or internet connection. Repetition boundaries are used internally for normalized graphs and budget math; issues are written to the single anomalies file instead of separate repetition reports. Without budgets it reports **Evidence only / Not evaluated**. Open **Release Guard** from Studio; active checks and drafts survive page navigation, and the Run action stays locked until the background check completes or stops.
 
 For a headless CI run:
 
@@ -59,7 +107,7 @@ java -jar build/libs/adb-device-monitor-1.0.0-all.jar \
   --release-json
 ```
 
-The mode is fully offline. Exit codes are stable: `0` pass, `2` warning, `3` budget failure, `4` invalid scenario/capability configuration, and `5` infrastructure failure. Use `--release-project <id>` for a saved scenario ID, `--apk <file>` to install a candidate build first, and `--allow-compatible-baseline` only when cross-device normalized metrics are intentional.
+The mode is fully offline. Exit codes are stable: `0` pass, `2` warning, `3` budget failure, `4` invalid scenario/capability configuration, `5` infrastructure failure, and `6` evidence-only/not evaluated. Use `--release-project <id>` for a saved scenario ID, `--apk <file>` to install a candidate build first, and `--allow-compatible-baseline` only when cross-device normalized metrics are intentional.
 
 ## Metrics collected
 
@@ -88,28 +136,35 @@ The mode is fully offline. Exit codes are stable: `0` pass, `2` warning, `3` bud
 | Main-thread hot methods, app-package methods, jank culprits | ART sampling profiler (`am profile start --sampling`) | with the method profiler enabled; three tables in the PDF + `main-thread-methods.txt` + raw `method-profile.trace`. App must be debuggable |
 | Full system trace | `perfetto` (sched + gfx/view/input/binder) | with Perfetto enabled; `trace.perfetto-trace` for ui.perfetto.dev |
 
-All files are read in a single `adb shell` round-trip per tick, so sampling overhead on the device is minimal. Metrics whose source is unreadable on the device are reported as `n/a (no data captured)` and skipped in graphs. If `--package` PSS sampling fails at startup, the console prints the device's raw `dumpsys meminfo` reply so you can see whether the package name is wrong, the app isn't running, or the output format differs.
+Core `/proc` and sysfs values are batched into one `adb shell` snapshot per tick. Optional package,
+gfxinfo, SurfaceFlinger and process collectors use additional bounded commands only when their
+signals are enabled. Metrics whose source is unreadable are reported as unavailable and skipped in
+graphs. If package PSS sampling fails at startup, the console prints the bounded raw
+`dumpsys meminfo` reply so a wrong package, stopped app or incompatible format can be diagnosed.
 
 ## Requirements
 
-- JDK 11+ and Gradle (or just open in IntelliJ/Android Studio)
+- JDK 11+ for the Kotlin application; the checked-in Gradle wrapper supplies Gradle
 - `adb` on PATH (or pass `--adb /path/to/adb`)
 - Device connected via USB with USB debugging enabled — or over Wi-Fi (`adb connect <ip>` / `--ip` flag)
+- Native macOS packaging additionally needs Xcode command-line tools, Rust, Node 18+ and JDK 17+
 
 ## Build
 
 ```bash
 cd adb-device-monitor
-gradle fatJar
+./gradlew fatJar
 # → build/libs/adb-device-monitor-1.0.0-all.jar
 ```
 
-No Gradle wrapper is checked in. If you don't have standalone Gradle, either open the project in IntelliJ/Android Studio (it bundles Gradle) or run `gradle wrapper` once and use `./gradlew fatJar` afterwards.
+The Gradle wrapper is checked in, so a separate Gradle installation is not required. The first build
+may need network access to populate dependency caches; application runtime does not.
 
 ## Sharing the macOS app (.app / .dmg)
 
-The `.app`/`.dmg` produced by `packaging/package-macos.sh` is **not code-signed or notarized**, so
-when someone downloads it, macOS Gatekeeper quarantines it and refuses to open it — you'll see
+The `.app`/`.dmg` produced by `desktop/build-macos.sh` is **not code-signed or notarized** unless a
+Developer ID is configured, so macOS Gatekeeper can quarantine a downloaded build and refuse to
+open it — you'll see
 *"…is damaged and can't be opened"* or *"cannot be opened because Apple cannot check it for malicious
 software."* This is expected for an unsigned internal build; there is no setting on your side that
 other Macs will honor — trust requires an Apple signature.
@@ -118,9 +173,9 @@ other Macs will honor — trust requires an Apple signature.
 app to `/Applications` (or on the `.dmg` before opening):
 
 ```bash
-xattr -dr com.apple.quarantine "/Applications/ADB Device Monitor.app"
-# or for the dmg before opening:
-xattr -dr com.apple.quarantine ~/Downloads/ADBDeviceMonitor.dmg
+xattr -dr com.apple.quarantine "/Applications/ADB Performance Studio.app"
+# or for the generated dmg before opening (adjust version/architecture as needed):
+xattr -dr com.apple.quarantine ~/Downloads/ADB\ Performance\ Studio_1.0.0_aarch64.dmg
 ```
 
 Without Terminal: double-click, let it get blocked, then **System Settings → Privacy & Security →
@@ -129,10 +184,10 @@ errors.
 
 **For wider distribution** sign + notarize with an Apple *Developer ID* (Apple Developer Program,
 $99/yr): `codesign --options runtime`, `xcrun notarytool submit … --wait`, `xcrun stapler staple`.
-After that, any Mac opens it with no warnings. jpackage can sign during packaging via
-`--mac-sign --mac-signing-key-user-name "Developer ID Application: … (TEAMID)"`.
+After that, any Mac opens it with no warnings. Tauri signing/notarization uses the Apple signing
+identity and notarization credentials described in [docs/desktop-app.md](docs/desktop-app.md).
 
-> **Architecture note:** jpackage builds for the machine it runs on. An app built on Apple Silicon
+> **Architecture note:** the desktop bundle is architecture-specific. An app built on Apple Silicon
 > won't launch on Intel Macs (and vice-versa) — that also looks like "not accessible." Build on both
 > architectures for a mixed fleet.
 

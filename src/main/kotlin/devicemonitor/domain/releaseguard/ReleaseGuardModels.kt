@@ -69,6 +69,7 @@ sealed class ScenarioStep {
     data class UninstallPackage(override val name: String? = null) : ScenarioStep()
     data class ClearAppData(override val name: String? = null) : ScenarioStep()
     data class LaunchApp(override val name: String? = null) : ScenarioStep()
+    data class LaunchDeepLink(val uri: String, override val name: String? = null) : ScenarioStep()
     data class ForceStopApp(override val name: String? = null) : ScenarioStep()
     data class GrantPermission(val permission: String, override val name: String? = null) : ScenarioStep()
     data class Wait(val durationMs: Long, override val name: String? = null) : ScenarioStep()
@@ -148,7 +149,7 @@ enum class Aggregation { MINIMUM, MAXIMUM, MEAN, MEDIAN, P90, P95, COUNT, RATE, 
 enum class LimitDirection { MAXIMUM, MINIMUM }
 enum class Severity { CRITICAL, WARNING }
 enum class BudgetStatus { PASS, WARNING, FAIL, NOT_EVALUATED }
-enum class Verdict { PASS, WARNING, FAIL, CANCELLED }
+enum class Verdict { PASS, WARNING, FAIL, NOT_EVALUATED, CANCELLED }
 enum class ExecutionState {
     DISCOVER,
     PREFLIGHT,
@@ -160,13 +161,14 @@ enum class ExecutionState {
     EXPORT,
     PASSED,
     WARNING,
+    EVIDENCE_ONLY,
     FAILED,
     CANCELLED;
 
-    fun isTerminal(): Boolean = this in setOf(PASSED, WARNING, FAILED, CANCELLED)
+    fun isTerminal(): Boolean = this in setOf(PASSED, WARNING, EVIDENCE_ONLY, FAILED, CANCELLED)
 }
 
-enum class ScenarioMarkerType { STEP_START, STEP_END, SECTION_START, SECTION_END }
+enum class ScenarioMarkerType { ATTEMPT_START, STEP_START, STEP_END, SECTION_START, SECTION_END, ATTEMPT_END }
 enum class ScenarioMarkerOutcome { RUNNING, PASS, FAIL, SKIP }
 
 data class ScenarioMarker(
@@ -195,7 +197,9 @@ data class PerformanceBudget(
 
 data class CaptureSettings(
     val metrics: Set<MetricDefinition> = emptySet(),
-    val requiredCapabilities: Set<DeviceCapability> = emptySet()
+    val requiredCapabilities: Set<DeviceCapability> = emptySet(),
+    val intervalSec: Double = 1.0,
+    val configured: Boolean = false
 )
 
 data class ReleaseScenario(
@@ -213,6 +217,7 @@ data class ReleaseScenario(
     fun requiredCapabilities(): Set<DeviceCapability> =
         buildSet {
             add(DeviceCapability.SHELL)
+            add(DeviceCapability.LOGCAT)
             steps.forEach { addAll(it.requiredCapabilities()) }
             addAll(capture.requiredCapabilities)
             capture.metrics.forEach { addAll(it.requiredCapabilities()) }
@@ -226,8 +231,9 @@ data class ReleaseScenario(
         if (revision < 1) errors += "Scenario revision must be at least 1"
         if (name.isBlank()) errors += "Scenario name is required"
         if (packageName.isBlank()) errors += "Package name is required"
-        if (repetitions !in 1..100) errors += "Repetitions must be between 1 and 100"
+        if (repetitions !in 1..1_000) errors += "Repetitions must be between 1 and 1000"
         if (warmups !in 0..20) errors += "Warmups must be between 0 and 20"
+        if (capture.intervalSec !in 0.25..60.0) errors += "Capture interval must be between 0.25 and 60 seconds"
         if (steps.isEmpty()) errors += "Scenario must contain at least one step"
 
         var openSection: String? = null
@@ -236,6 +242,7 @@ data class ReleaseScenario(
             val prefix = "Step ${index + 1}"
             when (step) {
                 is ScenarioStep.InstallApk -> if (step.path.isBlank()) errors += "$prefix APK path is required"
+                is ScenarioStep.LaunchDeepLink -> validateDeepLink(step.uri, prefix, errors)
                 is ScenarioStep.GrantPermission -> if (step.permission.isBlank()) errors += "$prefix permission is required"
                 is ScenarioStep.Wait -> if (step.durationMs !in 1..MAX_TIMEOUT_MS) errors += "$prefix wait must be between 1 and $MAX_TIMEOUT_MS ms"
                 is ScenarioStep.BeginSection -> {
@@ -317,8 +324,33 @@ data class ReleaseScenario(
         if (timeoutMs !in 1..MAX_TIMEOUT_MS) errors += "$prefix timeout must be between 1 and $MAX_TIMEOUT_MS ms"
     }
 
+    private fun validateDeepLink(value: String, prefix: String, errors: MutableList<String>) {
+        if (value.isBlank()) {
+            errors += "$prefix deep link URI is required"
+            return
+        }
+        if (value.length > MAX_DEEP_LINK_LENGTH) {
+            errors += "$prefix deep link URI must not exceed $MAX_DEEP_LINK_LENGTH characters"
+            return
+        }
+        if (value.any(Char::isISOControl)) {
+            errors += "$prefix deep link URI must not contain control characters"
+            return
+        }
+        val uri = try {
+            java.net.URI(value)
+        } catch (_: java.net.URISyntaxException) {
+            errors += "$prefix deep link URI is invalid; encode spaces and special characters"
+            return
+        }
+        if (!uri.isAbsolute || uri.scheme.isNullOrBlank()) {
+            errors += "$prefix deep link URI must be absolute and include a scheme"
+        }
+    }
+
     companion object {
         private const val MAX_TIMEOUT_MS = 600_000L
+        private const val MAX_DEEP_LINK_LENGTH = 4_096
     }
 }
 

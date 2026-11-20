@@ -22,6 +22,7 @@ class ReleaseGuardModelTest {
         assertEquals(
             setOf(
                 DeviceCapability.SHELL,
+                DeviceCapability.LOGCAT,
                 DeviceCapability.UI_HIERARCHY,
                 DeviceCapability.TOUCH_INPUT,
                 DeviceCapability.SCREEN_CAPTURE
@@ -32,7 +33,31 @@ class ReleaseGuardModelTest {
 
     @Test fun dpadScenarioDoesNotRequireTouch() {
         val scenario = scenario(steps = listOf(ScenarioStep.PressKey(LogicalKey.DPAD_CENTER)))
-        assertEquals(setOf(DeviceCapability.SHELL, DeviceCapability.DPAD_INPUT), scenario.requiredCapabilities())
+        assertEquals(
+            setOf(DeviceCapability.SHELL, DeviceCapability.LOGCAT, DeviceCapability.DPAD_INPUT),
+            scenario.requiredCapabilities()
+        )
+    }
+
+    @Test fun deepLinksMustBeAbsoluteSafeUrisAndOnlyRequireStandardRunCapabilities() {
+        val valid = scenario(steps = listOf(ScenarioStep.LaunchDeepLink("myapp://content/123?source=release-guard")))
+        assertTrue(valid.validate().isEmpty())
+        assertEquals(setOf(DeviceCapability.SHELL, DeviceCapability.LOGCAT), valid.requiredCapabilities())
+
+        val invalid = scenario(
+            steps = listOf(
+                ScenarioStep.LaunchDeepLink(""),
+                ScenarioStep.LaunchDeepLink("content/123"),
+                ScenarioStep.LaunchDeepLink("myapp://content/has space"),
+                ScenarioStep.LaunchDeepLink("myapp://content\n123"),
+                ScenarioStep.LaunchDeepLink("myapp://" + "a".repeat(4_096))
+            )
+        ).validate()
+        assertTrue(invalid.any { "URI is required" in it })
+        assertTrue(invalid.any { "absolute and include a scheme" in it })
+        assertTrue(invalid.any { "URI is invalid" in it })
+        assertTrue(invalid.any { "control characters" in it })
+        assertTrue(invalid.any { "must not exceed 4096" in it })
     }
 
     @Test fun validationReportsStructureCoordinatesTimeoutsAndBudgets() {
@@ -55,7 +80,7 @@ class ReleaseGuardModelTest {
 
         val errors = scenario.validate()
         assertContains(errors, "Unsupported schema version 99")
-        assertContains(errors, "Repetitions must be between 1 and 100")
+        assertContains(errors, "Repetitions must be between 1 and 1000")
         assertTrue(errors.any { "cannot begin 'nested'" in it })
         assertTrue(errors.any { "coordinates must be between 0 and 1" in it })
         assertTrue(errors.any { "requires a resource id" in it })
@@ -64,6 +89,14 @@ class ReleaseGuardModelTest {
         assertTrue(errors.any { "duplicates id 'duplicate'" in it })
         assertTrue(errors.any { "relative regression limit" in it })
         assertTrue(errors.any { "is not closed" in it })
+    }
+
+    @Test fun measuredRepetitionsAllowOneThousandButNotMore() {
+        assertTrue(scenario(repetitions = 1_000, steps = listOf(ScenarioStep.LaunchApp())).validate().isEmpty())
+        assertContains(
+            scenario(repetitions = 1_001, steps = listOf(ScenarioStep.LaunchApp())).validate(),
+            "Repetitions must be between 1 and 1000"
+        )
     }
 
     @Test fun selectorCoordinateFallbackMustBeCompleteAndNormalized() {

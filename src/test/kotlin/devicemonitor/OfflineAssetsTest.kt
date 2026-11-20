@@ -8,6 +8,7 @@ import devicemonitor.presentation.web.OFFLINE_WEB_ASSETS
 import devicemonitor.presentation.web.PAGE_CSP
 import devicemonitor.presentation.web.PLAYER_DEBUGGER_PAGE
 import devicemonitor.presentation.web.RELEASE_GUARD_PAGE
+import devicemonitor.presentation.web.RELEASE_ARTIFACT_CSP
 import devicemonitor.presentation.web.resolveOfflineAsset
 import java.nio.file.Files
 import kotlin.test.Test
@@ -41,6 +42,42 @@ class OfflineAssetsTest {
         assertContains(RELEASE_GUARD_PAGE, "/api/release/start")
         assertContains(RELEASE_GUARD_PAGE, "/api/release/status")
         assertContains(RELEASE_GUARD_PAGE, "/api/release/baseline")
+        assertContains(RELEASE_GUARD_PAGE, "['launchDeepLink','Launch deep link']")
+        assertContains(RELEASE_GUARD_PAGE, "'Deep link URI'")
+        assertContains(RELEASE_GUARD_PAGE, "myapp://content/123?source=release-guard")
+        assertContains(RELEASE_GUARD_PAGE, "Open complete scenario log")
+        assertContains(RELEASE_GUARD_PAGE, "Open anomalies")
+        assertFalse("Open full logcat · attempt" in RELEASE_GUARD_PAGE)
+        assertContains(RELEASE_GUARD_PAGE, "var out={SHELL:true,LOGCAT:true}")
+        assertContains(RELEASE_GUARD_PAGE, "function insertStep(index)")
+        assertContains(RELEASE_GUARD_PAGE, "if(!hadDraft)newScenario()")
+        assertContains(RELEASE_GUARD_PAGE, "Add first step")
+        assertContains(RELEASE_GUARD_PAGE, "Add step above step")
+        assertContains(RELEASE_GUARD_PAGE, "Add step below step")
+        assertFalse("onclick=\"addStep()\"" in RELEASE_GUARD_PAGE)
+        assertContains(RELEASE_GUARD_PAGE, "No performance budgets · evidence-only run")
+        assertContains(RELEASE_GUARD_PAGE, "not_evaluated:'Evidence only'")
+        assertContains(RELEASE_GUARD_PAGE, "EVIDENCE_ONLY")
+        assertContains(RELEASE_GUARD_PAGE, "id=\"scenarioRepetitions\" type=\"number\" min=\"1\" max=\"1000\"")
+        listOf("captureCpu", "capturePerCore", "captureTopCpu", "captureMemory", "capturePsi", "captureTopMemory", "captureAppPss").forEach { id ->
+            assertTrue(Regex("""id="$id"[^>]*\bchecked\b""").containsMatchIn(RELEASE_GUARD_PAGE), "$id should be checked by default")
+        }
+        assertContains(RELEASE_GUARD_PAGE, "intervalSec:Number(document.getElementById('captureInterval').value||1)")
+        assertContains(RELEASE_GUARD_PAGE, "per_core_cpu_pct")
+        assertContains(RELEASE_GUARD_PAGE, "top_process_cpu_pct")
+        assertContains(RELEASE_GUARD_PAGE, "top_process_memory_mb")
+        assertContains(RELEASE_GUARD_PAGE, "app_pss_mb")
+        assertContains(RELEASE_GUARD_PAGE, "releaseBusy||checks.some")
+        assertContains(RELEASE_GUARD_PAGE, "updateReadiness();pollStatus();")
+        assertContains(RELEASE_GUARD_PAGE, "caps.indexOf('ROOT')>=0&&caps.indexOf('PSI')>=0")
+        assertContains(RELEASE_GUARD_PAGE, "class=\"guard-step-status\"")
+        assertContains(RELEASE_GUARD_PAGE, "row.classList.add('running')")
+        assertContains(RELEASE_GUARD_PAGE, "row.classList.add('done')")
+        assertContains(RELEASE_GUARD_PAGE, "aria-current','step'")
+        assertContains(RELEASE_GUARD_PAGE, "scrollIntoView({behavior:reduced?'auto':'smooth'")
+        assertContains(RELEASE_GUARD_PAGE, "prefers-reduced-motion:reduce")
+        assertContains(RELEASE_GUARD_PAGE, "data-phase=\"WARM_UP\"")
+        assertContains(RELEASE_GUARD_PAGE, "Release ready")
         assertFalse("window.open(" in RELEASE_GUARD_PAGE)
     }
 
@@ -55,7 +92,7 @@ class OfflineAssetsTest {
         assertContains(PLAYER_DEBUGGER_PAGE, "id=\"playerReportViewer\"")
         assertContains(PLAYER_DEBUGGER_PAGE, "id=\"pdHandoffMap\"")
         listOf("cpuUtil", "perCoreCpu", "topProcessCpu", "memoryUsed", "psiPressure", "topProcessMemory").forEach { id ->
-            assertContains(PLAYER_DEBUGGER_PAGE, "id=\"$id\" type=\"checkbox\" checked")
+            assertTrue(Regex("""id="$id"[^>]*\bchecked\b""").containsMatchIn(PLAYER_DEBUGGER_PAGE), "$id should be checked by default")
         }
         assertContains(PLAYER_DEBUGGER_PAGE, "Reported")
         assertContains(PLAYER_DEBUGGER_PAGE, "Measured")
@@ -65,14 +102,42 @@ class OfflineAssetsTest {
 
     @Test fun homeAndPlayerDebuggerShareBalancedFirstUseMetricDefaults() {
         listOf("m_cpu", "m_percore", "m_topprocs", "m_mempct", "m_psi", "m_topmem").forEach { id ->
-            assertContains(HOME_PAGE, "id=\"$id\" checked")
+            assertTrue(Regex("""id="$id"[^>]*\bchecked\b""").containsMatchIn(HOME_PAGE), "$id should be checked by default")
         }
         assertContains(HOME_PAGE, "id=\"m_pss\"><span>")
         assertFalse(HOME_PAGE.contains("id=\"m_pss\" checked"))
 
         listOf("cpuUtil", "perCoreCpu", "topProcessCpu", "memoryUsed", "psiPressure", "topProcessMemory").forEach { id ->
-            assertContains(PLAYER_DEBUGGER_PAGE, "id=\"$id\" type=\"checkbox\" checked")
+            assertTrue(Regex("""id="$id"[^>]*\bchecked\b""").containsMatchIn(PLAYER_DEBUGGER_PAGE), "$id should be checked by default")
         }
+    }
+
+    @Test fun rootRequiredMetricsAreMarkedGatedAndDefensivelySerialized() {
+        listOf("m_psi", "m_thermal").forEach { id ->
+            assertTrue(Regex("""id="$id"[^>]*data-root-required="true"""").containsMatchIn(HOME_PAGE))
+            assertContains(HOME_PAGE, "rootMetricEnabled('$id')")
+        }
+        listOf("m_topprocs", "m_maincpu", "m_mediacpu").forEach { id ->
+            assertFalse(Regex("""id="$id"[^>]*data-root-required="true"""").containsMatchIn(HOME_PAGE))
+        }
+        assertContains(HOME_PAGE, "var ROOT_METRIC_IDS = ['m_psi', 'm_thermal']")
+        assertContains(HOME_PAGE, "selectedDevice.root === 'root'")
+        assertContains(HOME_PAGE, "input.dataset.rootPreference")
+        assertContains(HOME_PAGE, "aria-label=\"Requires rooted ADB device\"")
+
+        assertContains(PLAYER_DEBUGGER_PAGE, "id=\"psiPressure\" type=\"checkbox\" data-root-required=\"true\"")
+        assertFalse(Regex("""id="topProcessCpu"[^>]*data-root-required="true"""").containsMatchIn(PLAYER_DEBUGGER_PAGE))
+        assertContains(PLAYER_DEBUGGER_PAGE, "device.root==='root'")
+        assertContains(PLAYER_DEBUGGER_PAGE, "id==='psiPressure'?rootSignalEnabled(id)")
+        assertContains(PLAYER_DEBUGGER_PAGE, "input.dataset.rootPreference")
+    }
+
+    @Test fun dashboardKeepsTunnelModeWithoutProjectSpecificLifecycle() {
+        assertContains(DASHBOARD_PAGE, "id=\"c-tunnel\"")
+        assertContains(DASHBOARD_PAGE, "Negotiated tunnel state")
+        assertFalse("mk-player-lifecycle" in DASHBOARD_PAGE)
+        assertFalse("id=\"c-video\"" in DASHBOARD_PAGE)
+        assertFalse("Player state" in DASHBOARD_PAGE)
     }
 
     @Test fun diagnosticReportsOpenInTheStatePreservingViewer() {
@@ -87,6 +152,14 @@ class OfflineAssetsTest {
         assertFalse(Regex("""window\.open\(['\"]/api/(?:snapshot|procrank)-report""").containsMatchIn(HOME_PAGE))
     }
 
+    @Test fun homeHandlesNativeDiagnosticsDownloadConfirmation() {
+        assertContains(HOME_PAGE, "id=\"downloadToast\"")
+        assertContains(HOME_PAGE, "aria-live=\"polite\"")
+        assertContains(HOME_PAGE, "studio-download-finished")
+        assertContains(HOME_PAGE, "Diagnostics saved to Downloads")
+        assertContains(HOME_PAGE, "Diagnostics download failed")
+    }
+
     @Test fun assetAllowlistRejectsTraversalAndPrefixMatches() {
         assertNotNull(resolveOfflineAsset("/assets/chart.umd.js"))
         assertNotNull(resolveOfflineAsset("/assets/jspdf.umd.min.js"))
@@ -95,6 +168,11 @@ class OfflineAssetsTest {
         assertNull(resolveOfflineAsset("/assets/chart.umd.js/extra"))
         assertContains(PAGE_CSP, "default-src 'self'")
         assertContains(PAGE_CSP, "connect-src 'self'")
+        assertContains(RELEASE_ARTIFACT_CSP, "frame-ancestors 'self'")
+    }
+
+    @Test fun releaseGuardOffersThePortableInteractivePerformanceReport() {
+        assertContains(RELEASE_GUARD_PAGE, "'interactive-performance-report.html':'Open interactive performance report'")
     }
 
     @Test fun generatedDiagnosticsAreStandaloneAndServerRendered() {

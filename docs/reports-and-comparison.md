@@ -1,5 +1,8 @@
 # Reports, CSV & Comparison
 
+**Current state:** implemented. The PDF and CSV are generated from the same in-memory `Sample`
+stream used by the dashboard; comparison reads completed CSV files and does not re-query the device.
+
 Every run writes a folder `run_<timestamp>_<manufacturer>_<model>/` containing `report.pdf`,
 `samples.csv`, `logcat.log`, `anomalies.log`, and `device-info.log`.
 
@@ -27,10 +30,16 @@ Every run writes a folder `run_<timestamp>_<manufacturer>_<model>/` containing `
 
 - **What:** pick two past runs (by folder/label) and overlay their CSVs metric-by-metric — Run A solid,
   Run B dashed, with Android target reference lines. Exports the comparison to PDF client-side (jsPDF).
-- **How:** the page fetches each run's CSV via `/api/runcsv?folder=`, parses it in the browser, and
-  charts only the metrics present in both.
+- **How:** the page fetches each run's CSV via `/api/runcsv?folder=`, parses it locally, and charts
+  only metrics present in both. Chart and PDF-export assets are bundled by the application; the
+  comparison does not call a CDN.
 - **Dev use:** the intended A/B workflow. Run the same scenario twice with different `--label`s (e.g.
   `tunnel-off` vs `tunnel-on`, or before/after a fix) and read the deltas directly.
+
+Blank CSV cells mean disabled or unavailable data, not zero. A comparison can show correlation and
+regression between two captures, but it does not establish statistical significance or normalize
+different devices, firmware, durations or scenarios automatically. Release Guard is the repeatable,
+budgeted workflow when those controls matter.
 
 ### Tunnel-mode example
 ```bash

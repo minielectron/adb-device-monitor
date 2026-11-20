@@ -110,17 +110,12 @@ internal val DASHBOARD_PAGE = """<!DOCTYPE html>
   </div>
   </section>
   <section id="playback-section" class="analysis-section studio-panel" aria-labelledby="playback-title">
-    <div class="studio-section-head"><div><p class="studio-eyebrow">Media analysis</p><h2 class="studio-section-title" id="playback-title">Playback &amp; tunnel mode</h2><p class="studio-section-copy">Video lifecycle and TUNNELED / NON-TUNNELED state from logcat.</p></div></div>
+    <div class="studio-section-head"><div><p class="studio-eyebrow">Media analysis</p><h2 class="studio-section-title" id="playback-title">Tunnel mode</h2><p class="studio-section-copy">TUNNELED / NON-TUNNELED MediaCodec state from logcat.</p></div></div>
     <div id="pb-buildbanner" class="media-notice"></div>
-    <div id="pb-lifecycleflag" class="media-notice"></div>
     <div id="pb-badges"></div>
     <div class="playback-grid">
-      <div class="card"><h2>Video player state <span class="studio-section-copy">&nbsp;&middot;&nbsp;raw mk-player-lifecycle events</span></h2><div class="chartbox" style="height:320px"><canvas id="c-video"></canvas></div>
+      <div class="card"><h2>Negotiated tunnel state</h2><div class="chartbox" style="height:220px"><canvas id="c-tunnel"></canvas></div></div>
     </div>
-    <div class="card"><h2>Tunnel mode</h2>
-      <div class="chartbox" style="height:170px"><canvas id="c-tunnel"></canvas></div>
-    </div>
-  </div>
   </section>
   <section id="events" class="events-panel studio-panel" aria-labelledby="events-title"><div class="studio-section-head"><div><p class="studio-eyebrow">Run narrative</p><h2 class="studio-section-title" id="events-title">Events</h2><p class="studio-section-copy">Channel changes, anomalies, and foreground activity in chronological order.</p></div></div><div class="event-scroll"><table><thead><tr><th style="width:70px">Time</th><th style="width:140px">Kind</th><th>Detail</th></tr></thead><tbody id="evbody"></tbody></table></div></section>
 </main>
@@ -191,15 +186,7 @@ var hasTopMem = false;
 
 // Playback (STB) state
 var hasPlayback = false;
-var videoChart = null;
 var tunnelChart = null;
-// Raw MediaKind player lifecycle states, ordered terminal/idle (low) -> actively playing (high).
-// Must match Playback.LIFECYCLE_STATES on the Kotlin side.
-var LIFECYCLE_STATES = ['onError','onSourceUnloaded','onPlaybackFinished','onStop','onPaused',
-  'onSourceLoad','onSourceLoaded','onSeek','onStallStarted','onPlay','onStallEnded','onSeeked',
-  'onRenderFirstFrame','onReady','onPlaying'];
-var VIDEO_ENC = {}; LIFECYCLE_STATES.forEach(function (s, i) { VIDEO_ENC[s] = i; });
-var VIDEO_TICKS = {}; LIFECYCLE_STATES.forEach(function (s, i) { VIDEO_TICKS[i] = s; });
 var TUNNEL_ENC = { 'n/a': 0, unknown: 0.5, non_tunneled: 1, tunneled: 2 };
 
 function buildCards() {
@@ -467,24 +454,20 @@ function steppedChart(canvasId, color, tickMap, yMax) {
   });
 }
 
-function initPlaybackCharts() {
-  if (videoChart) return;
-  videoChart = steppedChart('c-video', '#2563EB', VIDEO_TICKS, LIFECYCLE_STATES.length - 0.8);
+function initTunnelChart() {
+  if (tunnelChart) return;
   tunnelChart = steppedChart('c-tunnel', '#7C3AED',
     { 0: 'n/a', 0.5: 'unknown', 1: 'non-tun', 2: 'tunneled' }, 2.4);
 }
 
-function pushPlaybackSamples(list) {
-  if (!videoChart) return;
+function pushTunnelSamples(list) {
+  if (!tunnelChart) return;
   list.forEach(function (s) {
-    if (s.video !== null && s.video !== undefined && VIDEO_ENC[s.video] !== undefined)
-      videoChart.data.datasets[0].data.push({ x: s.t, y: VIDEO_ENC[s.video] });
     if (s.tunnel !== null && s.tunnel !== undefined && TUNNEL_ENC[s.tunnel] !== undefined)
       tunnelChart.data.datasets[0].data.push({ x: s.t, y: TUNNEL_ENC[s.tunnel] });
   });
-  videoChart.update('none');
   tunnelChart.update('none');
-  renderPlaybackBadges();
+  renderTunnelBadge();
 }
 
 function renderBuildBanner(buildTunnel) {
@@ -498,43 +481,17 @@ function renderBuildBanner(buildTunnel) {
     el.textContent = '✗ Tunnel mode DISABLED in build (isTunneledPlaybackEnabled=false)';
     el.style.background = 'rgba(255,118,118,.09)'; el.style.color = '#ffb0b0'; el.style.border = '1px solid rgba(255,118,118,.28)';
   } else {
-    el.textContent = '— Build tunnel flag not yet detected (play a video; reads isTunneledPlaybackEnabled from player config)';
+    el.textContent = '— Build tunnel flag not yet detected (reads isTunneledPlaybackEnabled when logged)';
     el.style.background = 'rgba(255,255,255,.035)'; el.style.color = '#aaa69e'; el.style.border = '1px solid rgba(255,255,255,.09)';
   }
 }
 
-var PB_NOT_PLAYING = { onError: 1, onSourceUnloaded: 1, onPlaybackFinished: 1, onStop: 1, onPaused: 1 };
-function isPlayingState(s) { return !!s && VIDEO_ENC[s] !== undefined && !PB_NOT_PLAYING[s]; }
-
-// Separate lifecycle-state flag — prominent current player lifecycle state.
-function renderLifecycleFlag() {
-  var el = document.getElementById('pb-lifecycleflag');
-  if (!el || !allSamples.length) return;
-  var last = allSamples[allSamples.length - 1];
-  var vs = last.video;
-  el.style.display = 'block';
-  if (vs) {
-    var playing = isPlayingState(vs);
-    el.textContent = '▶ Lifecycle state: ' + vs + (playing ? '  (playing)' : '  (not playing)');
-    if (playing) { el.style.background = 'rgba(113,168,255,.09)'; el.style.color = '#a9caff'; el.style.border = '1px solid rgba(113,168,255,.28)'; }
-    else { el.style.background = 'rgba(255,255,255,.035)'; el.style.color = '#aaa69e'; el.style.border = '1px solid rgba(255,255,255,.09)'; }
-  } else {
-    el.textContent = '▶ Lifecycle state: none yet (start a video)';
-    el.style.background = 'rgba(255,255,255,.035)'; el.style.color = '#aaa69e'; el.style.border = '1px solid rgba(255,255,255,.09)';
-  }
-}
-
-function renderPlaybackBadges() {
+function renderTunnelBadge() {
   if (!allSamples.length) return;
   var last = allSamples[allSamples.length - 1];
-  var vs = last.video || 'none';
   var tn = last.tunnel || 'n/a';
-  var vcls = isPlayingState(last.video) ? 'ok' : 'warn';
   var tcls = tn === 'tunneled' ? 'ok' : tn === 'non_tunneled' ? 'warn' : 'warn';
-  var html = badge('Player state', vs, vcls)
-           + badge('Tunnel mode', tn.replace('_', '-'), tcls);
-  document.getElementById('pb-badges').innerHTML = html;
-  renderLifecycleFlag();
+  document.getElementById('pb-badges').innerHTML = badge('Tunnel mode', tn.replace('_', '-'), tcls);
 }
 
 // ---- foreground activity tracking ----
@@ -580,8 +537,8 @@ function pushSamples(list) {
   try { if (hasTopProcs) pushProcSamples(list); } catch (e) { console.error('proc push failed', e); }
   // Push top-memory data
   try { if (hasTopMem) pushMemSamples(list); } catch (e) { console.error('mem push failed', e); }
-  // Push playback (STB) data
-  try { if (hasPlayback) pushPlaybackSamples(list); } catch (e) { console.error('playback push failed', e); }
+  // Push generic tunnel-mode data
+  try { if (hasPlayback) pushTunnelSamples(list); } catch (e) { console.error('tunnel push failed', e); }
   // Stretch each baseline to [firstSample.t … lastSample.t] — identical x-range
   // to the real data series, so Chart.js auto-scaling stays consistent.
   if (allSamples.length) {
@@ -815,12 +772,12 @@ function tick() {
         if (ms) ms.style.display = 'block';
         try { initMemChart(); } catch (e) { console.error('initMemChart failed', e); }
       }
-      // Playback (STB) feature
+      // Tunnel-mode feature
       if (d.hasPlayback === true) {
         hasPlayback = true;
         var pbs = document.getElementById('playback-section');
         if (pbs) pbs.style.display = 'block';
-        try { initPlaybackCharts(); } catch (e) { console.error('initPlaybackCharts failed', e); }
+        try { initTunnelChart(); } catch (e) { console.error('initTunnelChart failed', e); }
       }
     }
     idx = d.nextIndex;

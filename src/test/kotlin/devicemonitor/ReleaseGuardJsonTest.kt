@@ -22,6 +22,7 @@ class ReleaseGuardJsonTest {
                 ScenarioStep.UninstallPackage(),
                 ScenarioStep.ClearAppData(),
                 ScenarioStep.LaunchApp(),
+                ScenarioStep.LaunchDeepLink("myapp://content/123?source=release-guard"),
                 ScenarioStep.ForceStopApp(),
                 ScenarioStep.GrantPermission("android.permission.POST_NOTIFICATIONS"),
                 ScenarioStep.Wait(100),
@@ -44,6 +45,11 @@ class ReleaseGuardJsonTest {
                     "cpu", "CPU p95", MetricDefinition("cpu", "%", true), Aggregation.P95,
                     absoluteLimit = 80.0, relativeRegressionLimitPct = 10.0
                 )
+            ),
+            capture = CaptureSettings(
+                metrics = setOf(MetricDefinition("cpu_util_pct", "%", true)),
+                intervalSec = 0.5,
+                configured = true
             )
         )
 
@@ -51,7 +57,27 @@ class ReleaseGuardJsonTest {
         val decoded = ReleaseGuardJson.parseScenario(encoded)
         assertEquals(scenario, decoded)
         assertTrue("\"type\": \"installApk\"" in encoded)
-        assertIs<ScenarioStep.Shell>(decoded.steps[18])
+        assertTrue("\"type\": \"launchDeepLink\"" in encoded)
+        assertIs<ScenarioStep.Shell>(decoded.steps[19])
+    }
+
+    @Test fun legacyCaptureSettingsDefaultToOneSecond() {
+        val scenario = ReleaseScenario(
+            id = "legacy",
+            name = "Legacy",
+            packageName = "com.example.player",
+            steps = listOf(ScenarioStep.LaunchApp())
+        )
+        val json = JsonParser.parseString(ReleaseGuardJson.scenario(scenario)).asJsonObject
+        json.getAsJsonObject("capture").apply {
+            remove("intervalSec")
+            remove("configured")
+        }
+
+        val decoded = ReleaseGuardJson.parseScenario(json.toString())
+
+        assertEquals(1.0, decoded.capture.intervalSec)
+        assertEquals(false, decoded.capture.configured)
     }
 
     @Test fun manifestsPreserveMetadataAndUnicodePaths() {
@@ -68,6 +94,12 @@ class ReleaseGuardJsonTest {
             metadata = metadata
         )
         assertEquals(manifest, ReleaseGuardJson.parseManifest(ReleaseGuardJson.manifest(manifest)))
+
+        val evidenceOnly = manifest.copy(
+            state = ExecutionState.EVIDENCE_ONLY,
+            evaluation = ReleaseEvaluation(Verdict.NOT_EVALUATED, emptyList())
+        )
+        assertEquals(evidenceOnly, ReleaseGuardJson.parseManifest(ReleaseGuardJson.manifest(evidenceOnly)))
     }
 
     @Test fun unsupportedSchemaAndUnknownStepFailClearly() {

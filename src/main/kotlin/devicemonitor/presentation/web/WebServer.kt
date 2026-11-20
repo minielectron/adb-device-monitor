@@ -27,6 +27,7 @@ internal val OFFLINE_WEB_ASSETS = mapOf(
 )
 
 internal const val PAGE_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+internal const val RELEASE_ARTIFACT_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'"
 private val PLAYER_TEXT_EXTENSIONS = setOf("json", "ndjson", "csv", "log", "txt", "html")
 
 internal fun resolveOfflineAsset(path: String): Pair<String, String>? = OFFLINE_WEB_ASSETS[path]
@@ -971,6 +972,7 @@ class WebApp(
             require(run.state in setOf(
                 devicemonitor.domain.releaseguard.ExecutionState.PASSED,
                 devicemonitor.domain.releaseguard.ExecutionState.WARNING,
+                devicemonitor.domain.releaseguard.ExecutionState.EVIDENCE_ONLY,
                 devicemonitor.domain.releaseguard.ExecutionState.FAILED
             )) { "Only a completed run can become a baseline" }
             require(run.attempts.any { it.successful }) { "Run has no successful attempt" }
@@ -1004,7 +1006,7 @@ class WebApp(
                 else -> "application/octet-stream"
             }
             val bytes = file.readBytes()
-            if (file.extension.equals("html", ignoreCase = true)) ex.responseHeaders.add("Content-Security-Policy", PAGE_CSP)
+            if (file.extension.equals("html", ignoreCase = true)) ex.responseHeaders.add("Content-Security-Policy", RELEASE_ARTIFACT_CSP)
             ex.responseHeaders.add("Content-Type", type)
             ex.responseHeaders.add("Content-Disposition", "inline; filename=\"${file.name.replace("\"", "")}\"")
             ex.responseHeaders.add("X-Content-Type-Options", "nosniff")
