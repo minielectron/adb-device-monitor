@@ -97,6 +97,7 @@ object ReleaseGuardReport {
         val successfulAttempts = manifest.attempts.count { it.successful }
         val failedAttempts = manifest.attempts.size - successfulAttempts
         val graphs = normalizedGraphs(scenario, manifest, evidence)
+        val appMemory = appMemoryBreakdown(scenario, evidence)
         val anomalySummary = evidence.anomalies.groupingBy { it.type }.eachCount().entries
             .sortedByDescending { it.value }
             .joinToString("") { "<li><strong>${html(it.key)}</strong><span>${it.value}</span></li>" }
@@ -119,6 +120,7 @@ object ReleaseGuardReport {
 <section class="card" style="margin-top:16px"><h2>Budget findings</h2><table><thead><tr><th>Budget</th><th>Status</th><th>Value</th><th>Limit</th><th>Regression</th></tr></thead><tbody>$findings</tbody></table></section>
 <section class="card" style="margin-top:16px"><h2>Complete scenario coverage</h2><div class="coverage"><div><strong>${manifest.attempts.size}</strong><span>Measured repetitions</span></div><div><strong>$successfulAttempts</strong><span>Successful</span></div><div><strong>$failedAttempts</strong><span>Failed</span></div><div><strong>${evidence.samples.size}</strong><span>Samples</span></div></div></section>
 <section style="margin-top:16px"><h2>Normalized performance profile</h2><p class="meta">Median trend with P10–P90 variability across successful measured repetitions, normalized to scenario progress.</p><div class="charts">${graphs.ifBlank { "<section class=\"card\"><h3>Performance graph unavailable</h3><p class=\"meta\">No complete measured repetition contained enough samples to normalize.</p></section>" }}</div></section>
+$appMemory
 <section class="card" style="margin-top:16px"><h2>Run anomalies</h2><p class="meta">Iteration and device issues are consolidated in the single scenario anomalies file.</p><ul>$anomalySummary</ul></section>
 <section class="card" style="margin-top:16px"><h2>Registered scenario evidence</h2><ul>${registeredEvidence.ifBlank { "<li><span>No evidence files registered</span></li>" }}</ul></section>
 </main></body></html>"""
@@ -191,8 +193,7 @@ object ReleaseGuardReport {
         }.sortedBy { it.attempt }
         if (windows.isEmpty() || evidence.samples.isEmpty()) return ""
 
-        val selected = (scenario.capture.metrics.map { it.id } + scenario.budgets.map { it.metric.id })
-            .map { it.lowercase(Locale.US) }.toSet()
+        val selected = selectedMetricIds(scenario)
         return graphMetrics().filter { metric -> metric.ids.any { it in selected } }.mapNotNull { metric ->
             val perAttempt = windows.mapNotNull { window ->
                 val values = evidence.samples.asSequence()
@@ -240,6 +241,29 @@ object ReleaseGuardReport {
         return """<section class="card"><h3>${html(metric.label)}</h3><div class="chart-meta"><span>${number(min)}–${number(max)} ${html(metric.unit)}</span><span>$repetitions repetition(s)</span></div><svg class="metric-chart" viewBox="0 0 820 214" role="img" aria-label="${html(metric.label)} normalized scenario graph">$grid<text x="8" y="34" class="chart-axis">${html(metric.unit)}</text><polygon points="$band" class="chart-band"/><polyline points="$line" class="chart-line"/></svg></section>"""
     }
 
+    private fun appMemoryBreakdown(scenario: ReleaseScenario, evidence: ScenarioRunEvidence): String {
+        val selected = selectedMetricIds(scenario).any { it == "app_pss_mb" || it == "pss" }
+        if (!selected) return ""
+        val categories = listOf<Pair<String, (Sample) -> Double?>>(
+            "Total PSS" to { it.pss?.totalMb },
+            "Java heap" to { it.pss?.javaHeapMb },
+            "Native heap" to { it.pss?.nativeHeapMb },
+            "Code" to { it.pss?.codeMb },
+            "Stack" to { it.pss?.stackMb },
+            "Graphics" to { it.pss?.graphicsMb },
+            "Private other" to { it.pss?.privateOtherMb },
+            "System" to { it.pss?.systemMb }
+        )
+        val rows = categories.mapNotNull { (label, value) ->
+            val values = evidence.samples.mapNotNull(value).filter(Double::isFinite).sorted()
+            values.takeIf { it.isNotEmpty() }?.let {
+                "<tr><td><strong>${html(label)}</strong></td><td>${number(percentile(it, 50.0))} MB</td><td>${number(it.last())} MB</td></tr>"
+            }
+        }.joinToString("")
+        val body = rows.ifBlank { "<tr><td colspan=\"3\"><strong>App PSS data unavailable</strong><small>The package was not running or the device did not expose memory details.</small></td></tr>" }
+        return """<section class="card" style="margin-top:16px"><h2>App memory breakdown</h2><p class="meta">Scenario-wide memory from dumpsys meminfo for ${html(scenario.packageName)}.</p><table><thead><tr><th>Category</th><th>Median</th><th>Peak</th></tr></thead><tbody>$body</tbody></table></section>"""
+    }
+
     private fun graphMetrics(): List<GraphMetric> = listOf(
         GraphMetric(setOf("cpu", "cpu_util_pct"), "CPU utilization", "%") { it.cpuUtilPct },
         GraphMetric(setOf("per_core_cpu_pct"), "Per-core CPU average", "%") { sample -> sample.perCoreUtilPct?.mapNotNull { it }?.takeIf { it.isNotEmpty() }?.average() },
@@ -256,6 +280,11 @@ object ReleaseGuardReport {
         GraphMetric(setOf("screen_fps"), "Screen FPS", "fps") { it.screenFps },
         GraphMetric(setOf("video_fps"), "Video FPS", "fps") { it.videoFps }
     )
+
+    private fun selectedMetricIds(scenario: ReleaseScenario): Set<String> =
+        (scenario.capture.metrics.map { it.id } + scenario.budgets.map { it.metric.id } +
+            if (scenario.capture.configured) emptySet() else setOf("app_pss_mb"))
+            .map { it.lowercase(Locale.US) }.toSet()
 
     private fun percentile(sorted: List<Double>, percentile: Double): Double {
         if (sorted.size == 1) return sorted.first()

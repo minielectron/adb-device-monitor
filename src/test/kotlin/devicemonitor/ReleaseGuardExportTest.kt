@@ -3,6 +3,7 @@ package devicemonitor
 import devicemonitor.data.storage.ProjectRecord
 import devicemonitor.data.storage.RunManifest
 import devicemonitor.domain.Anomaly
+import devicemonitor.domain.PssSample
 import devicemonitor.domain.Sample
 import devicemonitor.domain.releaseguard.*
 import devicemonitor.presentation.report.JunitExporter
@@ -129,6 +130,42 @@ class ReleaseGuardExportTest {
         assertContains(html, "class=\"chart-line\"")
     }
 
+    @Test fun scenarioReportSummarizesAppPssHeapBreakdownAndHandlesMissingData() {
+        val scenario = scenario().copy(
+            budgets = emptyList(),
+            capture = CaptureSettings(
+                metrics = setOf(MetricDefinition("app_pss_mb", "MB", true)),
+                configured = true
+            )
+        )
+        val manifest = manifest(ReleaseEvaluation(Verdict.NOT_EVALUATED, emptyList())).copy(
+            state = ExecutionState.EVIDENCE_ONLY
+        )
+        val markers = listOf(
+            ScenarioMarker(0.0, 1, 0, "Measured iteration 1", type = ScenarioMarkerType.ATTEMPT_START),
+            ScenarioMarker(1.0, 1, 2, "Measured iteration 1", type = ScenarioMarkerType.ATTEMPT_END, outcome = ScenarioMarkerOutcome.PASS)
+        )
+        val pssSamples = listOf(
+            sample(0.0, 40.0, PssSample(100.0, 40.0, 20.0, 10.0, 2.0, 8.0, 12.0, 8.0)),
+            sample(1.0, 45.0, PssSample(120.0, 60.0, 30.0, 12.0, 3.0, 14.0, 14.0, 9.0))
+        )
+
+        val html = ReleaseGuardReport.write(
+            Files.createTempDirectory("release-guard-pss").toFile(),
+            project(), scenario, manifest, null, ScenarioRunEvidence(pssSamples, markers = markers)
+        ).getValue("report.html").readText()
+        assertContains(html, "Application PSS")
+        assertContains(html, "App memory breakdown")
+        assertContains(html, "Java heap")
+        assertContains(html, "<td>50 MB</td><td>60 MB</td>")
+
+        val unavailable = ReleaseGuardReport.write(
+            Files.createTempDirectory("release-guard-pss-unavailable").toFile(),
+            project(), scenario, manifest, null, ScenarioRunEvidence(listOf(sample(0.0, 40.0)), markers = markers)
+        ).getValue("report.html").readText()
+        assertContains(unavailable, "App PSS data unavailable")
+    }
+
     private fun project() = ProjectRecord(
         id = "player",
         name = "Player QA",
@@ -176,7 +213,7 @@ class ReleaseGuardExportTest {
         listOf(AttemptSummary(1, true))
     )
 
-    private fun sample(t: Double, cpu: Double) = Sample(
+    private fun sample(t: Double, cpu: Double, pss: PssSample? = null) = Sample(
         elapsedSec = t,
         cpuUtilPct = cpu,
         cpuIdlePct = 100.0 - cpu,
@@ -196,6 +233,7 @@ class ReleaseGuardExportTest {
         netTxKbps = 0.0,
         cpuTempC = 40.0,
         cpuFreqMhz = 1200.0,
-        majorFaultsPerSec = 0.0
+        majorFaultsPerSec = 0.0,
+        pss = pss
     )
 }

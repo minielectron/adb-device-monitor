@@ -427,7 +427,8 @@ class ScenarioRunner(
         runDirectory: File,
         capabilities: Set<DeviceCapability>
     ): SessionConfig {
-        val metrics = (scenario.capture.metrics.map { it.id } + scenario.budgets.map { it.metric.id })
+        val defaultMetrics = if (scenario.capture.configured) emptySet() else setOf("app_pss_mb")
+        val metrics = (scenario.capture.metrics.map { it.id } + scenario.budgets.map { it.metric.id } + defaultMetrics)
             .map { it.lowercase() }.toSet()
         fun enabled(vararg ids: String) = ids.any { it in metrics }
         return SessionConfig(

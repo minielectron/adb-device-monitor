@@ -80,7 +80,7 @@ class ReleaseGuardModelTest {
 
         val errors = scenario.validate()
         assertContains(errors, "Unsupported schema version 99")
-        assertContains(errors, "Repetitions must be between 1 and 100")
+        assertContains(errors, "Repetitions must be between 1 and 1000")
         assertTrue(errors.any { "cannot begin 'nested'" in it })
         assertTrue(errors.any { "coordinates must be between 0 and 1" in it })
         assertTrue(errors.any { "requires a resource id" in it })
@@ -89,6 +89,14 @@ class ReleaseGuardModelTest {
         assertTrue(errors.any { "duplicates id 'duplicate'" in it })
         assertTrue(errors.any { "relative regression limit" in it })
         assertTrue(errors.any { "is not closed" in it })
+    }
+
+    @Test fun measuredRepetitionsAllowOneThousandButNotMore() {
+        assertTrue(scenario(repetitions = 1_000, steps = listOf(ScenarioStep.LaunchApp())).validate().isEmpty())
+        assertContains(
+            scenario(repetitions = 1_001, steps = listOf(ScenarioStep.LaunchApp())).validate(),
+            "Repetitions must be between 1 and 1000"
+        )
     }
 
     @Test fun selectorCoordinateFallbackMustBeCompleteAndNormalized() {

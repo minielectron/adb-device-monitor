@@ -56,10 +56,12 @@ remain internal to budget aggregation and normalized graphs; Release Guard does 
 per-repetition analysis.
 
 The scenario capture configuration enables CPU utilization, per-core CPU, top-process CPU, memory
-used, PSI pressure and top-process memory by default. These collectors and required logcat capture
+used, PSI pressure, top-process memory and App PSS by default. App PSS uses
+`dumpsys meminfo <package>` to capture total PSS plus Java, native, code, stack, graphics,
+private-other and system memory. These collectors and required logcat capture
 run concurrently with the journey during every measured repetition; warm-ups remain unmeasured.
 The saved sample interval can be 0.5, 1 or 2 seconds. PSI is marked root-required and is disabled
-when the selected target does not expose both root and PSI capabilities. The other five defaults do
+when the selected target does not expose both root and PSI capabilities. The other six defaults do
 not require root.
 
 A budget selects a metric and aggregation: minimum, maximum, mean, median, P90, P95, count, rate or

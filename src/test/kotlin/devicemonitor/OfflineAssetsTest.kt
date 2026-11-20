@@ -57,13 +57,15 @@ class OfflineAssetsTest {
         assertContains(RELEASE_GUARD_PAGE, "No performance budgets · evidence-only run")
         assertContains(RELEASE_GUARD_PAGE, "not_evaluated:'Evidence only'")
         assertContains(RELEASE_GUARD_PAGE, "EVIDENCE_ONLY")
-        listOf("captureCpu", "capturePerCore", "captureTopCpu", "captureMemory", "capturePsi", "captureTopMemory").forEach { id ->
+        assertContains(RELEASE_GUARD_PAGE, "id=\"scenarioRepetitions\" type=\"number\" min=\"1\" max=\"1000\"")
+        listOf("captureCpu", "capturePerCore", "captureTopCpu", "captureMemory", "capturePsi", "captureTopMemory", "captureAppPss").forEach { id ->
             assertTrue(Regex("""id="$id"[^>]*\bchecked\b""").containsMatchIn(RELEASE_GUARD_PAGE), "$id should be checked by default")
         }
         assertContains(RELEASE_GUARD_PAGE, "intervalSec:Number(document.getElementById('captureInterval').value||1)")
         assertContains(RELEASE_GUARD_PAGE, "per_core_cpu_pct")
         assertContains(RELEASE_GUARD_PAGE, "top_process_cpu_pct")
         assertContains(RELEASE_GUARD_PAGE, "top_process_memory_mb")
+        assertContains(RELEASE_GUARD_PAGE, "app_pss_mb")
         assertContains(RELEASE_GUARD_PAGE, "releaseBusy||checks.some")
         assertContains(RELEASE_GUARD_PAGE, "updateReadiness();pollStatus();")
         assertContains(RELEASE_GUARD_PAGE, "caps.indexOf('ROOT')>=0&&caps.indexOf('PSI')>=0")

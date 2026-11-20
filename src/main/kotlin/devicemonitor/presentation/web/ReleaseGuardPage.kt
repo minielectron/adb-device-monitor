@@ -142,7 +142,7 @@ internal val RELEASE_GUARD_PAGE = """<!DOCTYPE html>
           <div class="guard-field"><label for="scenarioId">Scenario ID</label><input id="scenarioId" placeholder="cold-launch"></div>
           <div class="guard-field"><label for="scenarioRevision">Revision</label><input id="scenarioRevision" value="1" readonly></div>
           <div class="guard-field"><label for="scenarioWarmups">Warm-ups</label><input id="scenarioWarmups" type="number" min="0" max="20" value="1"></div>
-          <div class="guard-field"><label for="scenarioRepetitions">Measured repetitions</label><input id="scenarioRepetitions" type="number" min="1" max="100" value="3"></div>
+          <div class="guard-field"><label for="scenarioRepetitions">Measured repetitions</label><input id="scenarioRepetitions" type="number" min="1" max="1000" value="3"></div>
         </div>
 
         <div class="guard-divider"></div>
@@ -169,6 +169,7 @@ internal val RELEASE_GUARD_PAGE = """<!DOCTYPE html>
           <label class="guard-signal"><input id="captureMemory" type="checkbox" checked><span class="guard-signal-check"></span><span><strong>Memory used</strong><small>Capacity trend</small></span></label>
           <label class="guard-signal"><input id="capturePsi" type="checkbox" checked><span class="guard-signal-check"></span><span><strong>PSI pressure stall <span class="guard-root-required" aria-label="Requires rooted ADB device">ROOT</span></strong><small>CPU / memory / I/O stalls</small></span></label>
           <label class="guard-signal"><input id="captureTopMemory" type="checkbox" checked><span class="guard-signal-check"></span><span><strong>Top process memory</strong><small>Largest consumers</small></span></label>
+          <label class="guard-signal"><input id="captureAppPss" type="checkbox" checked><span class="guard-signal-check"></span><span><strong>App PSS</strong><small>Total, Java, native and graphics heaps</small></span></label>
         </div>
         <div class="guard-locked"><span>Complete scenario logcat</span><strong>Required · ON</strong></div>
         <div class="guard-readiness" id="readiness"></div>
@@ -215,7 +216,8 @@ var CAPTURE_SIGNALS = [
   ['captureTopCpu',[['top_process_cpu_pct','%']]],
   ['captureMemory',[['memory_used_mb','MB']]],
   ['capturePsi',[['psi_cpu','%'],['psi_memory','%'],['psi_io','%']]],
-  ['captureTopMemory',[['top_process_memory_mb','MB']]]
+  ['captureTopMemory',[['top_process_memory_mb','MB']]],
+  ['captureAppPss',[['app_pss_mb','MB']]]
 ];
 var RUN_PHASES = {DISCOVER:'Discovering target',PREFLIGHT:'Checking readiness',PREPARE:'Preparing run',WARM_UP:'Warm-up',EXECUTE_AND_CAPTURE:'Measured capture',FINALIZE_ARTIFACTS:'Finalizing evidence',EVALUATE:'Evaluating budgets',EXPORT:'Exporting result',PASSED:'Release ready',WARNING:'Review required',EVIDENCE_ONLY:'Evidence only',FAILED:'Release blocked',CANCELLED:'Run cancelled'};
 

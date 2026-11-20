@@ -72,7 +72,8 @@ class ScenarioRunnerTest {
                     MetricDefinition("top_process_cpu_pct"),
                     MetricDefinition("memory_used_mb"),
                     MetricDefinition("psi_cpu"),
-                    MetricDefinition("top_process_memory_mb")
+                    MetricDefinition("top_process_memory_mb"),
+                    MetricDefinition("app_pss_mb")
                 ),
                 intervalSec = 0.5,
                 configured = true
@@ -91,8 +92,33 @@ class ScenarioRunnerTest {
             assertTrue(received.memoryMbEnabled)
             assertTrue(received.psiEnabled)
             assertTrue(received.topMemEnabled)
+            assertTrue(received.appPssEnabled)
             assertTrue(received.logcatEnabled)
         }
+    }
+
+    @Test fun appPssDefaultsOnButAnExplicitCaptureSelectionCanDisableIt() {
+        var defaultEnabled = false
+        fixture(CaptureSessionFactory { config ->
+            defaultEnabled = config.appPssEnabled
+            FakeCapture(config.runDirectoryOverride)
+        }).use { f ->
+            f.runner.run(project(), scenario(), FakeDriver(allCapabilities()))
+        }
+        var configuredEnabled = true
+        fixture(CaptureSessionFactory { config ->
+            configuredEnabled = config.appPssEnabled
+            FakeCapture(config.runDirectoryOverride)
+        }).use { f ->
+            f.runner.run(
+                project(),
+                scenario().copy(capture = CaptureSettings(metrics = emptySet(), configured = true)),
+                FakeDriver(allCapabilities())
+            )
+        }
+
+        assertTrue(defaultEnabled)
+        assertFalse(configuredEnabled)
     }
 
     @Test fun liveProgressTracksWarmUpAndMeasuredJourneySteps() {
