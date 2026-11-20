@@ -44,10 +44,9 @@ class ArtifactStore(
         return RunLocation(runId, directory.toFile(), directory.resolve("run.json").toFile())
     }
 
-    fun attemptDirectory(run: RunLocation, attempt: Int): File {
+    fun attemptPath(run: RunLocation, attempt: Int): File {
         require(attempt > 0) { "Attempt number must be positive" }
         val path = ensureInside(run.directory.toPath().resolve("attempt-%02d".format(attempt)))
-        Files.createDirectories(path)
         return path.toFile()
     }
 

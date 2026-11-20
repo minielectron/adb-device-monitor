@@ -215,8 +215,24 @@ class ScenarioRunnerTest {
                 assertTrue(it in manifest.artifacts, "$it should be registered once at run level")
             }
             assertFalse(manifest.artifacts.keys.any { it.matches(Regex("attempt-\\d+/logcat\\.log")) })
+            val runDirectory = f.root.resolve(manifest.artifacts.getValue("logcat.log")).parentFile
+            assertFalse(runDirectory.listFiles().orEmpty().any { it.name.startsWith("attempt-") })
             assertEquals(2, manifest.markers.count { it.type == ScenarioMarkerType.ATTEMPT_START })
             assertEquals(2, manifest.markers.count { it.type == ScenarioMarkerType.ATTEMPT_END })
+        }
+    }
+
+    @Test fun fileProducingStepCreatesAndRegistersItsAttemptDirectory() {
+        fixture().use { f ->
+            val manifest = f.runner.run(
+                project(),
+                scenario(steps = listOf(ScenarioStep.CaptureScreenshot("evidence.png"))),
+                FakeDriver(allCapabilities())
+            )
+
+            val path = manifest.artifacts.getValue("attempt-01/evidence.png")
+            assertTrue(f.root.resolve(path).isFile)
+            assertTrue(f.root.resolve(path).parentFile.name == "attempt-01")
         }
     }
 
@@ -303,6 +319,11 @@ class ScenarioRunnerTest {
         ): StepOutput {
             onPerform()
             if (failOn?.isInstance(step) == true) error(failureMessage)
+            if (step is ScenarioStep.CaptureScreenshot) {
+                artifactDirectory.mkdirs()
+                val file = artifactDirectory.resolve(step.fileName).apply { writeText("synthetic png") }
+                return StepOutput("ok", file)
+            }
             return StepOutput("ok")
         }
     }

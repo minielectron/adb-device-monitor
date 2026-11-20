@@ -187,7 +187,7 @@ class ScenarioRunner(
                 for (attempt in 1..scenario.repetitions) {
                     checkCancelled()
                     require(capture.status == CaptureStatus.RUNNING) { capture.error ?: "Performance capture stopped unexpectedly" }
-                    val attemptDir = artifacts.attemptDirectory(location, attempt)
+                    val attemptDir = artifacts.attemptPath(location, attempt)
                     persist(
                         ExecutionState.EXECUTE_AND_CAPTURE,
                         attempts = attempts,
@@ -241,9 +241,11 @@ class ScenarioRunner(
                             "Measured repetition $attempt: ${error.replace(Regex("\\s+"), " ").trim()}"
                         )
                     }
-                    attemptDir.walkTopDown().filter { it.isFile }.forEach { file ->
-                        val key = "attempt-%02d/%s".format(attempt, file.name)
-                        artifactMap[key] = artifacts.relative(file)
+                    if (attemptDir.isDirectory) {
+                        attemptDir.walkTopDown().filter { it.isFile }.forEach { file ->
+                            val key = "attempt-%02d/%s".format(attempt, file.name)
+                            artifactMap[key] = artifacts.relative(file)
+                        }
                     }
                     persist(
                         ExecutionState.EXECUTE_AND_CAPTURE,
